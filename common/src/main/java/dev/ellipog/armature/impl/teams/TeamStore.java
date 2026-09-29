@@ -41,9 +41,9 @@ import java.util.UUID;
  * <h2>Retired ids</h2>
  *
  * <p>A disbanded team's id is kept, so it is never reused. Without that, a new team inheriting an
- * old id would inherit anything keyed by it — which for Tasked means a fresh party starting with
- * another party's completed quests. Ids are random UUIDs so a collision is essentially impossible,
- * but the check costs a few bytes.
+ * old id would inherit anything keyed by it — a fresh party starting with whatever a previous party
+ * had already done. Ids are random UUIDs so a collision is essentially impossible, but the check
+ * costs a few bytes.
  */
 public final class TeamStore extends SavedData {
 

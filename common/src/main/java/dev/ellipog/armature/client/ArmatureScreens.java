@@ -21,8 +21,13 @@ import java.util.function.Supplier;
  * common code, this one is not.
  *
  * <p>Screens are registered rather than referenced so that a mod can open its own screen from
- * common code. An item is a common class and runs on both sides; it says
- * {@code ArmatureClient.openScreen(QUEST_BOOK)} and never learns whether a screen exists.
+ * common code. An item is a common class and runs on both sides; it calls
+ * {@link ArmatureClient#openScreen} with an id and never learns whether a screen exists.
+ *
+ * <p>The example used to name a screen id from the game this library was written for. That is the
+ * same mistake as naming a consumer mod, one level down: an identifier in this file that resolves
+ * to nothing in this repository, which reads as a broken link and tells a second consumer that the
+ * docs were written for somebody else.
  */
 public final class ArmatureScreens implements ArmatureClient.ScreenOpener {
 

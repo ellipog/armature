@@ -8,10 +8,11 @@ import java.util.Set;
 /**
  * A registered, extensible kind of something — the shape a mod's addon API takes.
  *
- * <p>Two of Tasked's own concepts are this: a quest task type and a quest reward type. So is
- * anything another mod adds. The point is that the set is <b>open at runtime</b>, which an enum
- * cannot be — and these ids end up in quest files and in player progress, so the identity of a type
- * is not something that can be quietly changed later.
+ * <p>The obvious case is a quest task type or a reward type, but nothing here is specific to that:
+ * any mod with a set of kinds it wants extensible has the same shape. The point is that the set is
+ * <b>open at runtime</b>, which an enum cannot be — and these ids end up in the files an author
+ * writes and in stored player state, so the identity of a type is not something that can be quietly
+ * changed later.
  *
  * <p>{@link #fields()} exists so that a validator can tell an author which fields a type accepts,
  * and so reject the ones it does not. That matters more than it sounds: a codec silently ignores

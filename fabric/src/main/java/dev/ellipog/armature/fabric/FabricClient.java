@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 import dev.ellipog.armature.api.client.ArmatureClient;
 import dev.ellipog.armature.api.client.KeyMappingBackend;
+import dev.ellipog.armature.client.Appearance;
 import dev.ellipog.armature.client.ArmatureScreens;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -27,6 +28,11 @@ public final class FabricClient implements ClientModInitializer {
     public void onInitializeClient() {
         ArmatureClient.install(new FabricKeyMappings());
         ArmatureScreens.install();
+
+        // Before the first frame, and here rather than in the common initialiser: this is client
+        // state read by client drawing, and a dedicated server has no window to look at.
+        Appearance.loadFromConfig();
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> ArmatureClient.tick());
     }
 

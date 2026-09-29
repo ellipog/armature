@@ -9,10 +9,10 @@ import java.util.UUID;
 /**
  * Team membership changes, as they happen.
  *
- * <p>Armature does not care what a team is <i>for</i>. Tasked uses one to share quest progress, and
+ * <p>Armature does not care what a team is <i>for</i>. A caller uses one to share something, and
  * that means somebody has to be told when the membership changes: a player joining a team has to
- * bring their progress with them, or leave it behind, and only the mod that owns the progress can
- * decide which.
+ * bring their share of that state with them, or leave it behind, and only the mod that owns the
+ * state can decide which.
  *
  * <p>So these events are the extension point. {@link #MEMBER_JOINED} fires <b>after</b> the team is
  * updated, so a listener reading the team sees the new membership — which is the useful direction,

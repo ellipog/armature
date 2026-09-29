@@ -1,257 +1,712 @@
 package dev.ellipog.armature.client;
 
-import com.mojang.blaze3d.vertex.PoseStack;
+import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.ui.Theme;
+import dev.ellipog.armature.client.ui.Themes;
+import dev.ellipog.armature.client.ui.kit.Motion;
 
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.world.item.ItemStack;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Objects;
 
 /**
- * Armature's palette and its drawing helpers, in one place.
+ * The palette every drawing call reads, and the one place a theme is swapped.
  *
- * <h2>Every colour is eight digits</h2>
+ * <h2>Every colour in the toolkit comes from here, which is why this class is static</h2>
  *
- * <p>{@code 0xAARRGGBB}, alpha included, always. On 1.21.1 a colour written without alpha happens to
- * come out opaque anyway; from 1.21.6 it does not. So writing the alpha is not tidiness — it is the
- * difference between this UI porting to the next version and every colour in it needing a rewrite.
+ * <p>A button does not know what a theme is. It asks for {@link #body}, and this answers with whatever
+ * is in force — so a reskin reaches every control, panel, node and label without any of them being
+ * changed, and a new control is themeable by construction rather than by remembering to plumb a colour
+ * through its constructor.
  *
- * <h2>Separation, not subtlety</h2>
+ * <p>That is a deliberate trade, and the cost is that two palettes cannot be live at once by accident:
+ * there is one field. {@link #scope} is how two are live at once <i>on purpose</i>.
  *
- * <p>This is the mistake worth reading about, because it cost a screenshot. The first version of this
- * palette spread its four surfaces over <b>ten units out of 255</b>:
+ * <h2>Two levels: the chrome, and whatever is inside a region</h2>
  *
- * <pre>
- * PANEL    0x16161C    22, 22, 28
- * RECESSED 0x101015    16, 16, 21
- * CANVAS   0x0C0C11    12, 12, 17
- * </pre>
+ * <p>There are two quite different things a theme can mean, and before this they were one:
  *
- * <p>On paper those are four shades. On a real monitor, through a real gamma curve, they are one
- * colour — and the screenshot was a black rectangle with some squares on it. Which then reads as
- * "the panel is not being drawn", so you go looking for a layout bug that does not exist.
+ * <ul>
+ *   <li><b>The main theme</b> — {@link #current}. The player's or the pack's choice, and it styles the
+ *       whole screen: the panel, the sidebar, the header, the title, every control, every tooltip.
+ *       It is a setting, it persists, and it is the answer everywhere by default.</li>
+ *   <li><b>A scoped theme</b> — {@link #scope}. Something a piece of <i>content</i> asks for, while that
+ *       content is on screen: the quest graph drawn in the colours of the chapter you are reading. It
+ *       does not persist, it does not change a control, and it ends when the scope does.</li>
+ * </ul>
  *
- * <p>The steps below are 10 to 16 units at the dark end, where the eye is least sensitive, and wider
- * further up. They are deliberately larger than they look right on paper, because they have to
- * survive being displayed.
+ * <p>These are not two features, they are two questions — "how do I want this program to look" and
+ * "what does this chapter look like" — and conflating them was the mistake the previous round made and
+ * then patched over. There, a chapter's theme and the player's theme were one field with a precedence
+ * rule, which meant a click could be overruled and the code needed a flag to remember that the player
+ * had meant it. With the two separated by <i>region</i> rather than by <i>priority</i>, no precedence
+ * rule is needed at all: the sidebar is chrome and reads the main theme, the canvas is content and
+ * reads the chapter's, and both are visible at once without either winning.
  *
- * <p>The order is load-bearing and is worth stating plainly: {@link #CANVAS} is the deepest,
- * {@link #RECESSED} sits on that, {@link #PANEL} frames both, {@link #RAISED} is a strip or a header
- * above the panel, and {@link #CONTROL} is above all of them. Anything that draws a surface out of
- * that order will look like a hole.
+ * <h2>Scopes nest, and the one that is open wins</h2>
  *
- * <h2>Why named constants rather than a theme object</h2>
+ * <p>A chapter sets the viewport's palette; a single quest inside it may set its own; the detail overlay
+ * may set its own again. So this is a stack rather than a field, and {@link #current} is its top. That is
+ * also what makes the feature composable rather than a special case: nothing in this class knows what a
+ * chapter or a quest is, only that something asked for a palette for the duration of a block of drawing.
  *
- * <p>A theme is the right shape for something a player or a pack can switch. Nothing can yet, and a
- * theme object with one instance is a layer of indirection around thirty numbers. When there are two
- * themes there will be a theme interface, and these constants become its first implementation — which
- * is a small change made at the moment there is a reason for it.
+ * <p>Use it with try-with-resources:
  *
- * <h2>Why the widget and the screen share it</h2>
+ * <pre>{@code
+ * try (ArmatureTheme.Scope ignored = ArmatureTheme.scope(chapterTheme)) {
+ *     drawTheGraph(renderer);          // in the chapter's colours
+ * }
+ * drawTheSidebar(renderer);            // back in the player's
+ * }</pre>
  *
- * <p>Because they have to agree. A button drawn from its own private palette drifts away from the panel
- * behind it the first time either is adjusted, and the result looks like a mistake rather than a
- * decision. One palette means one place to change.
+ * <p>A scope is not optional in that idiom, and the reason is a bug rather than taste: a pop that is
+ * skipped on an early return leaves the rest of the frame — and every frame after it — drawing in a
+ * palette nobody chose, with nothing on screen saying where it came from. The compiler places the close
+ * on every exit path, so the two cannot come apart. Same argument as {@code GuiRenderer.clip}, which is
+ * the same mechanism for the same reason.
+ *
+ * <h2>A scope changes colours only, and that is not a limitation to fix later</h2>
+ *
+ * <p>{@link Theme} also carries a corner radius, a motion duration and an easing curve. A scope applies
+ * none of them, deliberately:
+ *
+ * <ul>
+ *   <li><b>Motion is process-wide.</b> It is pushed into {@link Motion} once, when the main theme
+ *       changes, and read by every tween in the toolkit. A region with its own animation timing would
+ *       mean every tween asking which region it was in, and the honest reading of "this chapter animates
+ *       differently" is a mystery to a player rather than a feature.</li>
+ *   <li><b>Radius is a per-panel decision, not a per-region one.</b> It is read at the call site that
+ *       draws a rounded box, so honouring a scoped radius would mean that box rounding differently
+ *       depending on what it happened to be drawn over. A panel's corners are its own.</li>
+ * </ul>
+ *
+ * <p>So {@code ThemePatch.tint} is what a chapter or quest goes through, and it cannot set those three.
+ * The rule lives in the patch rather than here, so that a caller cannot apply a scoped theme that
+ * quietly cannot work.
+ *
+ * <h2>Threading, stated rather than assumed</h2>
+ *
+ * <p>The scope stack is not synchronised and must not be: drawing happens on the client thread, and a
+ * theme pushed from another thread would be a palette for a frame that is not being drawn. A mod that
+ * wants to prepare a theme off-thread should build the {@link Theme} there and push it here.
  */
 public final class ArmatureTheme {
 
     private ArmatureTheme() {
     }
 
-    // --- surfaces, deepest first --------------------------------------------
+    // ------------------------------------------------------------------
+    // The theme in use
+    // ------------------------------------------------------------------
+
+    /** The main theme: what the chrome is drawn in, and the fallback for everything else. */
+    private static Theme base = Themes.DEFAULT;
+
+    /** Open scopes, innermost last. Empty is the normal case. */
+    private static final Deque<Theme> scopes = new ArrayDeque<>();
+
+    /**
+     * The palette in force, which is the innermost open scope or the main theme.
+     *
+     * <h2>Process-wide, and why that is the right scope</h2>
+     *
+     * <p>A client has one appearance, the same way it has one window size. Threading a theme through
+     * every constructor would be more "correct" in the abstract and would mean every screen, every
+     * control and every helper carries a parameter that is the same object in all of them — which is
+     * the shape of a setting, not of a dependency.
+     *
+     * <p>Where a second palette is genuinely wanted, it is wanted <i>for a region</i> rather than for a
+     * call path, and {@link #scope} is that — a hundred and fifty call sites inside a quest canvas do
+     * not each need to be told which chapter they are drawing.
+     */
+    public static Theme current() {
+        Theme scoped = scopes.peek();
+        return scoped != null ? scoped : base;
+    }
+
+    /**
+     * The main theme, ignoring any open scope.
+     *
+     * <p>For the handful of places that must stay chrome while content is drawn in its own colours — a
+     * scrollbar over a themed list, a tooltip over a themed canvas. Rare, and worth having as a named
+     * question rather than as a variable somebody captured before a scope opened.
+     */
+    public static Theme chrome() {
+        return base;
+    }
+
+    /** The name of the palette in force, for a log line or a control's label. */
+    public static String themeName() {
+        return current().name();
+    }
+
+    /**
+     * Sets the main theme: what the chrome is drawn in.
+     *
+     * <h2>Why this reaches {@link Motion}</h2>
+     *
+     * <p>Because motion <i>is</i> part of an appearance, not a separate setting — "how this UI moves"
+     * belongs with "how this UI looks", and the plan's own R6 lists animation curves as theme data
+     * alongside the palette. So this is where the two are joined: a theme says how long its transitions
+     * last and what curve they use, and the toolkit's animation picks both up here rather than every
+     * call site asking the theme for a duration.
+     *
+     * <p>That is what makes {@code vanilla_plus} — a theme with a motion of zero, because vanilla has no
+     * UI animation — actually instant rather than merely described as such. One call, and every hover in
+     * the toolkit snaps.
+     *
+     * <p><b>What this does not override:</b> a player who has turned motion off keeps it off. The theme
+     * sets the <i>default</i> duration and curve; {@link Motion#setEnabled} remains the accessibility
+     * switch that wins over any theme, because a reskin must not be able to re-enable animation for
+     * someone who cannot comfortably use it.
+     *
+     * <p>A scoped theme does <b>not</b> reach Motion even when it carries a duration, and that is the
+     * same rule from the other side — see the class note.
+     *
+     * <h2>This is the primitive, and it deliberately has no by-name form</h2>
+     *
+     * <p>There used to be a {@code selectByName} beside it, and it is gone. It was a convenience that
+     * set the theme by name without touching {@link Appearance} — which means without persisting it, so
+     * a caller that used it got an appearance that worked until the client restarted and no record of
+     * why. Two entry points to one setting, one of which is a trap, is the duplication this codebase
+     * keeps removing.
+     */
+    public static void setCurrent(Theme theme) {
+        Objects.requireNonNull(theme, "theme");
+        base = theme;
+
+        Motion.setDefaultEasing(theme.easing());
+        Motion.setDefaultDuration(theme.motion());
+    }
+
+    /**
+     * Sets the main theme by name, built-in or file-loaded.
+     *
+     * <p>Fails rather than falling back, for the reason {@code Themes.byName} gives: a name comes from a
+     * person's setting or a file, and a fallback would report success for a typo while showing the
+     * appearance the player already had. A caller with a name it cannot check — {@code Appearance} — is
+     * also the caller that can say so.
+     */
+    public static boolean selectByName(String name) {
+        Theme found = Themes.any(name);
+        if (found == null) {
+            return false;
+        }
+        setCurrent(found);
+        return true;
+    }
+
+    /** Back to the default appearance, and no scopes. For a client shutdown, or a test. */
+    public static void resetCurrent() {
+        scopes.clear();
+        setCurrent(Themes.DEFAULT);
+    }
+
+    // ------------------------------------------------------------------
+    // Scopes
+    // ------------------------------------------------------------------
+
+    /**
+     * The handle for one open scope, closed by try-with-resources.
+     *
+     * <h2>Closing twice is a no-op, and that needs a field rather than a check</h2>
+     *
+     * <p>The compiler emits exactly one close per scope, but a caller may reasonably close one by hand
+     * inside the block as well — and a second {@code pop()} would take a palette off the stack that this
+     * scope did not put there. The symptom is a region drawn in the chrome's colours while everything
+     * around it is in the chapter's, with no obvious cause at the call site.
+     *
+     * <p><b>This was documented here before it was true.</b> The first version carried a {@code pushed}
+     * flag and no more, so a scope opened with nothing to apply closed harmlessly while a real scope
+     * closed twice popped twice — the exact case the comment claimed to handle. The flag said whether
+     * anything was pushed, not whether it was still there, and only the second question answers this
+     * one. {@code ThemeTest.closingTwiceIsHarmless} is the test that found it.
+     *
+     * <h2>What is still not guarded, stated so it is not assumed</h2>
+     *
+     * <p>Closing scopes <b>out of order</b> — an inner one after its outer has already closed — is not
+     * detected. A stack cannot tell you that a pop is the wrong pop; doing so would mean identity
+     * tracking for a case the try-with-resources idiom cannot produce, and a wrong-order close is a bug
+     * in the caller that no amount of bookkeeping here would fix. What this class guarantees is that the
+     * <i>same</i> scope cannot be closed twice, which is the mistake a person actually makes.
+     */
+    public static final class Scope implements AutoCloseable {
+
+        /**
+         * Whether this scope is currently holding a palette on the stack.
+         *
+         * <p>Not final, and that is the whole mechanism: {@link #close} clears it, so the second call
+         * finds nothing to do. False from the start for a scope opened with nothing to apply, which is
+         * what stops a "no theme" scope from popping somebody else's palette.
+         */
+        private boolean open;
+
+        private Scope(boolean pushed) {
+            this.open = pushed;
+        }
+
+        @Override
+        public void close() {
+            if (open) {
+                open = false;
+                // `poll` rather than `pop`, because {@link #resetCurrent} clears the whole stack and a
+                // scope closed after that would otherwise throw {@code NoSuchElementException} — from
+                // inside a try-with-resources close, which is to say during a client shutdown rather
+                // than during drawing. "Nothing left to pop" and "already popped" are the same fact,
+                // and {@code open} is what tracks it.
+                scopes.poll();
+            }
+        }
+    }
+
+    /**
+     * Draws inside this palette until the scope closes.
+     *
+     * <p>The theme is pushed even when it is the same object as the one already in force, and that is
+     * not waste: a nested scope that happens to match still has to be popped the same number of times it
+     * was pushed, and skipping the push would make the stack depth depend on the colours.
+     */
+    public static Scope scope(Theme theme) {
+        scopes.push(Objects.requireNonNull(theme, "theme"));
+        return new Scope(true);
+    }
+
+    /**
+     * Draws inside the palette a name refers to, or in the current one if the name resolves to nothing.
+     *
+     * <p>The null-safe form, for content: a chapter's theme may be absent, may name a built-in, or may
+     * name a theme the client does not have. In the last two cases the right answer differs — apply it,
+     * or draw unchanged and <i>say so</i> — and this method can only do the second silently, so a caller
+     * that wants to warn must check {@code Themes.any(name)} itself.
+     *
+     * <p>Nothing is pushed when the name resolves to nothing, so {@link Scope#close} is pointless rather
+     * than wrong: the stack depth is still what the block expects.
+     */
+    public static Scope scopeOf(String themeName) {
+        Theme found = themeName == null ? null : Themes.any(themeName);
+        return found == null ? new Scope(false) : scope(found);
+    }
+
+    /**
+     * How many scopes are open.
+     *
+     * <p>For a test, and for one diagnostic worth having: a screen that leaves a scope open at the end of
+     * a frame draws every later screen in a chapter's colours. That failure is invisible in a screenshot —
+     * the frame it happens on looks correct — so the only place it can be caught is a check on the depth
+     * after drawing, which is why this exists rather than being private.
+     */
+    public static int scopeDepth() {
+        return scopes.size();
+    }
+
+    // ------------------------------------------------------------------
+    // Surfaces, deepest first
+    // ------------------------------------------------------------------
 
     /** The dim over the world, behind a screen's panel. Deliberately not fully opaque. */
-    public static final int DIM = 0xB80A0A0D;
+    public static int dim() {
+        return current().dim();
+    }
 
     /** The canvas a graph or a map sits on — the deepest surface there is. */
-    public static final int CANVAS = 0xFF0A0A0E;
+    public static int canvas() {
+        return current().canvas();
+    }
 
     /** A recessed area inside a panel — a sidebar, a list. */
-    public static final int RECESSED = 0xFF191920;
+    public static int recessed() {
+        return current().recessed();
+    }
 
     /** A screen's main panel — the frame everything else sits inside. */
-    public static final int PANEL = 0xFF24242E;
+    public static int panel() {
+        return current().panel();
+    }
 
     /**
      * A raised area inside a panel — a header, a strip.
      *
-     * <p>48,48,60. Deliberately well below {@link #CONTROL}, because a control sits <b>on</b> a raised
-     * surface and the two must not be the same value.
+     * <p>48,48,60 in the default theme. Deliberately far above the control fill, because a control sits
+     * <b>on</b> a raised surface and the two must not be the same value. A theme is free to break that
+     * relationship, which is a decision a reskin is allowed to make badly — but the default theme's
+     * numbers are here so the next person can check the gap without opening an image editor.
      */
-    public static final int RAISED = 0xFF30303C;
+    public static int raised() {
+        return current().raised();
+    }
 
     /** A panel's border, and the divider between two surfaces. Bright enough to read as a line. */
-    public static final int PANEL_EDGE = 0xFF46465A;
+    public static int panelEdge() {
+        return current().panelEdge();
+    }
 
-    // --- controls ------------------------------------------------------------
-
-    /**
-     * A control at rest: 62,62,76.
-     *
-     * <h2>The trap here, which cost a reading of the file to notice</h2>
-     *
-     * <p>The first version of this palette had {@code CONTROL 0x34343F} and {@code RAISED 0x31313D} —
-     * <b>three units apart</b>. The strip is a RAISED surface and the buttons on it are CONTROLS, so
-     * an unaccented button on the strip would have been drawn in very nearly its own background. The
-     * accent border would have saved the one accent button; every plain one would have looked like the
-     * strip's own text.
-     *
-     * <p>It is the same mistake as the two colliding buttons and the icon that did not scale with its
-     * box, from a third direction: <b>two values that have to differ, chosen independently.</b> Hence
-     * the arithmetic in each doc comment — the numbers are here so the next person can check the gaps
-     * without opening an image editor.
-     */
-    public static final int CONTROL = 0xFF3E3E4C;
-
-    /** A control with the pointer over it. */
-    public static final int CONTROL_HOVER = 0xFF4A4A5A;
-
-    /** A control being held down. */
-    public static final int CONTROL_HELD = 0xFF565668;
+    // ------------------------------------------------------------------
+    // Controls
+    // ------------------------------------------------------------------
 
     /**
-     * A control that cannot be used: 42,42,52.
+     * The ten colours a control is drawn from.
      *
-     * <p>Recedes rather than turning red — nothing has gone wrong, it just cannot be used yet. Above
-     * {@link #PANEL} so it still reads as a control that is present, which is what "not yet" means;
-     * a disabled button that vanishes reads as a missing feature.
+     * <h2>Why these are one accessor and not ten</h2>
+     *
+     * <p>Because which of them applies is a <b>precedence decision</b> — disabled beats selected beats
+     * held beats hovered, with accent as a special case — and that decision lives in
+     * {@link ArmatureControlStyle} and nowhere else. Ten loose accessors here would let a caller write
+     * the chain itself, which is the duplication that class was extracted to prevent: a preview with its
+     * own copy of these rules drew the selected chapter differently from the game for a whole round.
+     *
+     * <p>So the palette travels as a set. {@code ArmatureControlStyle} picks from it; a caller reads
+     * {@link ArmatureControlStyle#fill} and never has to know the other nine exist.
+     *
+     * <h2>The trap the default palette is built around, which cost a reading of the file to notice</h2>
+     *
+     * <p>A raised strip at 48,48,60 and a control at 62,62,76 are <b>fourteen units apart</b>, and that
+     * is a fix rather than a coincidence: the first version had the control three units above the strip
+     * it sits on, so an unaccented button on a header was drawn in very nearly its own background. Same
+     * mistake as two colliding buttons and an icon that did not scale with its box — <b>two values that
+     * have to differ, chosen independently.</b> A theme is where they get chosen together.
+     *
+     * <h2>Reads the chrome, not a scope — and that is the point of the whole feature</h2>
+     *
+     * <p>Controls are chrome. A chapter that reskinned its canvas must not repaint the buttons you press
+     * to leave it, or the control that changes the theme would itself change colour depending on where
+     * you were standing — a control reporting a state it does not have. So this reads {@link #chrome}
+     * directly rather than {@link #current}.
+     *
+     * <p>Which is safe to do because nothing draws a control inside a scope: controls are widgets, drawn
+     * by the screen outside its content block. This method is the one that would notice if that changed,
+     * so the choice is stated here rather than left as an accident of {@link #current}.
      */
-    public static final int CONTROL_DISABLED = 0xFF2A2A34;
+    public static Theme.Controls controls() {
+        return base.controls();
+    }
 
-    /** A control's border. */
-    public static final int CONTROL_EDGE = 0xFF4C4C62;
-
-    /** A control's border when it is the one that matters. */
-    public static final int CONTROL_EDGE_ACCENT = 0xFF6A9AC8;
+    /**
+     * A control's border.
+     *
+     * <p>One of the four control edges, and the only one exposed on its own — because a scrollbar's track
+     * is not a control and is not drawn by {@code ArmatureControlStyle}, so it has no state for a
+     * precedence rule to resolve. The other three are read through {@link #controls()}, where the class
+     * that decides which applies can reach them.
+     */
+    public static int controlEdge() {
+        return base.controls().edge();
+    }
 
     /** A control's border at its brightest, for a tooltip frame or a highlight. */
-    public static final int CONTROL_EDGE_BRIGHT = 0xFF5C5C74;
+    public static int controlEdgeBright() {
+        return base.controls().edgeBright();
+    }
 
-    /** The fill for a control the action is about — used sparingly, one per screen. */
-    public static final int CONTROL_ACCENT = 0xFF33597F;
+    // ------------------------------------------------------------------
+    // Text
+    // ------------------------------------------------------------------
 
-    // --- text ----------------------------------------------------------------
+    /** A heading's own text, the brightest in the theme. */
+    public static int title() {
+        return current().title();
+    }
 
-    public static final int TITLE = 0xFFFFFFFF;
-    public static final int BODY = 0xFFC6C6D4;
-    public static final int FAINT = 0xFF80808F;
-    public static final int HEADING = 0xFF9E9EB0;
+    /** Ordinary text. */
+    public static int body() {
+        return current().body();
+    }
+
+    /** Secondary text: a subtitle, a count, a hint. */
+    public static int faint() {
+        return current().faint();
+    }
+
+    /** A section label like TASKS or REWARDS. */
+    public static int heading() {
+        return current().heading();
+    }
 
     /** Behind a label drawn over something else, so text never sits directly on a line or an icon. */
-    public static final int LABEL_BACKDROP = 0xF00A0A0E;
+    public static int labelBackdrop() {
+        return current().labelBackdrop();
+    }
 
-    // --- state ---------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Progression: the state of a quest, and the border of its node
+    // ------------------------------------------------------------------
 
     /** Available, not started. */
-    public static final int AVAILABLE = 0xFF7FB4E8;
+    public static int available() {
+        return current().available();
+    }
 
     /** Started, not finished. */
-    public static final int IN_PROGRESS = 0xFFE8C868;
+    public static int inProgress() {
+        return current().inProgress();
+    }
 
     /** Done. */
-    public static final int COMPLETE = 0xFF86CE8A;
+    public static int complete() {
+        return current().complete();
+    }
 
     /** Cannot be done yet. Legible as a border, not as a fog. */
-    public static final int BLOCKED = 0xFF66666F;
+    public static int blocked() {
+        return current().blocked();
+    }
 
-    // --- graph ---------------------------------------------------------------
+    /**
+     * The colour of a quest's state, by name, for a caller holding the name rather than four branches.
+     *
+     * <p>Exists because {@code QuestState} lives in a consumer mod and this class cannot know it — so the
+     * mapping from a state's name to its colour is here, at the one place that has both the names and the
+     * palette. The alternative was four {@code switch} arms in every consumer, which is the same switch
+     * written as many times as there are screens.
+     *
+     * <p>An unknown name gives {@link #blocked}, on the grounds that an unrecognised state is one nothing
+     * can be done about — and because the useful failure for a state label is a drab one rather than a
+     * crash in the middle of a frame.
+     *
+     * @param state the state's name: {@code available}, {@code inProgress}, {@code complete} or
+     *     {@code blocked}, matched case-insensitively
+     */
+    public static int state(String state) {
+        if (state == null) {
+            return blocked();
+        }
+        return switch (state.toLowerCase(java.util.Locale.ROOT)) {
+            case "available", "unlocked" -> available();
+            case "inprogress", "in_progress", "started" -> inProgress();
+            case "complete", "completed" -> complete();
+            default -> blocked();
+        };
+    }
+
+    // ------------------------------------------------------------------
+    // Graph
+    // ------------------------------------------------------------------
 
     /** A node's fill, so an item with transparent corners still sits on something. */
-    public static final int NODE_FILL = 0xFF2E2E3A;
+    public static int nodeFill() {
+        return current().nodeFill();
+    }
 
-    /** A node's border when the quest cannot be started. */
-    public static final int NODE_EDGE_BLOCKED = 0xFF43434F;
+    /**
+     * A node's border when the quest cannot be started.
+     *
+     * <h2>The four node borders are tokens of their own, and why they still default to the state colours</h2>
+     *
+     * <p>Three of these four equal their state colour in every shipped theme, and the fourth does not —
+     * see {@code ThemePatch}'s rule on which borders follow their state, and why {@code blocked} is
+     * deliberately excluded. So why are they separate values a theme can set at all?
+     *
+     * <p>Because the two are <b>different statements that happen to agree in every theme written so
+     * far</b>. {@code available} is the colour of the word "Available" in a list; {@code nodeEdgeAvailable}
+     * is the ring around a box on a canvas. Those are different jobs — one is text on a panel and the
+     * other is a shape outline on a background with items in it — and a pack author who wants a
+     * desaturated ring under a bright label, or a node border that reads against a themed canvas while
+     * the label keeps the contrast it needs, should not have to change both.
+     *
+     * <p>They were one value before, and the case that forced them apart was the canvas itself: a theme
+     * that recolours the graph background cannot always keep one colour legible as both. Sharing a value
+     * is the default, not the rule — and since it <i>is</i> the default, a theme file that sets
+     * {@code available} and not {@code nodeEdgeAvailable} still gets a matching ring rather than the base
+     * theme's. That fallback is implemented in {@code ThemePatch} rather than described here, because a
+     * documented convention that nothing enforces is how a violet label ends up beside a blue ring.
+     */
+    public static int nodeEdgeBlocked() {
+        return current().nodeEdgeBlocked();
+    }
+
+    /** A node's border when the quest can be started. Equals {@link #available} in every shipped theme. */
+    public static int nodeEdgeAvailable() {
+        return current().nodeEdgeAvailable();
+    }
+
+    /** A node's border when the quest is started. Equals {@link #inProgress} in every shipped theme. */
+    public static int nodeEdgeInProgress() {
+        return current().nodeEdgeInProgress();
+    }
+
+    /** A node's border when the quest is finished. Equals {@link #complete} in every shipped theme. */
+    public static int nodeEdgeComplete() {
+        return current().nodeEdgeComplete();
+    }
 
     /**
      * A wash over a locked node's icon.
      *
-     * <p>This replaced a chip with a ✖ drawn in the node's bottom-right corner. At node scale that chip
-     * was a black square pasted over the artwork — the worst thing in the screenshot, and it hid the
-     * one thing the icon is on the canvas to show. Dimming what is already there says "not yet" without
-     * destroying it.
+     * <p>This replaced a chip with a cross drawn in the node's bottom-right corner. At node scale that
+     * chip was a black square pasted over the artwork — the worst thing in one screenshot, and it hid
+     * the one thing the icon is on the canvas to show. Dimming what is already there says "not yet"
+     * without destroying it.
      */
-    public static final int NODE_DIM = 0x9C000000;
+    public static int nodeDim() {
+        return current().nodeDim();
+    }
 
     /** A wash over a completed node's icon, so "done" reads at a glance and still shows the item. */
-    public static final int NODE_DONE_WASH = 0x3086CE8A;
+    public static int nodeDoneWash() {
+        return current().nodeDoneWash();
+    }
 
-    public static final int LINE = 0xFF505064;
-    public static final int LINE_DONE = 0xFF5F8A62;
-    public static final int SELECTED_RING = 0xFFFFFFFF;
-    public static final int HOVER_RING = 0x80FFFFFF;
+    /** A dependency line between two nodes. */
+    public static int line() {
+        return current().line();
+    }
 
-    // -------------------------------------------------------------------------
+    /** A dependency line whose prerequisite is met. */
+    public static int lineDone() {
+        return current().lineDone();
+    }
+
+    /** The ring around the node or row in use. */
+    public static int selectedRing() {
+        return current().selectedRing();
+    }
+
+    /** The ring around the one under the pointer, at full hover. Scaled by its eased amount. */
+    public static int hoverRing() {
+        return current().hoverRing();
+    }
+
+    /**
+     * The wash behind a row the pointer is over — a task in a quest's body, a reward, a dependency.
+     *
+     * <h2>Why this is separate from a control's hover</h2>
+     *
+     * <p>A control's hover is a <b>fill</b>: the button's own background, a solid colour chosen to be
+     * distinct from its resting fill. A row's hover is a <b>wash over whatever is already there</b> —
+     * the panel colour, a connector line, an icon — so it has to be translucent, and it has to read
+     * against both the panelled background and the description text above it.
+     *
+     * <p>Its alpha is deliberately low: a row's hover is a hint about where a click will land, not a
+     * selection, and a row that brightened as much as a button would compete with the actual selection.
+     * It is scaled by the hover's own eased amount at the call site, so this is the colour at <b>full</b>
+     * hover — {@code Colour.translucent} is what fades it.
+     */
+    public static int rowHover() {
+        return current().rowHover();
+    }
+
+    // ------------------------------------------------------------------
+    // Scrollbar
+    // ------------------------------------------------------------------
+
+    /**
+     * The groove a scrollbar's thumb runs in.
+     *
+     * <h2>Why a scrollbar got two tokens of its own</h2>
+     *
+     * <p>Because it is the one part of the chrome that was invisible to a theme, and it showed. It was
+     * drawn from {@link #raised} and {@link #controlEdge} — both reasonable at the time, since neither
+     * was chosen for it — which meant every theme got the same relationship between a track and the panel
+     * behind it, and a theme with a light panel had a track with no contrast against it at all.
+     *
+     * <p>The general point is worth stating, because it is the same one that produced the four node
+     * borders: <b>a colour borrowed for a job it was not chosen for is a colour that will be wrong for
+     * one of the two jobs.</b> The scrollbar is where that was most visible.
+     */
+    public static int scrollTrack() {
+        return current().scrollTrack();
+    }
+
+    /** The scrollbar's thumb — the moving part, and the one that has to read against the track. */
+    public static int scrollThumb() {
+        return current().scrollThumb();
+    }
+
+    // ------------------------------------------------------------------
+    // Tooltips
+    // ------------------------------------------------------------------
+
+    /**
+     * Behind a floating panel that follows the pointer.
+     *
+     * <p>Separate from {@link #labelBackdrop}, which is nearly the same colour in every shipped theme and
+     * is genuinely a different surface: a label backdrop is a strip behind one line of text drawn over a
+     * canvas, and it is sized to that line. This is a panel with a border and several lines in it. They
+     * agree in the default theme because a tooltip drawn over black should be the same black as a label —
+     * and a light theme is where they must be allowed to differ, since a tooltip over a pale canvas needs
+     * a different relationship to its surroundings than a caption does.
+     */
+    public static int tooltipFill() {
+        return current().tooltipFill();
+    }
+
+    /** The border of that panel. See {@link #tooltipFill} for why this is not `controlEdgeBright`. */
+    public static int tooltipEdge() {
+        return current().tooltipEdge();
+    }
+
+    // ------------------------------------------------------------------
     // Drawing helpers
-    // -------------------------------------------------------------------------
+    // ------------------------------------------------------------------
 
     /**
      * A one-pixel rectangle outline, as four fills.
      *
-     * <p>Provided because {@code GuiGraphics} has no stroke, so every outline in this UI is four
-     * {@code fill} calls, and writing that out at each site is four chances to get one edge wrong.
-     * The width is not a parameter: nothing in this UI wants a 2px border, and a width argument
-     * invites one.
+     * <p>Provided because there is no stroke primitive — not in {@code GuiGraphics}, and in nothing the
+     * seam covers — so every outline in this UI is four {@code fill} calls, and writing that out at each
+     * site is four chances to get one edge wrong. The width is not a parameter: nothing in this UI wants
+     * a 2px border, and a width argument invites one.
      */
-    public static void outline(GuiGraphics graphics, int left, int top, int width, int height, int colour) {
-        graphics.fill(left, top, left + width, top + 1, colour);
-        graphics.fill(left, top + height - 1, left + width, top + height, colour);
-        graphics.fill(left, top, left + 1, top + height, colour);
-        graphics.fill(left + width - 1, top, left + width, top + height, colour);
+    public static void outline(GuiRenderer renderer, int left, int top, int width, int height, int colour) {
+        renderer.fill(left, top, left + width, top + 1, colour);
+        renderer.fill(left, top + height - 1, left + width, top + height, colour);
+        renderer.fill(left, top, left + 1, top + height, colour);
+        renderer.fill(left + width - 1, top, left + width, top + height, colour);
     }
 
     /**
-     * A filled rectangle with a one-pixel border, as five fills.
+     * A filled panel with a one-pixel border.
      *
-     * <p>The commonest thing this UI draws, and the reason it is here rather than in each caller: the
-     * fill has to come first and the border four times over, and getting that order wrong produces a
-     * border that the fill then covers.
+     * <p>The single most repeated pair of calls in this UI, and the reason it is a method rather than
+     * two lines at each site: the border has to be drawn <i>over</i> the fill, and getting the order the
+     * other way round produces a panel with no border at all — which looks like the border colour being
+     * wrong rather than like a call in the wrong order.
+     *
+     * <p>The colour overload is the one to prefer, since it takes the pair from the palette in force;
+     * this form exists for the caller that has a reason to pass both — a selection chip drawn in its own
+     * colours, a border that is deliberately a different theme's.
      */
-    public static void panel(GuiGraphics graphics, int left, int top, int width, int height,
+    public static void panel(GuiRenderer renderer, int left, int top, int width, int height,
                              int fill, int border) {
-        graphics.fill(left, top, left + width, top + height, fill);
-        outline(graphics, left, top, width, height, border);
+        renderer.fill(left, top, left + width, top + height, fill);
+        outline(renderer, left, top, width, height, border);
+    }
+
+    /** A panel in the palette in force: {@link #panel} filled, {@link #panelEdge} bordered. */
+    public static void panel(GuiRenderer renderer, int left, int top, int width, int height) {
+        panel(renderer, left, top, width, height, panel(), panelEdge());
     }
 
     /**
-     * A non-rectangular shape, described as the horizontal extent of each row.
+     * The horizontal extent of a shape on one row, as {@code {from, to}}.
      *
-     * <p>Deliberately one method and no more: a shape is a lookup from a row to a span, and everything
-     * else — filling it, stroking it, hit-testing it — is derived from that one answer. {@code tasked}
-     * implements this with {@code QuestShape}, which is where the actual geometry lives; Armature
-     * cannot know about it, and should not.
+     * <p>The functional interface shapes are built from. It is this rather than the full {@code Shape}
+     * type so a caller can supply the lookup as a method reference — {@code entry.shape()::span} — which
+     * is what every call site does and what keeps a shape from having to be boxed or wrapped to draw one.
      */
     @FunctionalInterface
     public interface RowSpans {
-
-        /**
-         * The extent of the shape on {@code row} of a {@code size}-pixel square.
-         *
-         * @return {@code {from, to}}, {@code from} inclusive and {@code to} exclusive, or {@code null}
-         *     for a row outside the shape
-         */
+        /** {@code null} for a row outside the shape. */
         int[] span(int row, int size);
     }
 
     /**
-     * Fills a shape that is not a rectangle, one horizontal band at a time.
+     * Fills a whole shape row by row, merging rows that share a span.
      *
-     * <h2>Why bands rather than rows</h2>
+     * <h2>Why merging matters rather than being an optimisation</h2>
      *
-     * <p>Because the number of {@code fill} calls is the cost. Each one appends four vertices and may
-     * flush the batch, so a circle drawn a row at a time is 48 primitives for one node and the same
-     * again for its border — and a chapter can show thirty nodes. Adjacent rows almost always have an
-     * identical span, so they are merged: a rounded rectangle becomes three fills instead of 48, and a
-     * circle about twenty-four instead of 96. The result is pixel-identical; only the call count
-     * changes.
-     *
-     * <p>{@code null} from the lookup skips the row rather than stopping — a shape with a genuine hole
-     * in it is not something any of these are, but a lookup that ran off the end should not truncate
-     * the bottom half of a node.
+     * <p>A square or a rounded rectangle has long runs of identical rows, and a shape drawn a row at a
+     * time is forty-eight {@code fill} calls for a node — thirty nodes on a chapter, and a canvas that
+     * redraws every frame. Merging brings a rectangle down to one call and a rounded rectangle to
+     * about nine, which is the difference between a shape being affordable and being a decoration
+     * nobody enables.
      */
-    public static void fillShape(GuiGraphics graphics, int x, int y, int size, int colour,
+    public static void fillShape(GuiRenderer renderer, int x, int y, int size, int colour,
                                  RowSpans spans) {
         if (size <= 0) {
             return;
         }
+
         int row = 0;
         while (row < size) {
             int[] span = spans.span(row, size);
@@ -260,6 +715,7 @@ public final class ArmatureTheme {
                 continue;
             }
 
+            // Extend while the span is unchanged, so a rectangle is one call.
             int end = row + 1;
             while (end < size) {
                 int[] next = spans.span(end, size);
@@ -269,76 +725,26 @@ public final class ArmatureTheme {
                 end++;
             }
 
-            graphics.fill(x + span[0], y + row, x + span[1], y + end, colour);
+            renderer.fill(x + span[0], y + row, x + span[1], y + end, colour);
             row = end;
         }
     }
 
     /**
-     * A shape's outline: the shape in {@code border}, with a one-pixel-smaller copy of itself in
-     * {@code fill} inset by one.
+     * A shape's border and its fill, in that order.
      *
-     * <p>Compositing rather than stroking. Stroking a per-row span means two more fills per band and
-     * needs the top and bottom caps special-cased, where drawing the shape twice is one call each and
-     * is obviously the same shape — which is the property that matters, since a border that does not
-     * follow the fill is exactly the class of bug this whole file is about.
+     * <p>The shape equivalent of {@link #panel}, and the same argument applies: the border is the shape at
+     * full size, inset by one on every side for the fill. Reversed, the fill covers the border entirely
+     * and a node loses the state colour that tells you whether it can be started.
      */
-    public static void shapePanel(GuiGraphics graphics, int x, int y, int size, int fill, int border,
+    public static void shapePanel(GuiRenderer renderer, int x, int y, int size, int fill, int border,
                                   RowSpans spans) {
-        fillShape(graphics, x, y, size, border, spans);
+        fillShape(renderer, x, y, size, border, spans);
         if (size > 2) {
-            fillShape(graphics, x + 1, y + 1, size - 2, fill, spans);
+            // Inset by one, and drawn at `size - 2` -- because a shape is a function of (row, size), so
+            // the same method reference gives the smaller outline for free rather than needing a second
+            // lookup table.
+            fillShape(renderer, x + 1, y + 1, size - 2, fill, spans);
         }
-    }
-
-    /**
-     * Draws an item so that it exactly fills a box of {@code box} pixels.
-     *
-     * <h2>How, and why it is not obvious</h2>
-     *
-     * <p>{@code GuiGraphics.renderItem(stack, x, y)} draws at a fixed size — 16 screen pixels — because
-     * it translates to {@code (x + 8, y + 8, 150)} and then scales by {@code (16, -16, 16)}. There is no
-     * size parameter, so the only way to draw an item bigger or smaller is to change the transform it
-     * inherits.
-     *
-     * <p>And it <b>does</b> inherit one: it pushes onto the same {@code PoseStack} that
-     * {@link GuiGraphics#pose()} hands out. So translating to the box's corner and scaling by
-     * {@code box / 16} makes the item's own internal 16-unit scale land exactly on {@code box}.
-     * Verified by reading {@code GuiGraphics.renderItem} in 1.21.1 rather than assumed, because "does
-     * the parent transform apply" is precisely the sort of thing that is wrong half the time.
-     *
-     * <h2>Why it lives here, and not in each screen</h2>
-     *
-     * <p>Because a box and the item inside it must be <b>one</b> number, and this is the only function
-     * that knows how to make that true. The quest book had two live bugs from getting it wrong in two
-     * places: a node whose box scaled with the zoom while its item stayed at 16px, and a 13px row pitch
-     * around a 16px icon so consecutive rows overlapped. Both are the same mistake — sizing a box and
-     * its contents independently — and both are impossible when there is one function and everything
-     * uses it. {@link ArmatureButton} and the quest book both do.
-     *
-     * @return whether anything was drawn, so a caller can fall back to a plain block when the client
-     *     cannot resolve the item — an empty box in a row of icons reads as a bug, not as a fallback.
-     */
-    public static boolean drawIcon(GuiGraphics graphics, ItemStack stack, int boxX, int boxY, int box) {
-        if (stack == null || stack.isEmpty() || box <= 0) {
-            return false;
-        }
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft == null || minecraft.level == null) {
-            // renderItem reaches through minecraft.player and minecraft.level for the model, so a null
-            // level is a crash rather than a blank icon. One guard here, rather than at every call site.
-            return false;
-        }
-
-        float scale = box / 16.0F;
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(boxX, boxY, 0);
-        // z stays 1: renderItem sets z to 150 + ... inside itself, so scaling z is how an item ends up
-        // drawn behind the panel it is supposed to be on.
-        pose.scale(scale, scale, 1F);
-        graphics.renderItem(stack, 0, 0);
-        pose.popPose();
-        return true;
     }
 }

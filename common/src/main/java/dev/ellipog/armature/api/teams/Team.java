@@ -7,7 +7,8 @@ import java.util.UUID;
 import java.util.function.Function;
 
 /**
- * A group of players who share state — in Tasked's case, quest progress.
+ * A group of players who share state — whatever the caller keys by a team. Game progress is the
+ * obvious case; nothing here knows or cares which.
  *
  * <p>Immutable: every field is copied on construction, and the store hands out a fresh instance
  * after each change. That is what makes it safe to hold one for the duration of a tick without

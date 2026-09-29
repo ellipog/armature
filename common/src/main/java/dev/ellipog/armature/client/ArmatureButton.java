@@ -1,13 +1,17 @@
 package dev.ellipog.armature.client;
 
+import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
+import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.ui.kit.Measure;
+import dev.ellipog.armature.client.ui.kit.Tween;
+
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -38,18 +42,55 @@ import java.util.function.Consumer;
  * fixed offset and the text is centred in what is left, so a row of buttons with and without icons
  * still lines its labels up.
  *
- * <h2>Accent and flat</h2>
+ * <h2>Accent, selected and flat</h2>
  *
  * <p>{@link #accent(boolean)} marks the one control a screen is really about — a Done, a Confirm.
  * Used more than once per screen it stops meaning anything, which is why it is a flag rather than a
- * colour: the theme decides what "accent" looks like, and there is one place to change it.
- * {@link #flat(boolean)} drops the fill for a control that should read as a label — a section header,
- * a tab.
+ * colour: {@link ArmatureControlStyle} decides what "accent" looks like, and there is one place to
+ * change it.
+ *
+ * <p>{@link #selected(boolean)} marks the current one — the chapter being shown, the tab being read.
+ * It is a <b>fill</b>, not the absence of one, and that distinction cost a round: the quest book's
+ * chapter list used {@link #flat(boolean)} for its selected row, so the current chapter was the only
+ * one drawn with no box at all and read as the missing or disabled one. Flat means "this is a label
+ * that happens to be clickable"; it does not mean "this one is on".
+ *
+ * <p>{@link #flat(boolean)} drops the fill for a control that should read as a label — a link, a
+ * section header. Nothing uses it at the time of writing, and it is kept because it is the right shape
+ * for something a quest editor will want.
+ *
+ * <h2>Where the colours come from</h2>
+ *
+ * <p>Every state is resolved by {@link ArmatureControlStyle}, not here. That is deliberate and it is
+ * the fix for a real drift: the preview that draws this UI outside the game used to carry its own copy
+ * of these rules and drew a selected control differently from the way this class does. One description,
+ * called by the button and printed by the tool.
  */
 public class ArmatureButton extends AbstractWidget {
 
     /** Tooltip lines, or null. Drawn by the screen, since a widget cannot draw outside itself. */
-    private List<FormattedCharSequence> tooltip;
+    private List<String> tooltip;
+
+    /**
+     * How hovered this control looks, from 0 to 1, eased over {@link Tween#DEFAULT_MILLIS}.
+     *
+     * <h2>Why a control needs state to change colour</h2>
+     *
+     * <p>Because the alternative is a snap, and a cursor crossing a column of chapters snaps eight
+     * times in a few hundred milliseconds — which reads as flicker rather than as response. Eased, the
+     * same movement reads as the interface following the pointer.
+     *
+     * <h2>What this costs, and why it is the right trade</h2>
+     *
+     * <p>A field and one {@code retarget} per frame per visible control. The retarget is a comparison
+     * and an assignment when nothing has changed, which is most frames, so the common path is two
+     * branches. The window is a fixed one: a control's tween has no allocation, no list, and nothing
+     * that grows.
+     *
+     * <p>Not {@code volatile} and not synchronised: every read and write is on the client thread,
+     * because that is where a widget is drawn.
+     */
+    private final Tween hoverTween = Tween.settled(0F);
 
     /** What to do when pressed. Never null — an inert button is {@code active = false}. */
     private final Consumer<ArmatureButton> onPress;
@@ -58,9 +99,10 @@ public class ArmatureButton extends AbstractWidget {
     private net.minecraft.world.item.ItemStack icon;
 
     private boolean accent;
+    private boolean selected;
     private boolean flat;
     private boolean borderless;
-    private int textColour = ArmatureTheme.TITLE;
+    private int textColour = ArmatureTheme.title();
 
     /** Whether the pointer is down on this button. Held so the pressed state can be drawn. */
     private boolean held;
@@ -82,6 +124,18 @@ public class ArmatureButton extends AbstractWidget {
     /** Mark this as the screen's primary action. Use on one control per screen. */
     public ArmatureButton accent(boolean value) {
         this.accent = value;
+        return this;
+    }
+
+    /**
+     * Mark this as the current one — the chapter being shown, the tab being read.
+     *
+     * <p>A fill of its own, and not the absence of one. See the class comment: using {@link #flat} for
+     * this made the selected chapter the only row with no box, which reads as the broken one rather
+     * than the active one.
+     */
+    public ArmatureButton selected(boolean value) {
+        this.selected = value;
         return this;
     }
 
@@ -127,16 +181,37 @@ public class ArmatureButton extends AbstractWidget {
      * <p>Stored rather than passed to {@code setTooltip}, because the base class's tooltip is wired to
      * vanilla's tooltip renderer and would draw in vanilla's style. The screen asks for
      * {@link #tooltip()} when the pointer is over this widget and draws it itself.
+     *
+     * <h2>Strings rather than {@code FormattedCharSequence}, and nothing was lost</h2>
+     *
+     * <p>These used to be {@code Component#getVisualOrderText}, which is a {@code FormattedCharSequence}
+     * — a sequence of {@code (codepoint, Style)} pairs, which is what the renderer wants and a shape
+     * the renderer seam cannot accept without taking {@code Style} with it. So they are plain strings
+     * now, and the reason that costs nothing is worth stating rather than assuming: every tooltip in
+     * both mods is built from {@code Component.literal}, so none of them carries a style to lose. If
+     * one ever does, it will draw unstyled — visibly, not silently, and the fix is to give the seam a
+     * styled-text type rather than to put {@code Style} back into the caller's hands.
      */
     public ArmatureButton tooltip(List<Component> lines) {
         this.tooltip = lines.isEmpty() ? null : lines.stream()
-                .map(Component::getVisualOrderText)
+                .map(Component::getString)
                 .toList();
         return this;
     }
 
+    /** Which kind of control this is, for {@link ArmatureControlStyle}. Accent wins over selected. */
+    private ArmatureControlStyle.Variant variant() {
+        if (accent) {
+            return ArmatureControlStyle.Variant.ACCENT;
+        }
+        if (selected) {
+            return ArmatureControlStyle.Variant.SELECTED;
+        }
+        return flat ? ArmatureControlStyle.Variant.FLAT : ArmatureControlStyle.Variant.PLAIN;
+    }
+
     /** The tooltip lines, or null. For the owning screen to draw. */
-    public List<FormattedCharSequence> tooltip() {
+    public List<String> tooltip() {
         return tooltip;
     }
 
@@ -146,39 +221,77 @@ public class ArmatureButton extends AbstractWidget {
 
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // The one forced signature in this class, and it is Minecraft's rather than a choice: the base
+        // class hands over a GuiGraphics and there is no overload that does not. So this wraps and
+        // delegates immediately, and the body — where every actual decision lives — never sees one.
+        //
+        // That is the whole shape of the seam at a call site: one line here, and everything below is
+        // expressed in terms of fill, text and icon. `.utils/check_seam.py` counts these files, so a
+        // third one cannot appear without somebody writing down why.
+        draw(new GuiGraphicsRenderer(graphics));
+    }
+
+    /**
+     * Draws this control, animating any hover it is part-way through.
+     *
+     * <p>Takes a renderer, so it is testable without a client and shares nothing with the version being
+     * ported. The clock is read here rather than inside, so the animated overload below can be driven
+     * from a test with time it chose.
+     */
+    public void draw(GuiRenderer renderer) {
+        draw(renderer, net.minecraft.Util.getMillis());
+    }
+
+    /**
+     * The same, at a time the caller supplies.
+     *
+     * <p>This is the one a test drives. An animation asserted by sleeping is flaky on a loaded machine
+     * and slow always; asserting one by passing a larger number is neither.
+     */
+    public void draw(GuiRenderer renderer, long nowMillis) {
         if (!visible) {
             return;
         }
 
-        int fill;
-        int border;
-        if (!active) {
-            fill = ArmatureTheme.CONTROL_DISABLED;
-            border = ArmatureTheme.PANEL_EDGE;
-        }
-        else if (held) {
-            fill = ArmatureTheme.CONTROL_HELD;
-            border = accent ? ArmatureTheme.CONTROL_EDGE_ACCENT : ArmatureTheme.CONTROL_EDGE;
-        }
-        else if (isHoveredOrFocused()) {
-            fill = accent ? ArmatureTheme.CONTROL_ACCENT : ArmatureTheme.CONTROL_HOVER;
-            border = accent ? ArmatureTheme.CONTROL_EDGE_ACCENT : ArmatureTheme.CONTROL_EDGE;
-        }
-        else {
-            fill = accent ? ArmatureTheme.CONTROL_ACCENT : ArmatureTheme.CONTROL;
-            border = accent ? ArmatureTheme.CONTROL_EDGE_ACCENT : ArmatureTheme.CONTROL_EDGE;
-        }
+        // One source for the appearance, so this button and anything that draws it agree. The
+        // precedence -- disabled, then selected, then held, then hovered -- is documented there.
+        ArmatureControlStyle.Variant variant = variant();
+        boolean hovered = isHoveredOrFocused();
 
-        if (!flat) {
-            graphics.fill(getX(), getY(), getX() + width, getY() + height, fill);
+        // Told where it is heading every frame, which is how the tween catches up when the pointer
+        // arrives while the last transition is still running -- see Tween.retarget. Passing the state
+        // rather than calling retarget only on a change means there is no "did I already know this"
+        // bookkeeping here to get out of step with the widget's own idea of hover.
+        hoverTween.retarget(hovered ? 1F : 0F, nowMillis);
+
+        // Held is checked before the blend rather than inside it: a press has to be immediate, so it
+        // snaps while the hover eases. See ArmatureControlStyle.fillAt for why.
+        int fill = ArmatureControlStyle.fillAt(variant, active, held, hoverTween.value(nowMillis));
+        int border = ArmatureControlStyle.edge(variant, active, held, hovered);
+
+        if (ArmatureControlStyle.drawsBox(variant)) {
+            renderer.fill(getX(), getY(), getX() + width, getY() + height, fill);
             if (!borderless) {
-                ArmatureTheme.outline(graphics, getX(), getY(), width, height, border);
+                ArmatureTheme.outline(renderer, getX(), getY(), width, height, border);
             }
         }
 
-        Font font = Minecraft.getInstance().font;
-        int colour = active ? textColour : ArmatureTheme.BLOCKED;
-        Component label = getMessage();
+        // The style decides the label for the two variants it owns -- accent and selected -- because
+        // those are the two whose fill it also chose, and a label must be picked against its own
+        // background. Everywhere else the caller's own textColour wins, since a screen may have a
+        // reason the style cannot know.
+        int colour;
+        if (!active) {
+            colour = ArmatureTheme.blocked();
+        }
+        else if (variant == ArmatureControlStyle.Variant.ACCENT
+                || variant == ArmatureControlStyle.Variant.SELECTED) {
+            colour = ArmatureControlStyle.text(variant, true);
+        }
+        else {
+            colour = textColour;
+        }
+        String label = getMessage().getString();
 
         // The icon is the inner height of the control, so it is the size of the space it is in rather
         // than a fixed 16px in a 20px button with 4px of padding somewhere. The slot the text starts
@@ -187,7 +300,7 @@ public class ArmatureButton extends AbstractWidget {
         int iconBox = Math.max(8, height - 6);
         int iconSlot = icon != null ? iconBox + 4 : 0;
         if (icon != null) {
-            ArmatureTheme.drawIcon(graphics, icon, getX() + 3, getY() + (height - iconBox) / 2, iconBox);
+            renderer.icon(icon, getX() + 3, getY() + (height - iconBox) / 2, iconBox);
         }
 
         int textLeft = getX() + iconSlot;
@@ -197,9 +310,14 @@ public class ArmatureButton extends AbstractWidget {
         // control cannot know how long its label will be -- a chapter title comes from the quest file
         // -- so without this a long label is drawn straight through the control's edge and reads as a
         // rendering fault rather than as a name that is simply too long.
-        String shown = font.plainSubstrByWidth(label.getString(), Math.max(0, textWidth - 4));
-        int textX = textLeft + (textWidth - font.width(shown)) / 2;
-        graphics.drawString(font, shown, textX, getY() + (height - 8) / 2, colour, false);
+        //
+        // `Measure.truncate` rather than a font call, so the truncation rule is testable and lives
+        // beside the wrap rule it is a counterpart of. Both answer "what fits in this width", one by
+        // breaking a paragraph and one by cutting a line.
+        String shown = Measure.truncate(label, Math.max(0, textWidth - 4),
+                Measure.of(renderer::textWidth, renderer.lineHeight()));
+        int textX = textLeft + (textWidth - renderer.textWidth(shown)) / 2;
+        renderer.text(shown, textX, getY() + (height - 8) / 2, colour);
     }
 
     @Override

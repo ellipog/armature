@@ -19,10 +19,11 @@ import java.util.UUID;
  *
  * <h2>Two things this deliberately does not do</h2>
  *
- * <p><b>It does not know what a team is for.</b> No mention of quests, progress or rewards — that is
- * Tasked's business, and it attaches through {@link TeamEvents}. This is the primitive the plan
- * calls for: the reason FTB had to ship a third mod is that progress-sharing was tangled into quest
- * code, and untangling it afterwards is far more expensive than keeping it separate now.
+ * <p><b>It does not know what a team is for.</b> There is not a word here about progress, rewards or
+ * anything else a caller might key by a team — that is the caller's business, and it attaches
+ * through {@link TeamEvents}. This is the primitive the plan calls for: the reason FTB had to ship a
+ * third mod is that progress-sharing was tangled into the code that owned the progress, and
+ * untangling it afterwards is far more expensive than keeping it separate now.
  *
  * <p><b>It does not cache.</b> Every lookup goes to the store, which is a {@code LinkedHashMap}
  * lookup over a handful of teams. A cache means an invalidation bug, and there is nothing here

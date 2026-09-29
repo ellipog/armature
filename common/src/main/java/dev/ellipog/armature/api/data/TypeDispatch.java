@@ -16,16 +16,16 @@ import java.util.stream.Collectors;
  * <p>Which is how JSON like this becomes an object:
  *
  * <pre>{@code
- * { "type": "tasked:item", "item": "minecraft:oak_log", "count": 8 }
- * { "type": "tasked:checkmark", "title": "I was here" }
+ * { "type": "example:item", "item": "minecraft:oak_log", "count": 8 }
+ * { "type": "example:checkmark", "title": "I was here" }
  * }</pre>
  *
  * <h2>The error message is the feature</h2>
  *
  * <p>A type that cannot be found gets an error listing every type that <i>can</i>. That is worth the
- * extra code: an author who writes {@code "tasked:items"} instead of {@code "tasked:item"} has made a
- * one-character mistake, and the fix is only obvious if the valid names are right there. The plain
- * alternative — {@code Unknown type tasked:items} — leaves them hunting through a wiki.
+ * extra code: an author who writes {@code "example:items"} instead of {@code "example:item"} has made
+ * a one-character mistake, and the fix is only obvious if the valid names are right there. The plain
+ * alternative — {@code Unknown type example:items} — leaves them hunting through a wiki.
  *
  * <p>The specs come from a {@link Supplier} rather than being passed in, because the registry is still
  * being filled at the moment this codec is constructed. Reading at decode time means registration

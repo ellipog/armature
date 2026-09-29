@@ -116,7 +116,7 @@ public final class ArmatureClient {
         }
     }
 
-    /** The translation key a mapping id maps to — {@code key.tasked.open_quest_book}. */
+    /** The translation key a mapping id maps to — {@code key.example.open_my_screen}. */
     public static String translationKey(ResourceLocation id) {
         return "key." + id.getNamespace() + "." + id.getPath();
     }

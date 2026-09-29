@@ -33,8 +33,13 @@ public final class Armature {
 
         Constants.LOG.info("config dir: {}", platform.configDir());
 
-        if (platform.isModLoaded("tasked")) {
-            Constants.LOG.info("Tasked is present ({})", platform.modVersion("tasked").orElse("unknown"));
-        }
+        // Nothing below this line, and nothing above it, names a mod that uses Armature.
+        //
+        // This is the one rule the project has — see rule 1 in plan.md, and
+        // `.utils/check_layering.py`, which fails the build if the rule is broken. A library that
+        // looks a consumer up by name depends on it, and then it can be neither compiled nor
+        // released without it.
+        //
+        // If a boot log should list which mods are present, that belongs in the mod that cares.
     }
 }

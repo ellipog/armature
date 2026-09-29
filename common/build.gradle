@@ -23,6 +23,43 @@ dependencies {
     annotationProcessor group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.3.5'
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+//
+// The kit's own tests, and the first test source set this repo has had. They run headless on the
+// JVM, which is the entire point of ui.kit's layout being game-free: a class that needs a running
+// client cannot be asserted on, and "this row is 22 pixels tall, and the next one starts below it"
+// is exactly the sort of fact that goes wrong silently and is then found in a screenshot.
+//
+// Minecraft is already on `main`'s compile classpath via ModDevGradle's NeoForm configuration, and
+// `compileOnly` does not carry it to the test source set -- so the test source set inherits the
+// classpath `main` already resolves. That is not a guess at another project's internals; it is
+// literally the same list of jars. A consumer's own common/build.gradle does the same, and explains a second
+// classpath problem that does not arise here, because this is the repo that defines those classes.
+sourceSets {
+    test {
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+}
+
+dependencies {
+    testImplementation platform("org.junit:junit-bom:${junit_version}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    testLogging {
+        // Full exception text. A failure that says "expected true but was false" without the values
+        // is a test you have to re-run to understand, which is most of the point wasted.
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat 'full'
+        showStackTraces = true
+    }
+}
+
 configurations {
     commonJava {
         canBeResolved = false
