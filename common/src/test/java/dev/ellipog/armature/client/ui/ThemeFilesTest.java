@@ -145,6 +145,10 @@ class ThemeFilesTest {
     @Test
     @DisplayName("a file with no basedOn starts from the default theme")
     void noBaseMeansTheDefault() throws IOException {
+        // `Themes.DEFAULT`, not `Themes.MODERN`, and the two are no longer the same object — so this
+        // test is asserting something about the fallback that it previously could not. A theme file
+        // written without a base takes the *shipped* appearance, which is what "the default" has to mean
+        // for an author: the thing their client is actually drawn in while they are writing the file.
         Path dir = Files.createTempDirectory("themes");
         try {
             write(dir, "bare.json", "{\"colours\": {\"panel\": \"#26212E\"}}");
@@ -152,8 +156,11 @@ class ThemeFilesTest {
 
             Theme bare = ThemeFiles.byName("bare");
             assertNotNull(bare);
-            assertEquals(Themes.MODERN.title(), bare.title());
-            assertEquals(Themes.MODERN.cornerRadius(), bare.cornerRadius());
+            assertEquals(Themes.DEFAULT.title(), bare.title());
+            assertEquals(Themes.DEFAULT.cornerRadius(), bare.cornerRadius(),
+                    "a file with no base should be square, because the shipped default is -- a file that"
+                            + " silently started rounded would mean the fallback was pointing at `modern`");
+            assertEquals(0, bare.cornerRadius());
         }
         finally {
             deleteRecursively(dir);

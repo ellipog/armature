@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client.render;
 
 import dev.ellipog.armature.client.ArmatureTheme;
+import dev.ellipog.armature.client.ui.Themes;
 import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
@@ -193,26 +194,84 @@ class GuiRendererTest {
     }
 
     @Test
-    @DisplayName("a panel is the fill first and the border over it, in that order")
-    void aPanelFillsBeforeItOutlines() {
-        // Order is the whole of this method's correctness: the border four times over, and if the fill
-        // came last it would cover all of it. A recorder can see the order; a screenshot shows only a
-        // panel with no border, which reads as the border colour being wrong.
+    @DisplayName("a panel is the border's footprint first, with the fill inset over it")
+    void aPanelIsBorderThenInsetFill() {
+        // Order is the whole of this method's correctness, and the order is not the obvious one. The
+        // border is drawn as the *whole* footprint and the fill is then drawn inset by one pixel, which
+        // leaves exactly a one-pixel ring of border visible. Reversed -- fill the box, then draw a border
+        // footprint over it -- the border covers the fill entirely and the panel is a solid block of
+        // border colour. A recorder can see which happened; a screenshot shows only a panel with no fill,
+        // which reads as the fill colour being the wrong one.
+        //
+        // This replaced a five-fill version -- one fill, then four edges -- when the corner radius
+        // started being drawn, and both the count and the order changed. Four edges cannot be rounded at
+        // all, and the version that can is two *shapes* rather than five rectangles, so the count is now
+        // one per merged run of each. Asserting the order as well as the count matters: "eight fills"
+        // would also be true of a panel drawn twice.
+        // **At radius 0**, and that is not a convenience. At a radius the border's first fill is the top
+        // row of a rounded shape, so its left edge is the corner's cut rather than the panel's left edge
+        // -- and asserting `x() == 0` there was asserting that the rounding had *not* happened. The order
+        // is a property of the call sequence and is cleanest at zero; the rounding is a property of the
+        // spans and has its own test below. Mixing them made a test that failed for being right.
+        ArmatureTheme.setCurrent(Themes.MODERN.withRadius(0));
+
         RecordingRenderer r = RecordingRenderer.create();
         ArmatureTheme.panel(r, 0, 0, 20, 20, 0xFF111111, 0xFF222222);
 
         List<RecordingRenderer.Call> fills = r.fills();
-        assertEquals(5, fills.size(), "a panel is one fill and four edges");
+        RecordingRenderer.Call footprint = fills.get(0);
+        assertEquals(0xFF222222, footprint.argb(),
+                "the first thing drawn should be the border's footprint, which the fill is inset into");
+        assertEquals(0, footprint.x());
+        assertEquals(20, footprint.x2());
 
-        RecordingRenderer.Call first = fills.get(0);
-        assertEquals(0xFF111111, first.argb(), "the panel's first fill should be the fill, not an edge");
-        assertEquals(0, first.x());
-        assertEquals(20, first.x2());
+        RecordingRenderer.Call inset = fills.get(fills.size() - 1);
+        assertEquals(0xFF111111, inset.argb(), "the last thing drawn should be the fill");
+        assertEquals(1, inset.x(), "the fill should be inset by one, leaving a pixel of border");
+        assertEquals(19, inset.x2());
+        assertEquals(1, inset.y());
+        assertEquals(19, inset.y2());
 
-        for (int i = 1; i < fills.size(); i++) {
-            assertEquals(0xFF222222, fills.get(i).argb(),
-                    "edge " + i + " is not the border colour, so the panel is not outlined");
-        }
+        // And the pixels, which is what the order is for. Drawn the other way round -- fill the box,
+        // then draw the border's footprint over it -- the interior would be border colour.
+        assertTrue(r.covered(0, 10), "the left border is not drawn");
+        assertTrue(r.covered(10, 10), "the panel's interior is not filled");
+        assertTrue(r.covered(19, 19), "the bottom-right border is not drawn");
+
+        ArmatureTheme.resetCurrent();
+    }
+
+    @Test
+    @DisplayName("a panel is square at radius 0 and rounded at radius 6, which is the theme's doing")
+    void aPanelHonoursTheCornerRadius() {
+        // The radius is a theme value that nothing drew until this round. Every theme set one, the panel
+        // filled a rectangle regardless, and the two themes advertising 8 and the two advertising 0
+        // rendered identically -- so the value was a lie rather than a setting. Worth its own test
+        // because the failure is invisible: a radius that does nothing looks exactly like a theme that
+        // was designed square, which is why it survived a whole round of looking at the UI.
+        ArmatureTheme.setCurrent(Themes.MODERN.withRadius(0));
+        RecordingRenderer square = RecordingRenderer.create();
+        ArmatureTheme.panel(square, 0, 0, 20, 20, 0xFF111111, 0xFF222222);
+
+        assertEquals(2, square.fills().size(),
+                "a square panel is the border's box and the fill's box -- two calls, because merging "
+                        + "identical runs is what keeps a rectangle affordable");
+        assertTrue(square.covered(0, 0), "a square panel should cover its own corner");
+
+        ArmatureTheme.setCurrent(Themes.MODERN.withRadius(6));
+        RecordingRenderer rounded = RecordingRenderer.create();
+        ArmatureTheme.panel(rounded, 0, 0, 20, 20, 0xFF111111, 0xFF222222);
+
+        assertTrue(rounded.fills().size() > 2,
+                "a rounded panel needs a run per corner row, so more than two fills");
+        assertFalse(rounded.covered(0, 0),
+                "the corner of a rounded panel is still being drawn square, so the theme's radius is not "
+                        + "reaching this call");
+        assertTrue(rounded.covered(0, 10),
+                "the left edge at mid-height is not a corner, so it should still be drawn");
+        assertTrue(rounded.covered(10, 10), "and the middle of the panel should still be filled");
+
+        ArmatureTheme.resetCurrent();
     }
 
     @Test

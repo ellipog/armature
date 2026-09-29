@@ -57,9 +57,9 @@ class ThemesTest {
     }
 
     @Test
-    @DisplayName("there are fifteen, with distinct names and distinct labels")
-    void thereAreFifteenDistinctThemes() {
-        assertEquals(15, Themes.ALL.size());
+    @DisplayName("there are sixteen, with distinct names and distinct labels")
+    void thereAreSixteenDistinctThemes() {
+        assertEquals(16, Themes.ALL.size());
 
         Set<String> names = new HashSet<>();
         Set<String> labels = new HashSet<>();
@@ -81,12 +81,13 @@ class ThemesTest {
     @Test
     @DisplayName("the four families are all present")
     void allFourFamiliesArePresent() {
-        // The families are: the three originals, so nobody's muscle memory breaks; three chosen to
-        // solve a problem rather than to look like somewhere; five drawn from the game's own materials
-        // and dimensions; and two that are applications rather than places. Asserted by name because
-        // the *order* is a design statement too -- a list of fifteen in random order is a list nobody
-        // reads past the third entry.
+        // The families are: the default, first, because it is what a client is already using; the three
+        // originals, so nobody's muscle memory breaks; three chosen to solve a problem rather than to
+        // look like somewhere; five drawn from the game's own materials and dimensions; and two that are
+        // applications rather than places. Asserted by name because the *order* is a design statement
+        // too -- a list of sixteen in random order is a list nobody reads past the third entry.
         List<String> expected = List.of(
+                "default",
                 "modern", "tome", "vanilla_plus",
                 "high_contrast", "monochrome", "paper",
                 "obsidian", "amethyst", "copper", "redstone",
@@ -94,9 +95,12 @@ class ThemesTest {
                 "terminal", "neon");
         assertEquals(expected, Themes.ALL.stream().map(Theme::name).toList());
 
-        // And the originals keep their positions, so the toolbar's cycle does not reorder itself.
-        assertEquals("modern", Themes.ALL.get(0).name());
-        assertEquals("vanilla_plus", Themes.ALL.get(2).name());
+        // And the originals keep their relative positions, so a picker's order does not reorder itself.
+        // One extra at the front rather than a reshuffle: `default` is new and goes first because it is
+        // what a client is already using, and everything after it kept the slot it had.
+        assertEquals("default", Themes.ALL.get(0).name());
+        assertEquals("modern", Themes.ALL.get(1).name());
+        assertEquals("vanilla_plus", Themes.ALL.get(3).name());
     }
 
     @Test

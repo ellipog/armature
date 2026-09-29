@@ -58,13 +58,23 @@ class ThemeTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("modern is the default, and its colours are the ones that shipped")
-    void modernIsTheDefaultAndUnchanged() {
-        // The reference theme, and the reason `Themes.MODERN`'s map is asserted complete rather than
-        // partial. Its colours came from the `static final int`s that were in ArmatureTheme, so a theme
-        // system that shifted them would make every screenshot taken before it incomparable with every
-        // one after -- and would make a rendering regression look identical to a palette decision.
-        assertSame(Themes.MODERN, Themes.DEFAULT);
+    @DisplayName("a client starts on the default, which is square, and its colours are modern's")
+    void aClientStartsOnTheDefault() {
+        // `Themes.DEFAULT` and `Themes.MODERN` are different constants now, and that is worth a test
+        // because it is the kind of pair that quietly collapses back into one during a refactor. The
+        // reference theme is rounded and the shipped one is square; both exist because a theme named
+        // "the current look" cannot also be the fixed thing every assertion is written against.
+        //
+        // What this file is checking here is the *identity* of the default rather than its palette --
+        // `ThemesTest` compares all forty-one colours, and duplicating that here would mean two tests
+        // failing for one edit. What belongs here is that the toolkit starts on it.
+        assertSame(Themes.DEFAULT, ArmatureTheme.current(),
+                "a client that has not chosen should be on the shipped default");
+        assertEquals("default", Themes.DEFAULT.name());
+        assertEquals(0, Themes.DEFAULT.cornerRadius());
+        assertNotSame(Themes.MODERN, Themes.DEFAULT,
+                "the default and the reference theme have become one object, so a pack asking for"
+                        + " `modern` and a player who never chose would now get the same look");
 
         assertEquals(0xB80A0A0D, Themes.MODERN.dim());
         assertEquals(0xFF24242E, Themes.MODERN.panel());

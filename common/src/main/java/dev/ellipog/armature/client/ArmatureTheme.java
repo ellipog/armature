@@ -4,6 +4,7 @@ import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.Themes;
 import dev.ellipog.armature.client.ui.kit.Motion;
+import dev.ellipog.armature.client.ui.kit.RoundedRect;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -646,6 +647,12 @@ public final class ArmatureTheme {
      * seam covers — so every outline in this UI is four {@code fill} calls, and writing that out at each
      * site is four chances to get one edge wrong. The width is not a parameter: nothing in this UI wants
      * a 2px border, and a width argument invites one.
+     *
+     * <p><b>Square, always, whatever the theme's radius is.</b> That is not an oversight — this is the
+     * outline for small things: a progress bar six pixels tall, a swatch, a divider. A theme radius of 8
+     * applied to a 6-pixel bar gives an oval, which is not what a progress bar is. Anything big enough
+     * for a corner to read as a corner goes through {@link #panel} or {@link #fillSurface}, which do
+     * honour it.
      */
     public static void outline(GuiRenderer renderer, int left, int top, int width, int height, int colour) {
         renderer.fill(left, top, left + width, top + 1, colour);
@@ -655,26 +662,155 @@ public final class ArmatureTheme {
     }
 
     /**
-     * A filled panel with a one-pixel border.
+     * A filled panel with a one-pixel border, rounded to the theme's corner radius.
      *
      * <p>The single most repeated pair of calls in this UI, and the reason it is a method rather than
-     * two lines at each site: the border has to be drawn <i>over</i> the fill, and getting the order the
-     * other way round produces a panel with no border at all — which looks like the border colour being
-     * wrong rather than like a call in the wrong order.
+     * two lines at each site: <b>the border is drawn as the whole footprint and the fill is then drawn
+     * inset by one pixel</b>, which leaves exactly a one-pixel ring of border. Getting that the other way
+     * round — fill the box, then draw a border over it — produces a panel that is a solid block of border
+     * colour, which reads as the fill colour being wrong rather than as a call in the wrong order.
      *
      * <p>The colour overload is the one to prefer, since it takes the pair from the palette in force;
      * this form exists for the caller that has a reason to pass both — a selection chip drawn in its own
      * colours, a border that is deliberately a different theme's.
+     *
+     * <h2>This is where the theme's radius is spent, and it was spent nowhere until now</h2>
+     *
+     * <p>{@code Theme.cornerRadius} existed, every theme set it, and <b>nothing drew it</b> — this method
+     * filled a rectangle and the outline went round it squarely. So the two themes advertising a radius of
+     * 8 and the two advertising 0 rendered identically, which made the value a lie rather than a setting:
+     * the exact "parsed, validated, printed, read by nothing" failure this codebase has now recorded four
+     * times. Found by grepping for the accessor rather than by looking at the screen, because a radius that
+     * does nothing looks like a theme that was designed that way.
+     *
+     * <p>The shape comes from {@link RoundedRect}, which was already written and already tested for the
+     * node shapes — so the arithmetic of a quarter-circle corner exists in exactly one place, and this
+     * method supplies the part that was missing: a radius that applies to a rectangle rather than a square.
      */
     public static void panel(GuiRenderer renderer, int left, int top, int width, int height,
                              int fill, int border) {
-        renderer.fill(left, top, left + width, top + height, fill);
-        outline(renderer, left, top, width, height, border);
+        int radius = current().cornerRadius();
+        // The border as the whole footprint, then the fill inset by one -- which is the same pixels as
+        // "fill the rectangle, then draw a one-pixel outline over it" and is what makes the corners round
+        // without the border having to be a separate shape that has to agree with the fill's.
+        fillSurface(renderer, left, top, width, height, border, radius, CORNERS_ALL);
+        if (width > 2 && height > 2) {
+            // Inset radius, so the gap between the two curves is one pixel on the diagonal as well as on
+            // the sides. Reusing the outer radius would make the border visibly thicker at the corners --
+            // a 4-pixel radius carrying a 2-pixel border there and a 1-pixel border everywhere else.
+            fillSurface(renderer, left + 1, top + 1, width - 2, height - 2, fill,
+                    Math.max(0, radius - 1), CORNERS_ALL);
+        }
     }
 
     /** A panel in the palette in force: {@link #panel} filled, {@link #panelEdge} bordered. */
     public static void panel(GuiRenderer renderer, int left, int top, int width, int height) {
         panel(renderer, left, top, width, height, panel(), panelEdge());
+    }
+
+    /**
+     * A rounded fill, for a surface that is not a panel: a strip inside one, a backdrop.
+     *
+     * <p>See {@link #fillSurface} for the corner mask, which is the parameter that matters here. A
+     * surface inside a panel rounds only the corners it shares with that panel — a sidebar down the left
+     * edge rounds its left corners and leaves its right ones square, because the right edge is interior.
+     */
+    public static void fillSurface(GuiRenderer renderer, int left, int top, int width, int height,
+                                   int colour, int corners) {
+        fillSurface(renderer, left, top, width, height, colour, current().cornerRadius(), corners);
+    }
+
+    /** Top-left, top-right, bottom-right and bottom-left, as a bit each. */
+    public static final int TOP_LEFT = 1;
+    public static final int TOP_RIGHT = 2;
+    public static final int BOTTOM_RIGHT = 4;
+    public static final int BOTTOM_LEFT = 8;
+
+    /** All four, for a surface that stands on its own. */
+    public static final int CORNERS_ALL = TOP_LEFT | TOP_RIGHT | BOTTOM_RIGHT | BOTTOM_LEFT;
+
+    /** The two on the top edge, for a strip along the top of a panel. */
+    public static final int CORNERS_TOP = TOP_LEFT | TOP_RIGHT;
+
+    /** The two down the left edge, for a sidebar. */
+    public static final int CORNERS_LEFT = TOP_LEFT | BOTTOM_LEFT;
+
+    /**
+     * A fill whose specified corners are rounded to {@code radius} and whose others are square.
+     *
+     * <h2>Why a mask rather than "round all four"</h2>
+     *
+     * <p>Because a panel is almost always more than one surface. The quest book is a rounded panel with a
+     * recessed sidebar down its left edge and a raised header across the top, and both of those touch two
+     * of the panel's corners and none of the other two. Rounding all four of the sidebar's corners leaves
+     * two notches in the corner of the panel where the sidebar is not; rounding none of them leaves a
+     * square corner poking out of the panel's rounded one. The mask is how a caller says which, and there
+     * are exactly three cases in this UI: a whole panel, a strip on one edge, and a surface that touches
+     * nothing.
+     *
+     * <h2>Row by row, with equal runs merged</h2>
+     *
+     * <p>A rounded rectangle is a per-row span, and the arithmetic for one is
+     * {@link RoundedRect#cornerCut} — already written and already swept by a test over every size and
+     * radius, for the node shapes. What that method does not do is a <i>rectangle</i>: it is written for a
+     * square node, so this supplies the missing half, which is that a corner's cut depends on the distance
+     * to the nearest horizontal edge and not on the width.
+     *
+     * <p>{@code fillShape} merges rows with an identical span, so a rectangle at radius 0 is one fill call
+     * and a rounded one is about {@code 2r + 1} — which is the difference between this being affordable on
+     * a panel per frame and being a decoration nobody enables.
+     */
+    public static void fillSurface(GuiRenderer renderer, int left, int top, int width, int height,
+                                   int colour, int radius, int corners) {
+        if (width <= 0 || height <= 0) {
+            // A zero-width surface is what a collapsed sidebar or an empty strip is, and it is not an
+            // error. Returning early keeps `fillShape`'s own guard from being the only thing standing
+            // between a caller and a fill that straddles nothing.
+            return;
+        }
+        if (corners == 0 || radius <= 0) {
+            renderer.fill(left, top, left + width, top + height, colour);
+            return;
+        }
+        fillShape(renderer, left, top, height, colour,
+                (row, size) -> roundedSpan(row, width, height, radius, corners));
+    }
+
+    /**
+     * The horizontal extent of a rounded rectangle on one row, or {@code {0, width}} for a row that is
+     * entirely inside it.
+     *
+     * <p>Measured from whichever horizontal edge is nearer, which is the whole of the rectangle case: a
+     * corner is a quarter circle whose cut depends on how far into the corner you are, and "into the
+     * corner" is the distance to the top edge for the top two and to the bottom edge for the bottom two.
+     * The width is not involved at all, which is why a 300×40 panel and a 40×40 node round by the same
+     * amount at the same radius.
+     */
+    private static int[] roundedSpan(int row, int width, int height, int radius, int corners) {
+        // Clamped to half the shorter side, so a radius bigger than the surface cannot produce a span
+        // that runs backwards. `RoundedRect` clamps internally too, and the clamping here is about the
+        // two-dimensional case it was not written for.
+        int r = Math.min(radius, Math.min(width, height) / 2);
+        if (r <= 0) {
+            return new int[] {0, width};
+        }
+
+        int fromTop = row;
+        int fromBottom = height - 1 - row;
+
+        if (fromTop < r) {
+            int cut = RoundedRect.cornerCut(fromTop, height, r);
+            boolean roundLeft = (corners & TOP_LEFT) != 0;
+            boolean roundRight = (corners & TOP_RIGHT) != 0;
+            return new int[] {roundLeft ? cut : 0, roundRight ? width - cut : width};
+        }
+        if (fromBottom < r) {
+            int cut = RoundedRect.cornerCut(fromBottom, height, r);
+            boolean roundLeft = (corners & BOTTOM_LEFT) != 0;
+            boolean roundRight = (corners & BOTTOM_RIGHT) != 0;
+            return new int[] {roundLeft ? cut : 0, roundRight ? width - cut : width};
+        }
+        return new int[] {0, width};
     }
 
     /**

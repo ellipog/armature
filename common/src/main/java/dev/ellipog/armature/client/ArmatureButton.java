@@ -269,10 +269,24 @@ public class ArmatureButton extends AbstractWidget {
         int fill = ArmatureControlStyle.fillAt(variant, active, held, hoverTween.value(nowMillis));
         int border = ArmatureControlStyle.edge(variant, active, held, hovered);
 
+        // A control used to be a rectangle with four one-pixel edges drawn over it, which cannot be
+        // rounded at all -- so every theme's corner radius reached the panels and stopped at the
+        // buttons. This goes through `ArmatureTheme.panel` instead, which is the same two-shape
+        // approach: the border's whole footprint, then the fill inset by one pixel over it.
+        //
+        // The borderless case is not the same call with a zero-width border, and that is worth stating
+        // because it looks like it should be. A borderless control is a *label* that happens to be
+        // clickable, so it has no ring at all: routing it through `panel` with the fill as its own
+        // border would draw a ring that is invisible but still costs a second shape per frame, and it
+        // would inset the fill by one pixel for no reason -- a one-pixel shift on every flat control,
+        // which is the kind of thing that reads as a layout bug rather than as a rounding decision.
         if (ArmatureControlStyle.drawsBox(variant)) {
-            renderer.fill(getX(), getY(), getX() + width, getY() + height, fill);
-            if (!borderless) {
-                ArmatureTheme.outline(renderer, getX(), getY(), width, height, border);
+            if (borderless) {
+                ArmatureTheme.fillSurface(renderer, getX(), getY(), width, height, fill,
+                        ArmatureTheme.CORNERS_ALL);
+            }
+            else {
+                ArmatureTheme.panel(renderer, getX(), getY(), width, height, fill, border);
             }
         }
 

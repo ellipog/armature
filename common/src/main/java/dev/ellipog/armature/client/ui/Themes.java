@@ -18,7 +18,7 @@ import java.util.Map;
  *
  * <h2>Every theme here is a patch, and that is the point rather than a convenience</h2>
  *
- * <p>The fifteen are written as {@link ThemePatch}es over a base, using the same mechanism a quest
+ * <p>The sixteen are written as {@link ThemePatch}es over a base, using the same mechanism a quest
  * file uses to reskin a chapter. Two things fall out of that, and the second is the one that matters:
  *
  * <ul>
@@ -26,7 +26,7 @@ import java.util.Map;
  *       {@link #AMETHYST} is thirty lines rather than forty-one, and the lines it has are the ones that
  *       make it amethyst.</li>
  *   <li><b>The built-in set is itself the proof that the override system is expressive enough.</b> If
- *       fifteen themes of quite different characters can all be expressed as patches, then a pack
+ *       sixteen themes of quite different characters can all be expressed as patches, then a pack
  *       author with the same mechanism is not being given a lesser version of it. Had the catalogue been
  *       hand-written full palettes while patches were the "custom" path, the two would have diverged and
  *       the divergence would only show up as a file that could not do something a built-in could.</li>
@@ -174,6 +174,40 @@ public final class Themes {
             .withRadius(4)
             .withMotion(140L)
             .withEasing(dev.ellipog.armature.client.ui.kit.Easing.QUAD_OUT);
+
+    /**
+     * The theme a client starts with. {@link #MODERN}'s palette, square corners, and the same easing.
+     *
+     * <h2>What this is, and why it is not just {@code modern}</h2>
+     *
+     * <p>Identical to {@link #MODERN} in every colour and in its motion, with one difference: a corner
+     * radius of zero. It exists so that the shipped appearance can change without changing what
+     * {@code modern} means — because {@code modern} is the reference the assertions and the screenshots
+     * are written against, and a theme whose name says "the current look" cannot be both that and a fixed
+     * reference. Two constants, one of which happens to derive from the other.
+     *
+     * <h2>Derived from {@code MODERN} rather than restating its palette</h2>
+     *
+     * <p>Because it <i>is</i> modern's palette, and a copy is a copy that can drift. Written out, the two
+     * would agree until somebody adjusted one of them, and the disagreement would show up as the default
+     * theme being a slightly different blue from the reference theme with no comment saying why. Built by
+     * derivation, there is one list of colours and this theme cannot disagree with it.
+     *
+     * <p><b>Square, but still animated.</b> That combination is deliberate and it is the reason this is
+     * not simply {@code vanilla_plus} with different colours. {@code vanilla_plus} is square <i>and</i>
+     * still — no animation at all — which is a statement about motion; this theme makes no such statement
+     * and keeps modern's 140ms eased curve. So the corners are Minecraft's and the feel is not, and that
+     * is the shipped default rather than either of the two themes it sits between.
+     *
+     * <h2>Why the default is square</h2>
+     *
+     * <p>A rounded corner is a decision about this interface's own style, and this is a library that will
+     * grow to support other mods' screens. Square is the neutral choice: it is what vanilla draws, it is
+     * what a pack author's own textures will assume, and it is the one setting no theme has to opt out of.
+     * A pack that wants rounded corners asks for {@code modern} or writes its own — which is exactly the
+     * kind of decision a default should be leaving to somebody else.
+     */
+    public static final Theme DEFAULT = MODERN.withName("default").withRadius(0);
 
     // ------------------------------------------------------------------
     // The original three
@@ -923,13 +957,21 @@ public final class Themes {
      *
      * <h2>The order is a design statement, not an accident of declaration</h2>
      *
-     * <p>It goes: the three originals first, so the toolbar's cycle starts where the project started and
-     * nobody's muscle memory breaks; then the three utility themes, because they are chosen to solve a
-     * problem and someone looking for one should not have to scroll; then materials, dimensions, and
-     * finally the two that are applications rather than places. <b>A list of fifteen in random order is a
-     * list nobody reads past the third entry.</b>
+     * <p>It goes: the default first, because it is the one a client is already using and a picker that
+     * does not list the current setting is a picker nobody trusts; then the three originals, so a cycle
+     * starts where the project started and nobody's muscle memory breaks; then the three utility themes,
+     * because they are chosen to solve a problem and someone looking for one should not have to scroll;
+     * then materials, dimensions, and finally the two that are applications rather than places. <b>A list
+     * of sixteen in random order is a list nobody reads past the third entry.</b>
+     *
+     * <p><b>A theme has to be in this list to be reachable by clicking.</b> That is not a description of
+     * this constant so much as the constraint on it: {@code ThemesTest} asserts that the names here are
+     * distinct and that {@link #everything} contains every one of them, and the theme the client starts
+     * on being reachable is exactly the case that would go wrong quietly — a default nothing can select
+     * is a default a player is stuck with.
      */
     public static final List<Theme> ALL = List.of(
+            DEFAULT,
             MODERN,
             TOME,
             VANILLA_PLUS,
@@ -945,9 +987,6 @@ public final class Themes {
             DEEP_DARK,
             TERMINAL,
             NEON);
-
-    /** The theme a client starts with. */
-    public static final Theme DEFAULT = MODERN;
 
     /**
      * A built-in theme by name, or null when the name matches nothing.
