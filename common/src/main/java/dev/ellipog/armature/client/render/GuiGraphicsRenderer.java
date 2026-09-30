@@ -1,13 +1,19 @@
 package dev.ellipog.armature.client.render;
 
+import com.mojang.authlib.GameProfile;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * 1.21.1's {@link GuiRenderer}: the one file in either mod that names {@code GuiGraphics}, and the
@@ -127,6 +133,87 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         pose.scale(scale, scale, 1F);
         graphics.renderItem(stack, 0, 0);
         pose.popPose();
+        return true;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code PlayerFaceRenderer} rather than a blit written here, and the shorter version is the
+     * correct one: that class owns the face and hat rectangles and the scaling between them, and it is
+     * the same code the tab list draws with. Hand-writing the two blits is how this was first done, and
+     * it produced a solid orange square — the hat layer's hair, stretched, with the face nowhere. Two
+     * numbers right and one overload wrong is exactly the kind of mistake a seam should not be making
+     * twice.
+     *
+     * <p>{@code getInsecureSkin} rather than a lookup that fetches: this draws for whoever is in the
+     * party, and a face that arrives a second late is a face that is not there when the row is. A player
+     * the client has no skin for — an offline server, an unknown UUID — resolves to the default, which
+     * is a face rather than a gap.
+     *
+     * <h2>The profile comes from the player entity when the client has one</h2>
+     *
+     * <p>And that is not a shortcut, it is the difference between the right skin and a default one. In a
+     * single-player world the server is in offline mode, so the UUID a roster carries is derived from
+     * the player's <i>name</i> — while the client's own account has an id, and a skin, keyed by
+     * something else. Asking the skin cache about the server's UUID therefore finds nothing and answers
+     * "Steve" for a player whose face is on screen two feet away. The entity the client is already
+     * drawing carries the <b>real</b> profile, so it is asked first, and the id is only the fallback for
+     * somebody this client cannot see.
+     */
+    @Override
+    public boolean face(UUID player, int boxX, int boxY, int box) {
+        if (player == null || box <= 0) {
+            return false;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return false;
+        }
+
+        GameProfile profile = null;
+        if (minecraft.level != null
+                && minecraft.level.getPlayerByUUID(player) instanceof AbstractClientPlayer entity) {
+            profile = entity.getGameProfile();
+        }
+        if (profile == null) {
+            profile = new GameProfile(player, "");
+        }
+
+        PlayerSkin skin = minecraft.getSkinManager().getInsecureSkin(profile);
+        PlayerFaceRenderer.draw(graphics, skin, boxX, boxY, box);
+        return true;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Flushed first, and deliberately: every other operation here leaves its work in a batch, so a
+     * caller that has just drawn a panel has not written any pixels yet -- and the chain would soften a
+     * framebuffer that does not contain it.
+     *
+     * <p>The three lines after the chain are the ones that matter, and each is a piece of state the
+     * passes set for themselves: the target they rebound, the scissor they leave enabled, and the blend
+     * they left in their own mode. Putting them back is what lets a caller blur <b>mid-frame</b> — see
+     * the method's own note for the card that vanished when this did not.
+     */
+    @Override
+    public boolean blur(float partialTick) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.level == null) {
+            // No world behind this screen, so there is nothing to soften and the chain would process a
+            // panorama. Reported as "nothing drawn" so a caller can draw its own scrim instead.
+            return false;
+        }
+        if (minecraft.options.getMenuBackgroundBlurriness() <= 0) {
+            return false;
+        }
+        flush();
+        minecraft.gameRenderer.processBlurEffect(partialTick);
+        minecraft.getMainRenderTarget().bindWrite(false);
+        RenderSystem.disableScissor();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
         return true;
     }
 

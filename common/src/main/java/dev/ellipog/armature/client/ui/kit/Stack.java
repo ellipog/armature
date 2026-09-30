@@ -188,6 +188,28 @@ public final class Stack {
         return add(new Element(Kind.BLOCK, key, "", width, height, insets, align));
     }
 
+    /**
+     * Appends everything in {@code other} below what this stack already holds.
+     *
+     * <h2>Why the kit needed this, and what its absence cost</h2>
+     *
+     * <p>Because a composition is a thing to be <b>reused</b>, and there was no way to nest one — so a
+     * caller that wanted a roster's rows inside a larger column re-listed those rows itself. That is
+     * exactly what happened: {@code PartyRoster.composition} describes a party's rows and the inset each
+     * one reserves for its Remove button, {@code PartyPanelLayout} wrote the same loop with its own copy
+     * of that inset, and Armature's version was left with <b>no callers at all</b>. One missing
+     * operation, and a duplicate grew in the gap — which is the fault this codebase names everywhere
+     * else as two descriptions of one thing.
+     *
+     * <p>The elements are moved rather than referenced: a stack is a description being built, and two
+     * stacks sharing one list would make "append this, then change it" change both.
+     */
+    public Stack append(Stack other) {
+        Objects.requireNonNull(other, "other");
+        elements.addAll(other.elements);
+        return this;
+    }
+
     // ------------------------------------------------------------------
     // Laying out
     // ------------------------------------------------------------------

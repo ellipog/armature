@@ -8,6 +8,7 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * A {@link GuiRenderer} that records what it was asked to draw instead of drawing it.
@@ -68,6 +69,8 @@ public final class RecordingRenderer implements GuiRenderer {
                 case FILL -> "fill(" + x + "," + y + " -> " + x2 + "," + y2 + ", " + hex(argb) + ")";
                 case TEXT -> "text(\"" + text + "\" at " + x + "," + y + ", " + hex(argb) + ")";
                 case ICON -> "icon(" + x + "," + y + " " + x2 + "px)";
+                case FACE -> "face(" + text + " at " + x + "," + y + " " + x2 + "px)";
+                case BLUR -> "blur(yes)";
                 case CLIP -> "clip(" + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case UNCLIP -> "unclip";
                 case FLUSH -> "flush";
@@ -80,7 +83,7 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /** What a recorded call was. */
-    public enum Op { FILL, TEXT, ICON, CLIP, UNCLIP, FLUSH }
+    public enum Op { FILL, TEXT, ICON, FACE, BLUR, CLIP, UNCLIP, FLUSH }
 
     private final List<Call> calls = new ArrayList<>();
     private final int charWidth;
@@ -127,6 +130,19 @@ public final class RecordingRenderer implements GuiRenderer {
     /**
      * {@inheritDoc}
      *
+     * <p>Recorded with the player's id in the text field and the box in {@code argb}, so a test can ask
+     * <i>whose</i> face was drawn where. The id is the only thing a caller chooses about a face, and a
+     * recording that dropped it could not tell two members' rows apart.
+     */
+    @Override
+    public boolean face(UUID player, int boxX, int boxY, int box) {
+        calls.add(new Call(Op.FACE, boxX, boxY, box, box, 0, player == null ? "" : player.toString()));
+        return iconsDraw;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
      * <p><b>Recorded rather than ignored</b>, and that is the whole value of it being here. A flush is
      * where a caller declares a layering boundary — "everything up to here is behind everything after
      * it" — so a test can assert the boundary exists by finding the marker between two draws. An
@@ -157,6 +173,18 @@ public final class RecordingRenderer implements GuiRenderer {
     @Override
     public boolean icon(ItemStack stack, int boxX, int boxY, int box) {
         calls.add(new Call(Op.ICON, boxX, boxY, box, box, 0, ""));
+        return iconsDraw;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Recorded, and answers like {@link #icon}: a screen that falls back to a scrim when there is no
+     * blur is a path worth being able to drive, and a recorder that always said yes could not drive it.
+     */
+    @Override
+    public boolean blur(float partialTick) {
+        calls.add(new Call(Op.BLUR, 0, 0, 0, 0, 0, ""));
         return iconsDraw;
     }
 

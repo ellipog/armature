@@ -5,6 +5,8 @@ import dev.ellipog.armature.client.ui.kit.Viewport;
 
 import net.minecraft.world.item.ItemStack;
 
+import java.util.UUID;
+
 /**
  * The only thing in either mod that draws. Every rectangle, every label and every icon goes through
  * here.
@@ -172,9 +174,61 @@ public interface GuiRenderer {
      */
     boolean icon(ItemStack stack, int boxX, int boxY, int box);
 
+    /**
+     * Draws a player's face, flat and from the front, so that it exactly fills a {@code box}-pixel square.
+     *
+     * <h2>Why the face and not a head</h2>
+     *
+     * <p>Because a head drawn as an item is a <b>model</b>: three sides, shading, and a perspective that
+     * belongs to an inventory rather than to a list of names. In a row beside a player's name what is
+     * wanted is the portrait — the same 8×8 face the tab list draws — and a portrait is a texture blit
+     * rather than a model, so the two operations are not each other's special case.
+     *
+     * <p>The lookup is the implementation's, and that is the point of putting it here: which skin a
+     * player has, and what to draw for one who has none, are questions about a client's caches rather
+     * than about rectangles.
+     *
+     * @return whether anything was drawn. A server in offline mode has no skins to look up, so a caller
+     *     must be able to fall back — the same contract as {@link #icon}.
+     */
+    boolean face(UUID player, int boxX, int boxY, int box);
+
     // ------------------------------------------------------------------
     // Clipping
     // ------------------------------------------------------------------
+
+    /**
+     * Softens everything drawn so far this frame, in place, and leaves the pipeline fit to draw into.
+     *
+     * <h2>What "so far" means, and why that is the useful operation</h2>
+     *
+     * <p>Minecraft's blur is a post-process over the framebuffer rather than a filter on a rectangle, so
+     * what it can soften is <b>what is already in the target</b>: the world, the background, and whatever
+     * this frame has drawn. For a modal behind a card that is exactly right — call it with the panel
+     * drawn and the card not yet drawn, and the panel goes soft while the card stays crisp.
+     *
+     * <h2>The state this puts back, which is the whole of why it is here</h2>
+     *
+     * <p>A post-process is not a drawing operation. It reprograms the pipeline for its own passes — it
+     * rebinds the render target and leaves the scissor and blending set to what those passes wanted — and
+     * vanilla only ever calls it as the first thing a screen does, so nothing in vanilla is drawn into
+     * the state it leaves behind. A caller that blurs <i>mid-frame</i>, with layers still to draw, is
+     * asking for exactly that, and it does not fail loudly: the layers drawn through a clip are fine
+     * (a clip sets its own scissor), and the ones drawn without one <b>disappear</b>.
+     *
+     * <p>That is a real fault and it cost a round to find: the modal card was the only thing in the
+     * frame drawn with no clip of its own, and blurring before it made it vanish. So this method's
+     * contract is the two halves together — process the chain, and put back the target, the scissor and
+     * blending — and a caller gets to think about <i>when</i> to blur rather than about what it broke.
+     *
+     * <p>Honours the client's menu-blurriness setting, the same one vanilla's menus do, so a player who
+     * has turned it off gets a scrim rather than a blur. {@code false} is that answer, and the one for a
+     * screen with no world behind it.
+     *
+     * @param partialTick the frame's partial tick, for the post chain's own timing
+     * @return whether anything was blurred, so a caller can fall back to a scrim
+     */
+    boolean blur(float partialTick);
 
     /**
      * Narrows drawing to a rectangle until the returned scope is closed.

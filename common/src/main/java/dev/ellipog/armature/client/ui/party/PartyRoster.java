@@ -89,7 +89,8 @@ public final class PartyRoster {
      * @param canRemove whether <b>the viewer</b> may remove them. See the class note: this is the same
      *                  answer the server will give
      */
-    public record Member(UUID id, String name, TeamRole role, boolean self, boolean owner, boolean canRemove) {
+    public record Member(UUID id, String name, TeamRole role, boolean self, boolean owner,
+                         boolean canRemove, boolean online) {
 
         /** What places this row, and what a click on it is routed by. */
         public String key() {
@@ -117,6 +118,25 @@ public final class PartyRoster {
         public String label() {
             return self ? name + " (you)" : name;
         }
+    }
+
+    /**
+     * Who is connected, as a roster has to know it.
+     *
+     * <h2>Why this is an interface rather than a set of ids</h2>
+     *
+     * <p>Because the two sides answer it from different things and neither should build the other's
+     * collection: a server has a player list it can ask directly, and a client has a snapshot that
+     * arrived with the answer already in it. One method covers both, and a caller with no answer writes
+     * {@code id -> false} rather than passing null.
+     */
+    @FunctionalInterface
+    public interface Online {
+
+        /** Nobody, for a caller that cannot know — a rehearsal, a preview, or a test. */
+        Online NOBODY = id -> false;
+
+        boolean isOnline(UUID player);
     }
 
     private final Team team;
@@ -149,10 +169,15 @@ public final class PartyRoster {
      * @param team   the team. A solo team is accepted and yields one row; see {@link #isReal}
      * @param viewer whose eyes this is. Determines {@code self}, {@code canRemove} and {@link #canDisband}
      * @param names  how to spell a member's name
+     * @param online who is connected right now. <b>A parameter rather than something read off the
+     *     team</b>, because a team is a stored fact about who belongs to it and says nothing about who
+     *     is online — that is a fact about a server, and only the caller has one. A caller that has no
+     *     answer passes {@link Online#NOBODY}, which draws every row as offline rather than guessing.
      */
-    public static PartyRoster of(Team team, UUID viewer, Function<UUID, String> names) {
+    public static PartyRoster of(Team team, UUID viewer, Function<UUID, String> names, Online online) {
         Objects.requireNonNull(team, "team");
         Objects.requireNonNull(names, "names");
+        Objects.requireNonNull(online, "online");
 
         // Sorted for the reason in the class note, and by mapping to a comparable tuple rather than by
         // an int comparator: `Comparator.comparingInt(...).reversed()` on authority alone leaves the
@@ -172,7 +197,8 @@ public final class PartyRoster {
                     entry.getValue(),
                     id.equals(viewer),
                     id.equals(team.owner()),
-                    team.canActOn(viewer, id)));
+                    team.canActOn(viewer, id),
+                    online.isOnline(id)));
         }
 
         return new PartyRoster(team, viewer, rows, team.persistent());
@@ -321,7 +347,7 @@ public final class PartyRoster {
      */
     public static PartyRoster fromParts(UUID teamId, String teamName, UUID owner,
                                         Map<UUID, TeamRole> roles, UUID viewer,
-                                        Function<UUID, String> names) {
+                                        Function<UUID, String> names, Online online) {
         Objects.requireNonNull(teamId, "teamId");
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(roles, "roles");
@@ -332,7 +358,7 @@ public final class PartyRoster {
         // authority on the client, which is precisely the drift this arrangement avoids.
         Team rebuilt = new Team(teamId, teamName == null ? "" : teamName, owner, roles,
                 java.util.Set.of(), 0L, true);
-        return of(rebuilt, viewer, names);
+        return of(rebuilt, viewer, names, online);
     }
 
     /**

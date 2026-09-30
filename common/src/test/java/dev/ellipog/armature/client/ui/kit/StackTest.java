@@ -266,4 +266,41 @@ class StackTest {
         assertEquals(first.slots(), second.slots());
         assertEquals(first.height(), second.height());
     }
+
+    @Test
+    void appendNestsAnotherStacksElements() {
+        // The operation whose absence produced a duplicate one level up: `PartyPanelLayout` wanted a
+        // roster's rows inside a taller column, could not nest them, and re-listed them itself -- with
+        // its own copy of the roster's inset, which left `PartyRoster.composition` with no callers.
+        Stack rows = Stack.stack().row("a", 10).gap(2).row("b", 10);
+
+        Layout layout = Stack.stack().row("title", 8).gap(4).append(rows).build(100, TEN);
+
+        assertEquals(List.of("title", "a", "b"),
+                layout.slots().stream().map(Slot::key).toList(),
+                "the appended rows come after the outer ones, in their own order");
+        assertEquals(34, layout.height(),
+                "and the height is the whole column: 8 + 4 + the appended stack's own 10 + 2 + 10");
+    }
+
+    @Test
+    void appendTakesACopyRatherThanSharingTheList() {
+        Stack rows = Stack.stack().row("a", 10);
+        Stack outer = Stack.stack().append(rows);
+
+        rows.row("late", 10);
+
+        Layout layout = outer.build(100, TEN);
+        assertEquals(1, layout.slots().size(),
+                "a row added to the inner stack after the append must not appear in the outer one -- "
+                        + "two stacks sharing one list is one thing with two names for it");
+    }
+
+    @Test
+    void appendingAnEmptyStackAddsNothing() {
+        Layout layout = Stack.stack().row("a", 10).append(Stack.stack()).row("b", 10).build(100, TEN);
+
+        assertEquals(2, layout.slots().size());
+        assertEquals(20, layout.height(), "no gap appeared where the empty stack was");
+    }
 }

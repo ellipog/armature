@@ -97,6 +97,14 @@ public final class ScrollView {
     private final Viewport viewport;
     private final Map<Object, AbstractWidget> children = new LinkedHashMap<>();
 
+    /**
+     * How each widget's rectangle is derived from the slot its key holds.
+     *
+     * <p>Only entries whose derivation is not the identity are stored, which is the common case and the
+     * reason this is a second map rather than a required argument everywhere.
+     */
+    private final Map<Object, Shape> shapes = new LinkedHashMap<>();
+
     /** The last layout applied, or null before the first {@link #apply}. */
     private Layout layout;
 
@@ -123,6 +131,27 @@ public final class ScrollView {
     // ------------------------------------------------------------------
 
     /**
+     * A widget's rectangle, derived from the slot the layout holds for it.
+     *
+     * <p>A function rather than a rectangle, so a caller cannot capture a position the layout has not
+     * produced yet: the slot it is handed is the one {@link #apply} is placing right now.
+     */
+    @FunctionalInterface
+    public interface Shape {
+
+        /** A widget that occupies its own row: the answer for every control that is the whole of one. */
+        Shape IDENTITY = slot -> slot;
+
+        /**
+         * The rectangle this widget occupies, in content coordinates.
+         *
+         * @return the rectangle, or null to hide the widget -- the honest answer for a row that no
+         *         longer offers the control, such as a permission that has since been withdrawn
+         */
+        Slot of(Slot slot);
+    }
+
+    /**
      * Registers a widget under a key the layout will place it by.
      *
      * <p>The key is not decoration: it is the only thing joining the caller's description of an element
@@ -131,8 +160,29 @@ public final class ScrollView {
      * control that exists, costs its layout height, and is never drawn.
      */
     public ScrollView put(Object key, AbstractWidget widget) {
+        return put(key, widget, Shape.IDENTITY);
+    }
+
+    /**
+     * The same, for a widget that occupies a <b>strip</b> of its row rather than the whole of it.
+     *
+     * <h2>Why a control can be smaller than its row</h2>
+     *
+     * <p>Because a row can carry more than one thing. The party panel's rows are a label with a button
+     * beside it, so the button's rectangle is a piece of its row rather than the row itself — and the
+     * derivation already exists as a tested pure function ({@code PartyRoster.removeSlot} places a
+     * member's Remove button, {@code PartyPanelLayout.buttonStrip} an action's). Handing that function
+     * here, at the moment the widget is registered, is what keeps placement from becoming a second copy
+     * of it: a caller that computed the strip itself and then had the layout place the whole row would
+     * have two derivations of one rectangle, which is the fault this kit exists to make unrepresentable.
+     *
+     * <p>The function is applied in <b>content</b> coordinates, before the viewport translates and
+     * culls, so it knows nothing about the scroll.
+     */
+    public ScrollView put(Object key, AbstractWidget widget, Shape shape) {
         Objects.requireNonNull(key, "key -- a widget with no key can never be matched to a slot");
         children.put(key, Objects.requireNonNull(widget, "widget"));
+        shapes.put(key, Objects.requireNonNull(shape, "shape"));
         return this;
     }
 
@@ -149,6 +199,7 @@ public final class ScrollView {
     /** Forgets every widget and the layout. For a screen rebuilding itself for a different quest. */
     public ScrollView clear() {
         children.clear();
+        shapes.clear();
         layout = null;
         shown = 0;
         hidden = 0;
@@ -254,10 +305,21 @@ public final class ScrollView {
                 continue;
             }
 
-            int x = viewport.screenX(slot.x());
-            int y = viewport.screenY(slot.y());
-            int w = Math.max(0, viewport.scaled(slot.width()));
-            int h = Math.max(0, viewport.scaled(slot.height()));
+            // The widget's own rectangle, which is its row's unless the caller derived a strip -- see
+            // `put`. A null answer is a control this layout does not offer, which is the same outcome
+            // as a row the caller registered nothing for: hidden, and therefore unclickable.
+            Slot at = shapes.getOrDefault(slot.key(), Shape.IDENTITY).of(slot);
+            if (at == null) {
+                widget.visible = false;
+                hidden++;
+                matched.add(slot.key());
+                continue;
+            }
+
+            int x = viewport.screenX(at.x());
+            int y = viewport.screenY(at.y());
+            int w = Math.max(0, viewport.scaled(at.width()));
+            int h = Math.max(0, viewport.scaled(at.height()));
 
             widget.setX(x);
             widget.setY(y);

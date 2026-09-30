@@ -43,6 +43,13 @@ class PartyRosterTest {
     private static final int WIDTH = 200;
 
     /** Three players, so a test can name them rather than build ids inline. */
+    /**
+     * Everybody connected, which is what most of these cases are about: who may remove whom does not
+     * depend on who is online, and a case that is about authority should not be reading a marker.
+     * `whoIsOnlineIsWhatTheCallerSaid` is the case that is about the marker.
+     */
+    private static final PartyRoster.Online EVERYBODY = id -> true;
+
     private static final UUID OWNER = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID OFFICER = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID MEMBER = UUID.fromString("00000000-0000-0000-0000-000000000003");
@@ -88,7 +95,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("the owner comes first, then by rank, whatever order the members map holds")
         void ownerFirstThenByRank() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertEquals(List.of(OWNER, OFFICER, MEMBER),
                     roster.members().stream().map(PartyRoster.Member::id).toList(),
@@ -118,7 +125,7 @@ class PartyRosterTest {
             Team team = new Team(UUID.randomUUID(), "late owner", OWNER, handedOver,
                     java.util.Set.of(), 0L, true);
 
-            PartyRoster roster = PartyRoster.of(team, OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(team, OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertEquals(OWNER, roster.members().get(0).id(),
                     "the owner leads, because that is what a roster is read for -- and the map it was "
@@ -136,7 +143,7 @@ class PartyRosterTest {
                     .withMember(zed, TeamRole.OFFICER)
                     .withMember(OFFICER, TeamRole.OFFICER);
 
-            PartyRoster roster = PartyRoster.of(team, OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(team, OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertEquals(List.of(OWNER, OFFICER, zed),
                     roster.members().stream().map(PartyRoster.Member::id).toList(),
@@ -147,7 +154,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("a member's own row is marked, and the label says so")
         void selfIsMarked() {
-            PartyRoster roster = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf, EVERYBODY);
 
             PartyRoster.Member self = roster.members().stream()
                     .filter(PartyRoster.Member::self).findFirst().orElseThrow();
@@ -162,7 +169,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("the owner flag is the owner, not the viewer")
         void ownerFlagIsTheOwners() {
-            PartyRoster roster = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertTrue(roster.members().get(0).owner(), "the first row is the owner");
             assertFalse(roster.members().stream()
@@ -194,7 +201,7 @@ class PartyRosterTest {
                             .withMember(MEMBER, viewer)
                             .withMember(OFFICER, target);
 
-                    PartyRoster roster = PartyRoster.of(team, MEMBER, PartyRosterTest::nameOf);
+                    PartyRoster roster = PartyRoster.of(team, MEMBER, PartyRosterTest::nameOf, EVERYBODY);
                     PartyRoster.Member row = roster.members().stream()
                             .filter(m -> m.id().equals(OFFICER)).findFirst().orElseThrow();
 
@@ -209,10 +216,10 @@ class PartyRosterTest {
         @Test
         @DisplayName("an owner may remove an officer and a member, and neither may remove the owner")
         void ownerOutranksEverybody() {
-            PartyRoster asOwner = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster asOwner = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             assertEquals(2, asOwner.removableCount(), "the owner may remove both of the others");
 
-            PartyRoster asOfficer = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf);
+            PartyRoster asOfficer = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf, EVERYBODY);
             assertEquals(1, asOfficer.removableCount(),
                     "an officer may remove the member and not the owner, and not themselves");
         }
@@ -220,7 +227,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("nobody may remove themselves, so the button is absent from your own row")
         void nobodyRemovesThemselves() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             PartyRoster.Member ownerRow = roster.members().get(0);
             assertTrue(ownerRow.self());
@@ -233,7 +240,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("a stranger to the party may remove nobody")
         void strangersRemoveNobody() {
-            PartyRoster roster = PartyRoster.of(party(), STRANGER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), STRANGER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertEquals(0, roster.removableCount(),
                     "a non-member has no authority here. The role model defaults a non-member to "
@@ -255,7 +262,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("a solo player has one row, and is a party of one only in size")
         void aSoloPlayerIsNotAParty() {
-            PartyRoster roster = PartyRoster.of(solo(), MEMBER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(solo(), MEMBER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertEquals(1, roster.memberCount());
             assertFalse(roster.isReal(),
@@ -271,7 +278,7 @@ class PartyRosterTest {
         @DisplayName("a party of one is a real party, and may be left and disbanded")
         void aPartyOfOneIsAParty() {
             Team alone = Team.created(UUID.randomUUID(), "just me", OWNER, 0L);
-            PartyRoster roster = PartyRoster.of(alone, OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(alone, OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             assertEquals(1, roster.memberCount(), "the same size as a solo team");
             assertTrue(roster.isReal(),
@@ -293,7 +300,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("the height is the rows placed, not a second sum that agrees")
         void heightIsTheRows() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
 
             assertEquals(3, layout.slots().size(), "one slot per member, and nothing else");
@@ -313,7 +320,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("every row is found by its key, and is inside the column")
         void rowsArePlacedAndFindable() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
 
             for (PartyRoster.Member member : roster.members()) {
@@ -329,7 +336,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("rows do not overlap each other")
         void rowsDoNotOverlap() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
             List<Slot> slots = layout.slots();
 
@@ -352,7 +359,7 @@ class PartyRosterTest {
             // The property that keeps a name from running under the next row's button. Every row gives
             // up REMOVE_WIDTH + both insets, including the rows that carry no button -- so two rows
             // never have different text widths for a reason nothing on screen explains.
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
 
             int widest = layout.slots().stream().mapToInt(Slot::width).max().orElseThrow();
@@ -366,7 +373,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("a Remove button is inside its row, and never outside the column")
         void removeButtonIsInsideItsRow() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
 
             int checked = 0;
@@ -410,7 +417,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("a button key names the member it removes, and an unrelated key names nobody")
         void removeKeysRoundTrip() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             for (PartyRoster.Member member : roster.members()) {
                 assertEquals(member.id(), PartyRoster.removeTarget(member.removeKey()),
@@ -427,7 +434,7 @@ class PartyRosterTest {
         @Test
         @DisplayName("the row keys and the button keys are all distinct")
         void keysAreDistinct() {
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
 
             List<Object> rosterKeys = layout.slots().stream().map(Slot::key).toList();
@@ -449,7 +456,7 @@ class PartyRosterTest {
             // A window can be dragged smaller than anything sensible. A negative-width slot would place
             // a rectangle that reads correctly everywhere it is used, which is the shape of bug that
             // survives to a screenshot.
-            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf);
+            PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
             for (int width : new int[] {0, -1, 1, 8}) {
                 Layout layout = roster.stack(width, MEASURE);
@@ -464,8 +471,30 @@ class PartyRosterTest {
     @DisplayName("a roster says what it is, which is what a log line and a failure want")
     void toStringIsUseful() {
         assertEquals("PartyRoster(3 member(s), viewer may remove 2)",
-                PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf).toString());
+                PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY).toString());
         assertEquals("PartyRoster(1 member(s), solo, viewer may remove 0)",
-                PartyRoster.of(solo(), MEMBER, PartyRosterTest::nameOf).toString());
+                PartyRoster.of(solo(), MEMBER, PartyRosterTest::nameOf, EVERYBODY).toString());
     }
+
+    @Test
+    void whoIsOnlineIsWhatTheCallerSaidRatherThanAGuess() {
+        PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf,
+                id -> id.equals(OFFICER));
+
+        PartyRoster.Member officer = roster.members().stream()
+                .filter(member -> member.id().equals(OFFICER)).findFirst().orElseThrow();
+        PartyRoster.Member owner = roster.members().stream()
+                .filter(member -> member.id().equals(OWNER)).findFirst().orElseThrow();
+
+        assertTrue(officer.online(),
+                "the member the caller named as connected is drawn as connected");
+        assertFalse(owner.online(),
+                "and the owner is not, because the caller did not name them -- the roster draws what it "
+                        + "is told, rather than assuming the person reading it is online");
+
+        assertTrue(PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, PartyRoster.Online.NOBODY)
+                        .members().stream().noneMatch(PartyRoster.Member::online),
+                "and a caller with no answer says nobody rather than guessing");
+    }
+
 }

@@ -131,6 +131,23 @@ public class ArmatureButton extends AbstractWidget {
     /** Whether the pointer is down on this button. Held so the pressed state can be drawn. */
     private boolean held;
 
+    /**
+     * Hover as told by the caller, or null to work it out the usual way.
+     *
+     * <h2>Why a control can need telling</h2>
+     *
+     * <p>Because a widget's hover is worked out in {@code render} -- the base class's drawing pass checks
+     * the pointer against the control's rectangle and then calls {@code renderWidget}. A control that
+     * pass never draws therefore never hears about the pointer: its presses still work, because input
+     * walks the children, and its hover never does. The book's header is exactly that case, since the
+     * pass is clipped below the title bar -- and its two controls were the only ones in that screen that
+     * did not fade, through several rounds of looking in the theme, the variant and the registration.
+     *
+     * <p>A {@code Boolean} rather than a {@code boolean} because "nobody told me" and "I was told no" are
+     * different answers: the first falls back to the widget's own reading, the second overrides it.
+     */
+    private Boolean toldHover;
+
     public ArmatureButton(int x, int y, int width, int height, Component label,
                           Consumer<ArmatureButton> onPress) {
         super(x, y, width, height, label);
@@ -273,6 +290,17 @@ public class ArmatureButton extends AbstractWidget {
         return flat ? ArmatureControlStyle.Variant.FLAT : ArmatureControlStyle.Variant.PLAIN;
     }
 
+    /**
+     * Tells this control whether the pointer is over it. See {@link #toldHover} for why a caller would.
+     *
+     * <p>For a screen that draws one of these itself, which is the only situation the pass cannot answer:
+     * say where the pointer is on the way past, and the control fades like every other one.
+     */
+    public ArmatureButton hoverTold(boolean over) {
+        toldHover = over;
+        return this;
+    }
+
     /** The tooltip lines, or null. For the owning screen to draw. */
     public List<String> tooltip() {
         return tooltip;
@@ -319,7 +347,7 @@ public class ArmatureButton extends AbstractWidget {
         // One source for the appearance, so this button and anything that draws it agree. The
         // precedence -- disabled, then selected, then held, then hovered -- is documented there.
         ArmatureControlStyle.Variant variant = variant();
-        boolean hovered = isHoveredOrFocused();
+        boolean hovered = toldHover != null ? toldHover : isHoveredOrFocused();
 
         // Told where it is heading every frame, which is how the tween catches up when the pointer
         // arrives while the last transition is still running -- see Tween.retarget. Passing the state
