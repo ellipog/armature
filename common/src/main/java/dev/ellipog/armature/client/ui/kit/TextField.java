@@ -164,6 +164,33 @@ public final class TextField {
      * <p>Here rather than in the widget because it is a comparison against a clock and nothing else —
      * which is exactly the shape of thing that gets written twice, once per text field, and then differs.
      */
+    /**
+     * The caret position nearest {@code offset} pixels into the value.
+     *
+     * <h2>Why this is here and not in the widget</h2>
+     *
+     * <p>Because it is arithmetic on a string and a measuring function, which makes it the one part of
+     * "where did I click" that can be asserted without a client -- and it is the part that goes wrong
+     * quietly, off by one character, in a way a screenshot shows as a caret that lands in the wrong place.
+     * The widget supplies a font's own {@code width}; a test supplies six pixels a character.
+     *
+     * <p>The nearest boundary wins rather than the last one that fits, so a click in the gap between two
+     * letters lands on the nearer of them, which is what every text field does.
+     */
+    public int caretForWidth(double offset, java.util.function.ToIntFunction<String> widthOf) {
+        String text = value();
+        int best = 0;
+        double bestDistance = Math.abs(offset);
+        for (int i = 1; i <= text.length(); i++) {
+            double distance = Math.abs(offset - widthOf.applyAsInt(text.substring(0, i)));
+            if (distance < bestDistance) {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
     public boolean caretVisible(long nowMillis) {
         return (nowMillis / BLINK_MILLIS) % 2 == 0;
     }
