@@ -78,6 +78,51 @@ public record Team(UUID id,
         return members.getOrDefault(player, TeamRole.MEMBER);
     }
 
+    /**
+     * Whether {@code actor} may remove {@code target} from this team.
+     *
+     * <h2>Why this is a method on the team rather than logic inside a manager</h2>
+     *
+     * <p>Because <b>three</b> things need the same answer and they are in two different repos. The
+     * stored manager enforces it when a kick is asked for; a command has to know it before it asks, so
+     * it can say why rather than reporting a bare false; and a UI has to know it while drawing, because
+     * the alternative is a Remove button that does nothing when pressed.
+     *
+     * <p>Until this existed the rule was written once, in {@code StoredTeamManager.kick}, and every
+     * other reader would have had to restate it. That is the shape of fault this codebase has recorded
+     * more than once — two expressions that agree on the day they are written — and the symptom here
+     * would be specific and bad: a button drawn for everybody, and a server that refuses some of them.
+     *
+     * <p>So it is here, on the record that holds both roles, and every caller asks.
+     *
+     * <h2>The four conditions, each doing something</h2>
+     *
+     * <ul>
+     *   <li><b>Not yourself.</b> Removing yourself is {@link TeamManager#leave}, which is a different
+     *       act with different consequences — a leave keeps your own progress, and there is no reason
+     *       for a kick to be able to do it. Without this, an owner could kick themselves and leave
+     *       ownership to be resolved by the fallback in {@link #withoutMember}, which is a rule about
+     *       a team somebody left rather than one about a team its owner abandoned.</li>
+     *   <li><b>Actor is a member.</b> {@code roleOrMember} answers MEMBER for a non-member, which is
+     *       the right default for a permission check and means a stranger would otherwise pass the
+     *       authority test against a member of equal rank. A non-member has no authority here at all,
+     *       and the check has to be explicit because the default is deliberately forgiving.</li>
+     *   <li><b>Target is a member.</b> Nothing to remove, and a false here is a better answer than a
+     *       manager resolving "who is this" twice.</li>
+     *   <li><b>Authority.</b> Strictly higher, so an officer cannot remove another officer. That is
+     *       the role model's whole content — see {@link TeamRole} on why there are three and not more.</li>
+     * </ul>
+     */
+    public boolean canActOn(UUID actor, UUID target) {
+        if (actor == null || target == null || actor.equals(target)) {
+            return false;
+        }
+        if (!isMember(actor) || !isMember(target)) {
+            return false;
+        }
+        return roleOrMember(actor).outranks(roleOrMember(target));
+    }
+
     public Set<UUID> memberIds() {
         return members.keySet();
     }

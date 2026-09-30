@@ -226,7 +226,11 @@ public final class StoredTeamManager implements MutableTeamManager {
         }
         Team team = teamOfTarget.get();
 
-        if (!team.isMember(actor) || !team.roleOrMember(actor).outranks(team.roleOrMember(target))) {
+        // The rule is the team's, not this method's. It used to be written out here as three
+        // conditions, and it was the *only* copy -- so a command wanting to say why it refused, or a
+        // panel wanting to know whether to draw a Remove button, had nowhere to ask and would have
+        // restated it. See Team.canActOn for the three readers and why that matters.
+        if (!team.canActOn(actor, target)) {
             return false;
         }
         return depart(team, target, TeamEvents.Reason.KICKED);
