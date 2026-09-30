@@ -7,6 +7,7 @@ import dev.ellipog.armature.api.teams.TeamRole;
 import dev.ellipog.armature.impl.teams.PartySource;
 import dev.ellipog.armature.impl.teams.PartyTeamAdapter;
 import dev.ellipog.armature.impl.teams.TeamProvider;
+import dev.ellipog.armature.impl.teams.TeamProviders;
 
 import dev.ftb.mods.ftbteams.api.FTBTeamsAPI;
 import dev.ftb.mods.ftbteams.api.Team;
@@ -126,8 +127,31 @@ public final class FtbTeams implements TeamProvider, PartySource {
         return false;
     }
 
+    /**
+     * Subscribes to FTB's party events, whether or not FTB ends up being the chosen source.
+     *
+     * <p><b>This is the fix for a real deadlock, and the shape of it is worth stating.</b> The bridge
+     * used to be installed from {@link #create}, which is only called for the source that <i>wins</i>
+     * the resolution — and FTB only wins when it already holds a party. So on a server with FTB
+     * installed and nobody yet in a party, FTB lost to the stored source, `create` was never called,
+     * and the bridge was therefore never installed. Which meant that the one event that could have
+     * told us a party had appeared was the event we had not subscribed to. A party created in that
+     * session announced itself to nobody, and the server's log stayed silent.
+     *
+     * <p>Installing it here breaks the loop, because this runs for every loaded source before the
+     * resolution decides anything. FTB hears about the party, and the bridge clears the cache so the
+     * <i>next</i> ask re-resolves and finds FTB's party waiting — see the handlers below.
+     */
+    @Override
+    public void attachListeners(MinecraftServer server) {
+        bridge();
+    }
+
     @Override
     public TeamManager create(MinecraftServer server) {
+        // Belt and braces: attachListeners has normally run already, from TeamProviders.resolve. Kept
+        // because create() is the other path that reaches this adapter, and a bridge that depends on
+        // which path ran first is exactly the kind of ordering assumption that produced the bug above.
         bridge();
         return adapter;
     }
@@ -251,6 +275,13 @@ public final class FtbTeams implements TeamProvider, PartySource {
             if (server == null) {
                 return;
             }
+
+            // BEFORE the event, and the order is deliberate rather than incidental: a listener that
+            // asks Teams.of(server) should see the source this party belongs to, and it would see the
+            // stale answer if the two were the other way round. The party now exists, so the reason
+            // FTB was passed over no longer holds.
+            TeamProviders.invalidate(server);
+
             TeamEvents.MEMBER_JOINED.invoker().onMemberJoined(server,
                     PartyTeamAdapter.toTeam(partyOf(event.getTeam())), event.getPlayer().getUUID());
         });
@@ -268,11 +299,20 @@ public final class FtbTeams implements TeamProvider, PartySource {
             if (server == null || !event.getTeam().isPartyTeam()) {
                 return;
             }
+
+            // Symmetric with the join handler, and it matters for the same reason in reverse: if the
+            // party that made FTB the source is gone, the source should be re-decided rather than
+            // remembered. Leaving it cached would keep answering with a party that no longer exists.
+            TeamProviders.invalidate(server);
+
             TeamEvents.MEMBER_LEFT.invoker().onMemberLeft(server,
                     PartyTeamAdapter.toTeam(partyOf(event.getTeam())), event.getPlayerId(),
                     TeamEvents.Reason.LEFT);
         });
 
-        Constants.LOG.info("armature: bridging FTB Teams' party events onto Armature's TeamEvents");
+        // The word "whether or not" is the load-bearing part: this line appears on a server where FTB
+        // is NOT the chosen source, and it has to. See attachListeners.
+        Constants.LOG.info("armature: listening for FTB Teams' party events (whether or not FTB is the "
+                + "chosen source on this server)");
     }
 }

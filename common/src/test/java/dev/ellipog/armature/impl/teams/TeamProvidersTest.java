@@ -115,6 +115,37 @@ class TeamProvidersTest {
     }
 
     @Test
+    @DisplayName("the stored fallback is a floor, not a rival, so it is never warned about")
+    void theStoredFallbackIsNotARival() {
+        TeamProvider ftb = source("ftbteams", true);
+        TeamProvider fallback = StoredTeamManager.provider();
+
+        // The property that drives the warning. A parties mod is a real alternative to another parties
+        // mod; the stored source is what answers when nothing else can, and it says yes on every
+        // server. So the first is a rival and the second is not.
+        assertFalse(ftb.isFallback(), "a parties mod is a genuine alternative");
+        assertTrue(fallback.isFallback(), "the stored source is the floor of the chain");
+
+        // Measured on a real boot, which is how this was found: the warning named 'stored' on a server
+        // running exactly ONE parties mod, and told the operator they had two. A line that is always
+        // present and always wrong is worse than no line, because it teaches the reader to skip it.
+        assertEquals(List.<String>of(), TeamProviders.rivals(List.of(ftb, fallback), ftb),
+                "nothing to report: the loser is the fallback, and it is present everywhere");
+
+        TeamProvider opac = source("openpartiesandclaims", true);
+        assertEquals(List.of("openpartiesandclaims"),
+                TeamProviders.rivals(List.of(ftb, opac, fallback), ftb),
+                "but a second parties mod IS worth reporting -- that is the case the message exists for, "
+                        + "and it is the only case where the choice between sources is a guess");
+
+        assertEquals(List.of("ftbteams", "openpartiesandclaims"),
+                TeamProviders.rivals(List.of(ftb, opac, fallback), fallback),
+                "and if the fallback ever won, every real alternative is worth naming -- which cannot "
+                        + "happen while it is last in the chain, so this pins the intent rather than a "
+                        + "reachable state");
+    }
+
+    @Test
     @DisplayName("a chain with no fallback is refused rather than guessed at")
     void aChainWithNoFallbackIsRefused() {
         IllegalStateException thrown = assertThrows(IllegalStateException.class, () ->

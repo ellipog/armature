@@ -58,6 +58,31 @@ public interface TeamProvider {
     boolean isPresent(MinecraftServer server);
 
     /**
+     * A chance to subscribe to this source's own mod events, whether or not it is the chosen source.
+     *
+     * <p>Called once per server for every loaded source, <b>before</b> the resolution decides anything
+     * — and the "whether or not" is the whole point of the method rather than a detail.
+     *
+     * <p>A source that has its own events needs this to be independent of winning, because a source
+     * that can <i>announce</i> a change is often the only way to find out that a change happened. FTB
+     * Teams is the case that forced it: its `isPresent` is false while nobody has formed a party, so
+     * it never wins, so its event bridge was never installed, so a party created afterwards could
+     * never announce itself. The bridge was gated behind a condition the bridge itself would have
+     * satisfied. Installed up front, the first party announces itself and the next resolution picks
+     * the source it belongs to.
+     *
+     * <p>Default is nothing, because most sources have no events to bridge — Armature's own store
+     * fires them from its own mutations and has nothing to subscribe to.
+     *
+     * <p>Implementations must be safe to call more than once: a re-resolution, or a registration
+     * arriving later, calls this again.
+     *
+     * @param server the server the events will belong to; never null
+     */
+    default void attachListeners(MinecraftServer server) {
+    }
+
+    /**
      * Builds the manager for this server. Only called when {@link #isPresent} returned true.
      *
      * <p>Separate from {@code isPresent} because a source that is merely <i>asking</i> whether it
@@ -65,4 +90,28 @@ public interface TeamProvider {
      * manager it is about to discard.
      */
     TeamManager create(MinecraftServer server);
+
+    /**
+     * Whether this source is the floor of the chain rather than a real alternative.
+     *
+     * <p>Exactly one source is, and it is the one that says yes unconditionally — Armature's own store,
+     * which needs nothing installed and is always there to answer. False by default, because a parties
+     * mod is a genuine alternative and a source written by somebody else has no business claiming
+     * otherwise.
+     *
+     * <p><b>This exists because of a log line that lied.</b> The resolution warns when a second source
+     * is present and losing, so that a server operator knows the choice between two parties mods was
+     * arbitrary. But the stored source is present on <i>every</i> server — that is what makes it a
+     * usable floor — so the warning fired every time, naming {@code stored}, and told everybody who
+     * read it that they had two parties mods installed. Observed on a real boot: it named
+     * {@code stored} on a server running exactly one. A warning that is always on and always wrong is
+     * worse than no warning, because it teaches the reader to skip the line that would matter.
+     *
+     * <p>So the fallback says so, and {@link TeamProviders} excludes it from that warning. The
+     * behaviour is otherwise unchanged: it is still a candidate, and it is still what answers when
+     * nothing else can.
+     */
+    default boolean isFallback() {
+        return false;
+    }
 }

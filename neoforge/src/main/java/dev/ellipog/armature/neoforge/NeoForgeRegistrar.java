@@ -40,6 +40,17 @@ public final class NeoForgeRegistrar implements Registrar {
         return new NeoForgeRegistrar(modEventBus, modId);
     }
 
+    /**
+     * Queues an entry on this mod's {@link DeferredRegister} for {@code registry}'s key.
+     *
+     * <p><b>No duplicate check here, and that is deliberate rather than an omission.</b> The
+     * corresponding check on Fabric has to exist because vanilla's own is a no-op outside an IDE —
+     * see {@code FabricRegistrar}, which quotes the decompiled line. On NeoForge there is nothing to
+     * compensate for: a {@code DeferredRegister} collects the entries itself and NeoForge rejects a
+     * repeated name during its registration phase, with the mod and the name. A check here would also
+     * be a check against the wrong thing, because nothing has been written to the real registry yet —
+     * {@code registry.containsKey(id)} would answer false for an id this mod has already queued.
+     */
     @Override
     public <T> void register(Registry<T> registry, ResourceLocation id, Supplier<? extends T> value) {
         if (!modId.equals(id.getNamespace())) {

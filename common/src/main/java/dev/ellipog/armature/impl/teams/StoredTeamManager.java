@@ -92,6 +92,18 @@ public final class StoredTeamManager implements MutableTeamManager {
                 return true;
             }
 
+            /**
+             * True, and it is the only source for which this is true.
+             *
+             * <p>Which is the point: this source answers on every server, so naming it in the
+             * "another source is present and losing" warning would fire on every server and tell the
+             * operator about two parties mods they do not have. See {@link TeamProvider#isFallback}.
+             */
+            @Override
+            public boolean isFallback() {
+                return true;
+            }
+
             @Override
             public TeamManager create(MinecraftServer server2) {
                 return of(server2);

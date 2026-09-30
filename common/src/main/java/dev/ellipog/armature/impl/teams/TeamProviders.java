@@ -182,39 +182,59 @@ public final class TeamProviders {
      *         list with no fallback in it
      */
     static TeamManager choose(MinecraftServer server, List<TeamProvider> candidates) {
-        TeamProvider winner = null;
-        List<String> alsoPresent = new ArrayList<>();
-
+        List<TeamProvider> present = new ArrayList<>();
         for (TeamProvider candidate : candidates) {
-            if (!present(candidate, server)) {
-                continue;
-            }
-            if (winner == null) {
-                winner = candidate;
-            }
-            else {
-                alsoPresent.add(candidate.id());
+            if (present(candidate, server)) {
+                present.add(candidate);
             }
         }
 
-        if (winner == null) {
+        if (present.isEmpty()) {
             throw new IllegalStateException("no team provider is available for this server, and the "
                     + "list has no fallback in it. The stored provider says yes unconditionally, so "
                     + "it belongs at the end of every chain.");
         }
 
+        TeamProvider winner = present.get(0);
         TeamManager manager = winner.create(server);
         Constants.LOG.info("armature: teams come from '{}'", manager.name());
-        for (String loser : alsoPresent) {
+
+        for (String rival : rivals(present, winner)) {
             // The both-installed case, said out loud. It is not merely information: the choice above
             // is a heuristic, and this is the only place it becomes visible to anybody. See the class
             // comment's note on getPrimarySystemName for what the API would need in order to answer it
             // properly.
+            //
+            // Which sources count as rivals is `rivals` below, and it deliberately excludes the
+            // fallback. Warning about `stored` would fire on every server -- it says yes
+            // unconditionally, which is what makes it a usable floor -- and would tell the operator
+            // they had two parties mods installed. Measured on a real boot: this line named 'stored'
+            // on a server running exactly one.
             Constants.LOG.warn("armature: '{}' is also present and lower in precedence, so its teams "
-                    + "are not being used. Both parties mods installed is a choice this cannot make "
-                    + "for you -- see TeamProviders", loser);
+                    + "are not being used. Two parties mods installed is a choice this cannot make "
+                    + "for you -- see TeamProviders", rival);
         }
         return manager;
+    }
+
+    /**
+     * The present sources that lost <i>and</i> are worth telling somebody about.
+     *
+     * <p>Everything present except the winner and except the fallback. Split out as a pure function so
+     * the decision is testable: what belongs in that warning is a judgement about meaning, and the log
+     * line it feeds is not something a unit test can read.
+     *
+     * @param present the sources that said yes, in chain order — the winner is the first
+     * @param winner  the one that was chosen; excluded
+     */
+    static List<String> rivals(List<TeamProvider> present, TeamProvider winner) {
+        List<String> out = new ArrayList<>();
+        for (TeamProvider source : present) {
+            if (source != winner && !source.isFallback()) {
+                out.add(source.id());
+            }
+        }
+        return out;
     }
 
     /**
@@ -237,7 +257,54 @@ public final class TeamProviders {
     }
 
     private static TeamManager resolve(MinecraftServer server) {
-        return choose(server, providers());
+        List<TeamProvider> chain = providers();
+
+        // Before choosing: every loaded source gets to subscribe to its own mod's events, whether or
+        // not it is about to win. See TeamProvider.attachListeners for why that ordering is not
+        // cosmetic -- a source that can announce a change is often the only way to learn that one
+        // happened, and gating the subscription behind winning means never hearing about the thing
+        // that would have made it win.
+        for (TeamProvider candidate : chain) {
+            try {
+                candidate.attachListeners(server);
+            }
+            catch (RuntimeException | LinkageError e) {
+                // A source that cannot subscribe is one we can still read from, so this is logged and
+                // not fatal. It is worth a warning rather than debug: the visible consequence is
+                // silence where a listener was expected, and silence is the hardest thing to diagnose.
+                Constants.LOG.warn("armature: team source '{}' could not attach its listeners ({}); it "
+                        + "can still be read from, but its own changes will not be announced",
+                        candidate.id(), e.toString());
+            }
+        }
+
+        return choose(server, chain);
+    }
+
+    /**
+     * Forgets the resolution for a server, so the next {@link #of} works it out again.
+     *
+     * <p>Public because an adapter needs it, and it is the mechanism behind the one thing a cached
+     * answer cannot express: <b>the answer changing during a session.</b> The resolution is decided
+     * once per server and remembered, which is right for everything the decision is usually about —
+     * which mods are installed does not change while a server runs.
+     *
+     * <p>But "does this source hold a party yet" <i>does</i> change, and it is the third condition of
+     * the resolution. So a source that has just watched a party appear calls this, and the next ask
+     * returns it. Without it, a server where the first party is formed after startup would answer
+     * `stored` for the whole session, no matter how many parties its players created — which is a
+     * worse failure than it sounds, because everything <i>looks</i> correct: FTB's own command
+     * succeeded, its chat message appeared, and the only symptom is that nothing else noticed.
+     *
+     * <p>Deliberately not private. The alternative is a callback threaded through the provider
+     * interface, which would be more machinery for one caller; this is a public method on a class in
+     * {@code impl}, called by an adapter in {@code impl}, and the javadoc says who is meant to use it.
+     */
+    public static void invalidate(MinecraftServer server) {
+        if (RESOLVED.remove(server) != null) {
+            Constants.LOG.info("armature: re-resolving teams for this server, because a source's own "
+                    + "teams changed");
+        }
     }
 
     /**

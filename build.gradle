@@ -61,6 +61,12 @@ def registerDeploy = { String taskName, String subproject, String jarTask, Strin
                 // refuses to overwrite an open file, and the exception names the *jar* rather than the
                 // game -- so it reads as a permissions problem on a path nobody deliberately chose.
                 //
+                // Not the only cause, and the wording says so rather than guessing. Measured: a jar in
+                // this profile reported WinError 32 while no java.exe was running at all -- the holder
+                // was something else on the machine, and a plain truncating copy still got through. So
+                // "close Minecraft" is the first thing to try and not the last, and check_deploy.py is
+                // what actually settles whether the jar landed.
+                //
                 // A warning rather than a failure, deliberately. The other things a deploy does -- the
                 // other loader, the test combos, the Maven publish -- are still worth doing, and
                 // failing here stops all of them. That is how a locked profile jar used to leave the
@@ -71,8 +77,11 @@ def registerDeploy = { String taskName, String subproject, String jarTask, Strin
                 logger.warn("deploy: SKIPPED ${target.name}")
                 logger.warn("deploy:   ${e.reason ?: 'the file is locked'}")
                 logger.warn("deploy:   ${target}")
-                logger.warn("deploy:   Minecraft is probably running. Close it and run this again for")
-                logger.warn("deploy:   the game profile; the test combos are deployed either way.")
+                logger.warn("deploy:   Something is holding this file open -- usually Minecraft, and not")
+                logger.warn("deploy:   necessarily: this has been seen with no java.exe running at all.")
+                logger.warn("deploy:   Close the game and anything else that has scanned the folder, then")
+                logger.warn("deploy:   re-run. The test combos are deployed either way, and check_deploy.py")
+                logger.warn("deploy:   is what says whether this profile actually got the new jar.")
             }
         }
     }

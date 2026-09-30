@@ -41,8 +41,18 @@ public interface Registrar {
      * inside the supplier beyond constructing it — no registration, no lookups, no
      * touching other mods.
      *
+     * <p><b>Call it once per id.</b> A second registration is refused rather than performed, and it
+     * is worth knowing why that needs saying: vanilla <i>detects</i> a duplicate id and then declines
+     * to act on it, because it reports through {@code Util.pauseInIde}, which returns the exception
+     * instead of throwing it — so outside an IDE the check is a no-op and the registry quietly gains
+     * a second entry under the same name. The damage then surfaces somewhere unrelated, typically
+     * when a client joins a server and {@code fabric-registry-sync} cannot reconcile the two. The
+     * usual cause is a mod initialising twice, which is easy to do by accident: every loader gives a
+     * mod a common entry point and a client one, and a client runs both.
+     *
      * @throws IllegalArgumentException if {@code id}'s namespace does not match
      *         {@link #forMod}'s mod id
+     * @throws IllegalStateException if {@code id} is already registered in {@code registry}
      */
     <T> void register(Registry<T> registry, ResourceLocation id, Supplier<? extends T> value);
 }
