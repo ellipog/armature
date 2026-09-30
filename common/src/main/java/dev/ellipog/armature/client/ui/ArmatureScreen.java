@@ -61,6 +61,34 @@ public abstract class ArmatureScreen extends Screen {
     }
 
     /**
+     * Nothing: this class is for panels that draw their own background, so vanilla's is suppressed once,
+     * here, for every screen that follows.
+     *
+     * <h2>Why this is not each screen's business, and what happens when it is</h2>
+     *
+     * <p>{@code Screen.render} draws its background <b>after</b> a subclass's own content and <b>before</b>
+     * the widget pass. So a panel that draws its own card leaves vanilla's blur and menu gradient landing
+     * between the two halves of itself: everything the panel <i>draws</i> comes out washed out, and every
+     * <i>widget</i> stays crisp. That is a strange-looking fault -- the developer screen shipped with it,
+     * and its washed rows were exactly the ones with no control in them, so the fade had a hard edge in the
+     * middle of the list -- and it is invisible in the code, because the offending call is on the other
+     * side of {@code super.render}.
+     *
+     * <p>The quest book found it first and carried its own override for a while, with the whole story in
+     * its class comment: that screen was blurred, world and text alike, because it called
+     * {@code super.render} last and the blur post-effect processed a framebuffer that already held its
+     * text. One screen remembering is one screen; a base class doing it is every screen after it.
+     *
+     * <p>A subclass that wants vanilla's background -- a plain options screen, say -- overrides this
+     * again. Nothing here stops it: the same shape as {@link #renderContent}'s note about screens that
+     * have to own {@code render}.
+     */
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // No blur, no panorama, no menu texture.
+    }
+
+    /**
      * Draws this screen's own content, through the seam. The default draws nothing.
      *
      * <h2>Why this exists, and what it saves a subclass</h2>
