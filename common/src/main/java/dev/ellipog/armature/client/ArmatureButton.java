@@ -109,6 +109,23 @@ public class ArmatureButton extends AbstractWidget {
     private boolean section;
     private boolean borderless;
     private boolean alignLeft;
+
+    /**
+     * How far a left-aligned label sits from its control's left edge.
+     *
+     * <h2>Why two was too few, and what it looked like</h2>
+     *
+     * <p>Two pixels was chosen to match what the *centred* branch leaves on the narrower side, so a
+     * column of controls would line up whichever way each one was aligned. That reasoning holds for a
+     * label and not for a control with a fill behind it: on a filled row a label two pixels from the
+     * border reads as touching it, and the report was exactly that -- the chapter rows "missing some
+     * space on left between border and text".
+     *
+     * <p>Six, which is roughly the padding every other filled row in this UI uses, and is applied to
+     * every left-aligned control rather than to the sidebar's rows alone: the party panel's rows are
+     * filled the same way and would have had the same complaint.
+     */
+    private static final int LABEL_INSET = 6;
     private int textColour = ArmatureTheme.title();
 
     /** Whether the pointer is down on this button. Held so the pressed state can be drawn. */
@@ -392,7 +409,7 @@ public class ArmatureButton extends AbstractWidget {
         // two pixels is what the centred branch leaves on the narrower side. See `alignLeft` for which
         // of the two a caller wants and why a column needs the one it needs.
         int textX = alignLeft
-                ? textLeft + 2
+                ? textLeft + LABEL_INSET
                 : textLeft + (textWidth - renderer.textWidth(shown)) / 2;
         renderer.text(shown, textX, getY() + (height - 8) / 2, colour);
     }
