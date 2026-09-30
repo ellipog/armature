@@ -1,5 +1,7 @@
 package dev.ellipog.armature.client.ui;
 
+import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
+import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.client.ui.kit.Watch;
 
 import net.minecraft.client.gui.GuiGraphics;
@@ -52,7 +54,32 @@ public abstract class ArmatureScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         refreshIfMoved();
+        renderContent(new GuiGraphicsRenderer(graphics), mouseX, mouseY, partialTick);
+        // The widget pass stays on this side of the seam, and deliberately: the controls are
+        // `AbstractWidget`s and only the base class can draw them from the context it was handed.
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    /**
+     * Draws this screen's own content, through the seam. The default draws nothing.
+     *
+     * <h2>Why this exists, and what it saves a subclass</h2>
+     *
+     * <p>Because drawing needs the game's own graphics type -- {@code Screen.render} takes one and there
+     * is no other way in -- so every screen that wants to draw has to sit on the allow-list
+     * {@code check_seam.py} keeps. That list is meant to stay tiny, and "every screen in either mod"
+     * is not a list. So the wrapping happens <b>once</b>, here, and a subclass overrides this method
+     * with a {@link GuiRenderer} it can draw through without ever naming the underlying type.
+     *
+     * <p>Called before the widget pass, so anything drawn here sits under the controls -- which is the
+     * order every screen wants: a background, then its buttons.
+     *
+     * <p><b>A screen that must interleave drawing with the widget pass cannot use this</b> and has to
+     * override {@link #render} instead. The quest book is the one that does: its view cluster is drawn
+     * at a raised Z, between the content and the widgets, because an item icon writes depth and a fill
+     * at Z = 0 loses to it. That screen names the type, and the seam check says why.
+     */
+    protected void renderContent(GuiRenderer renderer, int mouseX, int mouseY, float partialTick) {
     }
 
     private void refreshIfMoved() {
