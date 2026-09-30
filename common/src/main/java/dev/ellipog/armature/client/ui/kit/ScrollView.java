@@ -329,6 +329,17 @@ public final class ScrollView {
             // Half-open at both ends, matching Slot.contains: a row whose bottom edge is exactly at the
             // viewport's top edge is off screen, so it is not drawn and cannot be clicked.
             boolean onScreen = y < viewport.viewBottom() && y + h > viewport.originY();
+
+            // And with `whole` set, a widget that is only *partly* inside is hidden rather than
+            // half-drawn. That is on the caller to ask for, because what it means depends on who clips:
+            // a caller that wraps its own drawing in a scissor wants the partial row drawn and cut by that
+            // scissor (the sidebar does), and a caller whose widgets are **not** clipped -- a panel drawn
+            // inside a card, whose widget pass belongs to a screen that clips something else entirely --
+            // has a half-visible row drawn straight over whatever is above the list. That was a report:
+            // *"buttons not going under things when scrolling"*.
+            if (whole && (y < viewport.originY() || y + h > viewport.viewBottom())) {
+                onScreen = false;
+            }
             widget.visible = onScreen;
 
             if (onScreen) {
@@ -451,6 +462,24 @@ public final class ScrollView {
         draggingThumb = true;
         grabOffset = (int) screenY - thumbTop();
     }
+
+    /**
+     * Shows only widgets that are <b>wholly</b> inside the viewport: a partly visible one is hidden.
+     *
+     * <p>See the note where it is used in {@code place()}. Off by default, because the alternative -- a
+     * partial row cut by the caller's own scissor -- is what a clipped list wants and what the sidebar has
+     * always done. On for a caller whose widget pass is not clipped to this region: a control that is half
+     * scrolled out would otherwise be drawn over the thing above the list.
+     */
+    public ScrollView whole(boolean value) {
+        this.whole = value;
+        if (layout != null) {
+            place();
+        }
+        return this;
+    }
+
+    private boolean whole;
 
     /** Whether a drag is in progress. A caller routes move and release on this. */
     public boolean draggingThumb() {
