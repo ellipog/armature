@@ -93,24 +93,57 @@ public final class Appearance {
      * server default is deliberately <b>not</b> in here: it arrives over the wire and describes a
      * connection, so writing it to disk would make one server's look outlive the visit to it.
      */
-    public record Settings(String theme, boolean motion, boolean chosen, Map<String, Integer> custom) {
+    /**
+     * @param radius the corner radius the player set, or null for the theme's own. A nullable component
+     *     rather than a sentinel, because "no override" and "an override of zero" are different states and
+     *     zero is a legitimate choice -- square corners are a look
+     */
+    public record Settings(String theme, boolean motion, boolean chosen, Map<String, Integer> custom,
+                           Integer radius) {
 
         /** The defaults, which are also what a missing or unreadable file produces. */
         public static final Settings DEFAULT =
-                new Settings(Themes.DEFAULT.name(), true, false, Map.of());
+                new Settings(Themes.DEFAULT.name(), true, false, Map.of(), null);
+
+        /**
+         * The same settings with no radius override.
+         *
+         * <p>A convenience constructor rather than eight edited call sites: every existing caller is
+         * talking about colours, motion or the theme's name, and none of them has an opinion about the
+         * corners.
+         */
+        public Settings(String theme, boolean motion, boolean chosen, Map<String, Integer> custom) {
+            this(theme, motion, chosen, custom, null);
+        }
 
         public Settings {
             if (theme == null || theme.isEmpty()) {
                 theme = Themes.DEFAULT.name();
             }
             custom = Map.copyOf(custom);
+            if (radius != null) {
+                radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, radius));
+            }
         }
 
-        /** The player's own colour edits as a patch. */
+        /** The player's own colour edits and corner radius, as a patch. */
         public ThemePatch patch() {
-            return custom.isEmpty() ? ThemePatch.NONE : ThemePatch.colours(custom);
+            if (custom.isEmpty() && radius == null) {
+                return ThemePatch.NONE;
+            }
+            return new ThemePatch(null, custom, radius, null, null);
         }
     }
+
+    /**
+     * The corners a player may set: square to very round.
+     *
+     * <p>Bounded here rather than in the control, so the settings file, the panel's stepper and the saved
+     * theme all clamp to one range -- {@code ThemePatch}'s own bounds are for a pack's file and are much
+     * wider than a control should offer.
+     */
+    public static final int MIN_RADIUS = 0;
+    public static final int MAX_RADIUS = 12;
 
     private static Settings settings = Settings.DEFAULT;
 
@@ -196,6 +229,40 @@ public final class Appearance {
      * re-enable animation for someone who cannot comfortably use it. See {@code Motion}, which is where
      * that precedence is enforced — in the one place that reads both.
      */
+    /** The corner radius in force: the player's if they set one, else the theme's own. */
+    public static int radius() {
+        return main().cornerRadius();
+    }
+
+    /** Whether the player has set a radius of their own, rather than taking the theme's. */
+    public static boolean radiusChosen() {
+        return settings.radius() != null;
+    }
+
+    /**
+     * Sets the corner radius, clamped to {@link #MIN_RADIUS}..{@link #MAX_RADIUS}.
+     *
+     * <p>A setting rather than a theme edit, for the reason {@code setTheme} is: it is the player's eye,
+     * it persists, and the theme underneath is what it overrides. {@code saveAsTheme} bakes it into the
+     * file when the player decides the look is worth keeping.
+     */
+    public static void setRadius(int radius) {
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom(),
+                radius);
+        apply();
+        save();
+    }
+
+    /** Back to the theme's own corners. */
+    public static void clearRadius() {
+        if (settings.radius() == null) {
+            return;
+        }
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom());
+        apply();
+        save();
+    }
+
     public static boolean motion() {
         return settings.motion();
     }
@@ -325,7 +392,7 @@ public final class Appearance {
 
     /** Undoes every edit. The editor's "revert". */
     public static void clearAllCustom() {
-        if (settings.custom().isEmpty()) {
+        if (settings.custom().isEmpty() && settings.radius() == null) {
             return;
         }
         settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), Map.of());
@@ -390,7 +457,7 @@ public final class Appearance {
         // do the opposite: a player who has just looked at forty colours and pressed save expects the file
         // to be the theme they saw, not a diff they would have to reason about. `basedOn` is kept so the
         // radius, motion and easing still come from somewhere, and so the file says what it started as.
-        ThemePatch patch = new ThemePatch(clean, settings.custom(), null, null, null);
+        ThemePatch patch = new ThemePatch(clean, settings.custom(), settings.radius(), null, null);
         JsonObject root = patch.toJson();
         root.addProperty("basedOn", settings.theme());
 
@@ -570,7 +637,14 @@ public final class Appearance {
             }
         }
 
-        return new Settings(theme, motion, chosen, custom);
+        // Absent means the theme's own corners, so a file written by an older build keeps its look.
+        Integer radius = null;
+        if (root.has("radius") && root.get("radius").isJsonPrimitive()
+                && root.getAsJsonPrimitive("radius").isNumber()) {
+            radius = root.get("radius").getAsInt();
+        }
+
+        return new Settings(theme, motion, chosen, custom, radius);
     }
 
     /** The settings as JSON text. Paired with {@link #read}, and the only writer of that format. */
@@ -582,6 +656,11 @@ public final class Appearance {
         // this field is that "I chose modern" and "nobody has chosen and the default happens to be
         // modern" are different facts with the same name in them.
         root.addProperty("chosen", toWrite.chosen());
+        // Written only when the player set one: a file that carried a radius nobody chose would make the
+        // theme's own corners unreachable, which is the setting-lies failure this class has twice fixed.
+        if (toWrite.radius() != null) {
+            root.addProperty("radius", toWrite.radius());
+        }
         if (!toWrite.custom().isEmpty()) {
             root.add("custom", new ThemePatch(null, toWrite.custom(), null, null, null).toJson()
                     .getAsJsonObject("colours"));

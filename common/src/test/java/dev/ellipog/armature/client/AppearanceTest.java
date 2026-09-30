@@ -689,4 +689,45 @@ class AppearanceTest {
                 JsonParser.parseString(second).getAsJsonObject()
                         .getAsJsonObject("custom").get("title").getAsString());
     }
+
+    @Test
+    @DisplayName("the corner radius is a setting: clamped, written, and revertible")
+    void theRadiusIsASetting(@TempDir Path dir) throws java.io.IOException {
+        // A setting rather than a theme edit, so it gets the treatment every setting in this class gets:
+        // clamped at the boundary it declares, written to the file only when somebody chose it, and
+        // revertible to what the theme underneath says.
+        Appearance.reset();
+        Path file = dir.resolve("appearance.json");
+        Appearance.load(file);
+
+        int themeRadius = Appearance.radius();
+        assertFalse(Appearance.radiusChosen(), "a fresh client takes the theme's corners");
+
+        Appearance.setRadius(6);
+        assertEquals(6, Appearance.radius());
+        assertTrue(Appearance.radiusChosen());
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radius\":6"),
+                "and it is on disk, because a setting that is not written is not a setting");
+
+        Appearance.setRadius(999);
+        assertEquals(Appearance.MAX_RADIUS, Appearance.radius(),
+                "clamped by the setting rather than by the control that offers it");
+
+        Appearance.clearRadius();
+        assertFalse(Appearance.radiusChosen());
+        assertEquals(themeRadius, Appearance.radius(), "back to the theme's own corners");
+        assertFalse(Files.readString(file, StandardCharsets.UTF_8).contains("radius"),
+                "and the file stops carrying one, which is what makes the theme's own reachable again");
+
+        // A file with no radius is the theme's own: an older file keeps the look it always had.
+        Appearance.load(file);
+        assertFalse(Appearance.radiusChosen());
+        assertEquals(themeRadius, Appearance.radius());
+
+        // And a theme's own radius is never taken away -- only overridden and given back.
+        Appearance.setRadius(0);
+        assertEquals(0, Appearance.radius(), "square corners are a look, not the absence of one");
+
+        Appearance.reset();
+    }
 }
