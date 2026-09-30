@@ -114,6 +114,30 @@ public interface GuiRenderer {
     void text(String text, int x, int y, int argb);
 
     /**
+     * Forces everything queued so far to be drawn now, before anything after it.
+     *
+     * <h2>What this exists for, and why it is not an optimisation</h2>
+     *
+     * <p>Both implementations batch: fills accumulate in one buffer and are handed to the GPU when the
+     * batch fills up, when the render type changes, or at the end of the frame. That is normally
+     * invisible and usually faster. It stops being invisible when <b>one operation draws through a
+     * different path than its neighbours</b>, because the two are then ordered by their own batching
+     * rather than by the order the code called them in.
+     *
+     * <p>An item icon is exactly that operation: it goes through the item renderer rather than through
+     * {@code fill}, so a queued rectangle drawn <i>after</i> it can land <i>before</i> it. The quest
+     * book hit this — nodes are item icons on the canvas, and the tool cluster's backing panel is
+     * drawn over the canvas afterwards, which left icons floating on top of the buttons they are
+     * supposed to be behind.
+     *
+     * <p>So this is the seam between one drawing layer and the next, and a caller places it where a
+     * <b>layering boundary</b> is, not where a performance concern is. It costs a batch flush, which is
+     * a thing the frame was going to do anyway; what it buys is that "drawn later" means "on top",
+     * which is the only ordering anybody reading the code can reason about.
+     */
+    void flush();
+
+    /**
      * Draws one line of text centred on {@code centreX}.
      *
      * <p>A default rather than an abstract method, and deliberately: the centring is

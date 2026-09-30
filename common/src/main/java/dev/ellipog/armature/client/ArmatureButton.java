@@ -55,9 +55,14 @@ import java.util.function.Consumer;
  * one drawn with no box at all and read as the missing or disabled one. Flat means "this is a label
  * that happens to be clickable"; it does not mean "this one is on".
  *
- * <p>{@link #flat(boolean)} drops the fill for a control that should read as a label — a link, a
- * section header. Nothing uses it at the time of writing, and it is kept because it is the right shape
- * for something a quest editor will want.
+ * <p>{@link #flat(boolean)} drops the fill for a control that should read as a label — a link, a tab
+ * that is not current. It draws <b>nothing at all</b>, which is right for a link inside a paragraph
+ * and wrong for a list's heading: a heading had no affordance, so a working control read as broken
+ * text. {@link #section(boolean)} is that case — a rule underneath, no fill — and it exists because
+ * "no box" and "no indication whatsoever" turned out to be different requirements.
+ *
+ * <p>{@link #alignLeft(boolean)} puts the label against the left edge. Centred is right for a control
+ * on its own and wrong for a column of them, where it leaves the left edge ragged.
  *
  * <h2>Where the colours come from</h2>
  *
@@ -101,7 +106,9 @@ public class ArmatureButton extends AbstractWidget {
     private boolean accent;
     private boolean selected;
     private boolean flat;
+    private boolean section;
     private boolean borderless;
+    private boolean alignLeft;
     private int textColour = ArmatureTheme.title();
 
     /** Whether the pointer is down on this button. Held so the pressed state can be drawn. */
@@ -199,6 +206,39 @@ public class ArmatureButton extends AbstractWidget {
         return this;
     }
 
+    /**
+     * A heading: no fill, a rule underneath, and the brightest label.
+     *
+     * <p>The shape a collapsible list needs, and the reason it was added: the quest book's group
+     * headings were drawn {@link #flat(boolean)}, which draws nothing at all, so a row whose whole
+     * width is clickable looked exactly like a word. See {@link
+     * ArmatureControlStyle.Variant#SECTION}.
+     */
+    public ArmatureButton section(boolean value) {
+        this.section = value;
+        return this;
+    }
+
+    /**
+     * Draws the label from the left edge rather than centred.
+     *
+     * <h2>Why a list needs this and a lone button does not</h2>
+     *
+     * <p>Centring is right for a control that sits on its own — a Close, a Confirm — because the label
+     * is the whole of the thing and the eye should land in the middle of it. It is wrong for a
+     * <b>column</b> of controls, and visibly so: a list of chapter titles centred in a sidebar has a
+     * ragged left edge, so nothing lines up and a short title floats away from the row it belongs to.
+     * A reader scanning a list tracks the left edge, and there is not one.
+     *
+     * <p>So this is the caller's decision, not a heuristic. Nothing in here inspects the label's length
+     * or the control's width to guess which alignment "looks better" — a rule like that would be wrong
+     * in exactly the case somebody had a reason for.
+     */
+    public ArmatureButton alignLeft(boolean value) {
+        this.alignLeft = value;
+        return this;
+    }
+
     /** Which kind of control this is, for {@link ArmatureControlStyle}. Accent wins over selected. */
     private ArmatureControlStyle.Variant variant() {
         if (accent) {
@@ -206,6 +246,12 @@ public class ArmatureButton extends AbstractWidget {
         }
         if (selected) {
             return ArmatureControlStyle.Variant.SELECTED;
+        }
+        if (section) {
+            // Before `flat`, which it shares its lack of a box with: a section is the more specific
+            // case and has a rule, so it must win. The two are not mutually exclusive as fields --
+            // clearing one does not clear the other -- so the order here is the whole of what decides.
+            return ArmatureControlStyle.Variant.SECTION;
         }
         return flat ? ArmatureControlStyle.Variant.FLAT : ArmatureControlStyle.Variant.PLAIN;
     }
@@ -290,16 +336,27 @@ public class ArmatureButton extends AbstractWidget {
             }
         }
 
-        // The style decides the label for the two variants it owns -- accent and selected -- because
-        // those are the two whose fill it also chose, and a label must be picked against its own
-        // background. Everywhere else the caller's own textColour wins, since a screen may have a
-        // reason the style cannot know.
+        // A section's rule, drawn along the bottom edge. One pixel, the full width of the control.
+        //
+        // The `+1` on the right is not a rounding decision: `fill` is half-open, so a rule from `x` to
+        // `right()` covers the same pixels a fill would, and a rule one short would leave a gap at the
+        // corner that reads as the line being broken rather than as the control ending.
+        if (variant == ArmatureControlStyle.Variant.SECTION) {
+            renderer.fill(getX(), getY() + height - 1, getX() + width, getY() + height,
+                    ArmatureControlStyle.edge(variant, active, held, hovered));
+        }
+
+        // The style decides the label for the variants it owns -- accent, selected and section --
+        // because those are the ones whose background it also chose, and a label must be picked against
+        // its own background. Everywhere else the caller's own textColour wins, since a screen may have
+        // a reason the style cannot know.
         int colour;
         if (!active) {
             colour = ArmatureTheme.blocked();
         }
         else if (variant == ArmatureControlStyle.Variant.ACCENT
-                || variant == ArmatureControlStyle.Variant.SELECTED) {
+                || variant == ArmatureControlStyle.Variant.SELECTED
+                || variant == ArmatureControlStyle.Variant.SECTION) {
             colour = ArmatureControlStyle.text(variant, true);
         }
         else {
@@ -330,7 +387,13 @@ public class ArmatureButton extends AbstractWidget {
         // breaking a paragraph and one by cutting a line.
         String shown = Measure.truncate(label, Math.max(0, textWidth - 4),
                 Measure.of(renderer::textWidth, renderer.lineHeight()));
-        int textX = textLeft + (textWidth - renderer.textWidth(shown)) / 2;
+        // Two pixels in from the left rather than flush against it. A label touching its own edge
+        // reads as text that has overflowed rather than as text that has been placed, and the same
+        // two pixels is what the centred branch leaves on the narrower side. See `alignLeft` for which
+        // of the two a caller wants and why a column needs the one it needs.
+        int textX = alignLeft
+                ? textLeft + 2
+                : textLeft + (textWidth - renderer.textWidth(shown)) / 2;
         renderer.text(shown, textX, getY() + (height - 8) / 2, colour);
     }
 

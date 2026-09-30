@@ -53,6 +53,23 @@ import java.util.Objects;
  * view.drawScrollbar(graphics, trackColour, thumbColour);
  * </pre>
  *
+ * <h2>The scrollbar is a control, not decoration</h2>
+ *
+ * <p>This class used to draw the bar and offer nothing to press it with, on the reasoning that a
+ * scrollbar is chrome. That is wrong in the way that matters: a bar beside a list is the thing a
+ * pointer goes to when the list is long, and a bar that cannot be dragged is a picture of a
+ * scrollbar. So the geometry is exposed — {@link #scrollbarTrack}, {@link #scrollbarThumb} — and the
+ * drag is here beside it, {@link #beginThumbDrag} through {@link #endThumbDrag}.
+ *
+ * <p>It lives in this class rather than in the screen because the mapping between a pointer's y and a
+ * scroll offset is <b>the inverse of the drawing's own formula</b>. Split across two files, the
+ * forward and inverse versions would agree on the day they were written and drift on the next edit —
+ * and the symptom would be a thumb that slowly walks away from the pointer as you drag, which reads
+ * as the list being over-sensitive rather than as an arithmetic fault.
+ *
+ * <p>What is deliberately <i>not</i> here is the colour. The bar is drawn in whatever the caller hands
+ * over, because a colour is a theme's business; this class only says where and how big.
+ *
  * <h2>Fit and scroll are the same mechanism</h2>
  *
  * <p>{@link #apply} tells the viewport how tall the content is, which is what makes the offset clamp
@@ -294,28 +311,153 @@ public final class ScrollView {
     public void drawScrollbar(GuiRenderer renderer, int trackColour, int thumbColour) {
         Objects.requireNonNull(renderer, "renderer");
 
-        int max = viewport.maxScrollY();
-        if (max <= 0) {
+        Slot track = scrollbarTrack();
+        if (track == null) {
             // Everything fits. A track with a full-height thumb in it says "there is more" and lies.
             return;
         }
 
-        int trackTop = viewport.originY();
-        int trackHeight = viewport.viewHeight();
-        if (trackHeight <= 0) {
+        Slot thumb = scrollbarThumb();
+        renderer.fill(track.x(), track.y(), track.right(), track.bottom(), trackColour);
+        renderer.fill(thumb.x(), thumb.y(), thumb.right(), thumb.bottom(), thumbColour);
+    }
+
+    // ------------------------------------------------------------------
+    // The scrollbar as a control
+    // ------------------------------------------------------------------
+
+    /**
+     * Where the scrollbar's bar is drawn: a three-pixel column four pixels right of the viewport.
+     *
+     * <p>Null when everything fits, which is the same condition {@link #drawScrollbar} returns early
+     * on. One condition, asked in one place — a hit test that accepted a press on a bar nobody drew
+     * would swallow a click in the margin of a list that does not scroll.
+     */
+    public Slot scrollbarTrack() {
+        if (viewport.maxScrollY() <= 0 || thumbHeight() <= 0) {
+            return null;
+        }
+        return new Slot(null, viewport.viewRight() + 4, viewport.originY(), BAR_WIDTH,
+                viewport.viewHeight());
+    }
+
+    /** Where the thumb is drawn, or null when everything fits. */
+    public Slot scrollbarThumb() {
+        Slot track = scrollbarTrack();
+        if (track == null) {
+            return null;
+        }
+        return new Slot(null, track.x(), thumbTop(), BAR_WIDTH, thumbHeight());
+    }
+
+    /**
+     * Whether a point should count as a press on the scrollbar.
+     *
+     * <h2>Why this is deliberately wider than the bar</h2>
+     *
+     * <p>The bar is three pixels. Three pixels is a target you miss, and a miss on a scrollbar lands on
+     * the list underneath — so the failure mode of an exact hit test is not "nothing happened", it is
+     * "I clicked the thing behind it". The band here runs from just past the viewport's right edge to
+     * the far side of the bar, which is about nine pixels: comfortably grabbable, and still outside
+     * the viewport, so it cannot steal a click from a row.
+     */
+    public boolean scrollbarHit(double screenX, double screenY) {
+        Slot track = scrollbarTrack();
+        if (track == null) {
+            return false;
+        }
+        return screenX >= viewport.viewRight() + 1
+                && screenX < track.right() + BAR_GRAB
+                && screenY >= track.y()
+                && screenY < track.bottom();
+    }
+
+    /**
+     * Starts a drag, remembering where inside the thumb the pointer landed.
+     *
+     * <h2>Why the grab offset is kept</h2>
+     *
+     * <p>Because grabbing a thumb's middle and having it jump so its <i>top</i> is under the pointer is
+     * the thing that makes a hand-rolled scrollbar feel wrong. The offset is the distance from the
+     * thumb's top to the press, and every later position is computed from it — so the thumb stays
+     * exactly where the pointer grabbed it for the whole drag.
+     */
+    public void beginThumbDrag(double screenY) {
+        if (scrollbarTrack() == null) {
             return;
         }
+        draggingThumb = true;
+        grabOffset = (int) screenY - thumbTop();
+    }
 
-        int content = Math.max(1, viewport.scaled(viewport.contentHeight()));
-        int thumbHeight = Math.max(16, trackHeight * trackHeight / content);
-        if (thumbHeight > trackHeight) {
-            thumbHeight = trackHeight;
+    /** Whether a drag is in progress. A caller routes move and release on this. */
+    public boolean draggingThumb() {
+        return draggingThumb;
+    }
+
+    /**
+     * Moves the thumb so the pointer still holds the same point on it, and scrolls to match.
+     *
+     * <p>The arithmetic is the inverse of the drawing's, and it is written as that inverse on purpose:
+     * {@link #thumbTop} computes {@code top} from {@code scrollY}, and this computes {@code scrollY}
+     * from a {@code top}. Two independent formulas that agree today would disagree after one edit, and
+     * the symptom would be a thumb that creeps away from the pointer the longer you drag.
+     *
+     * <p>Rounded rather than integer-divided. An integer division loses up to a pixel per event, and
+     * this is called on every mouse move — so a slow drag across a long list would arrive short of the
+     * bottom, which reads as the scroll range being wrong rather than as rounding.
+     */
+    public void dragThumbTo(double screenY) {
+        if (!draggingThumb) {
+            return;
         }
-        int thumbTop = trackTop + (trackHeight - thumbHeight) * viewport.scrollY() / max;
+        Slot track = scrollbarTrack();
+        int travel = track.bottom() - thumbHeight() - track.y();
+        if (travel <= 0) {
+            // The thumb fills the track, so there is nowhere to drag it. Not an error: it is what a
+            // list one row taller than its viewport produces.
+            return;
+        }
+        int wanted = (int) screenY - grabOffset - track.y();
+        int max = viewport.maxScrollY();
+        scrollTo(Math.round(Math.max(0, Math.min(travel, wanted)) * (float) max / travel));
+    }
 
-        int x = viewport.viewRight() + 4;
-        renderer.fill(x, trackTop, x + 3, trackTop + trackHeight, trackColour);
-        renderer.fill(x, thumbTop, x + 3, thumbTop + thumbHeight, thumbColour);
+    /** Always true on release, not a state change. Idempotent, so a doubled release is harmless. */
+    public boolean endThumbDrag() {
+        boolean was = draggingThumb;
+        draggingThumb = false;
+        grabOffset = 0;
+        return was;
+    }
+
+    /** Three pixels wide, which is what the drawing has always used. */
+    private static final int BAR_WIDTH = 3;
+
+    /** How far past the bar a press still counts. Six, so the whole band is about nine pixels. */
+    private static final int BAR_GRAB = 6;
+
+    private boolean draggingThumb;
+    private int grabOffset;
+
+    /** The thumb's drawn height, or 0 when there is no bar. */
+    private int thumbHeight() {
+        int trackHeight = viewport.viewHeight();
+        if (trackHeight <= 0 || viewport.maxScrollY() <= 0) {
+            return 0;
+        }
+        int content = Math.max(1, viewport.scaled(viewport.contentHeight()));
+        return Math.min(trackHeight, Math.max(16, trackHeight * trackHeight / content));
+    }
+
+    /** The thumb's drawn top. The forward formula; {@link #dragThumbTo} is its inverse. */
+    private int thumbTop() {
+        Slot track = scrollbarTrack();
+        int travel = track.bottom() - thumbHeight() - track.y();
+        if (travel <= 0) {
+            return track.y();
+        }
+        return track.y() + travel * viewport.scrollY() / Math.max(1, viewport.maxScrollY());
     }
 
     @Override

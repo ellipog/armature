@@ -381,6 +381,51 @@ class GuiRendererTest {
         assertTrue(r.covered(2, 4), "the shape stopped at the hole instead of skipping it");
     }
 
+    @Test
+    @DisplayName("a flush is recorded, so a caller's layering boundary is assertable")
+    void aFlushIsRecorded() {
+        // The whole reason `flush` is on the seam rather than left implicit. Both real implementations
+        // batch — fills accumulate in one buffer and are handed over when the batch fills or the frame
+        // ends — so an operation that draws through a *different* path is ordered by its own batching
+        // rather than by the order the code called it in. An item icon is exactly that operation.
+        //
+        // The quest book hit this: nodes are item icons on the canvas, the tool cluster's backing panel
+        // is drawn over the canvas afterwards, and the icons floated on top of the buttons. The fix is
+        // a flush at that seam, and this is the test that makes the seam's contract checkable — a
+        // recorder that silently swallowed the call would leave the fix unassertable, which is exactly
+        // the class of defect it was written for.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        r.fill(0, 0, 10, 10, 0xFF111111);
+        int beforeFlush = r.lastIndex(RecordingRenderer.Op.FILL);
+        r.flush();
+        r.fill(0, 0, 10, 10, 0xFF222222);
+        int afterFlush = r.firstIndex(RecordingRenderer.Op.FILL) == beforeFlush
+                ? r.fills().size() - 1
+                : -1;
+
+        assertEquals(1, r.flushes().size(), "the flush should be recorded exactly once");
+        assertTrue(r.flushes().get(0) > beforeFlush,
+                "the flush marker should come after the draws it pushes out");
+        assertTrue(afterFlush >= 0,
+                "and before the draws that must land on top of them, which is the whole point");
+    }
+
+    @Test
+    @DisplayName("a flush is idempotent and harmless with nothing queued")
+    void flushingNothingIsHarmless() {
+        // A caller may flush at a seam that happens to have drawn nothing — an empty chapter, a hidden
+        // overlay — and a flush that threw or double-flushed there would be a crash on an empty screen
+        // rather than on a busy one.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        r.flush();
+        r.flush();
+
+        assertEquals(2, r.flushes().size(), "both calls are recorded, and neither is an error");
+        assertTrue(r.clipsBalanced(), "and a flush must not disturb the clip stack");
+    }
+
     // ------------------------------------------------------------------
     // Measure.truncate, which the control and the canvas both use
     // ------------------------------------------------------------------

@@ -51,6 +51,77 @@ repositories {
         name = 'BlameJared'
         url = 'https://maven.blamejared.com'
     }
+
+    // -------------------------------------------------------------------------
+    // The three repositories the optional teams adapters need.
+    //
+    // `/releases` and not `/dev`, and that is the whole of the first one: FTB publishes its
+    // release builds to `maven.ftb.dev/releases`, and `maven.ftb.dev/dev` -- which is the URL
+    // in most of the examples that exist -- answers 404 for the artefact. Measured, not
+    // remembered.
+    //
+    // Architectury is here because FTB Teams depends on it, so it arrives transitively whether
+    // or not this project asks for it. `plan.md` says no Architectury, and that stays true in
+    // the sense that matters: nothing in the source names it, and `.utils/check_integration.py`
+    // fails the build if something ever does. Depending on a library transitively is not
+    // adopting it -- naming it is.
+    // -------------------------------------------------------------------------
+    maven {
+        name = 'FTB'
+        url = 'https://maven.ftb.dev/releases'
+    }
+    maven {
+        name = 'Architectury'
+        url = 'https://maven.architectury.dev'
+    }
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The two third-party parties mods, and why the declarations live here.
+//
+// Armature reads FTB Teams' and Open Parties and Claims' parties behind an isModLoaded check, so
+// a server with neither installed loses nothing. That only works while the dependency is
+// `compileOnly`: the classes are needed to compile the two adapters and must never reach a jar or
+// a published POM -- so you will not find either of them in what `publishToMavenLocal` writes,
+// and a consumer compiling against armature-common needs neither.
+//
+// Declared in this convention rather than in common/build.gradle because the loader projects
+// *recompile common's sources*: `multiloader-loader.gradle` puts common's java source directory
+// onto the loader's own compileJava, so a declaration in common alone would leave both loader
+// projects unable to find these packages.
+//
+// The NeoForge variant of FTB, for both loaders, deliberately. Measured: the NeoForge artefact is
+// compiled against official Mojang names (`net.minecraft.network.chat.Component`) and the Fabric
+// one against intermediary (`net.minecraft.class_2960`). common/ compiles against NeoForm, which
+// is mojmap, so the Fabric artefact does not compile here at all. One variant, and it is the one
+// both loader projects can read.
+//
+// Architectury and FTB Library arrive transitively from FTB Teams' own POM, which is why neither
+// is named below. Architectury comes in as a plain compile dependency of that POM; FTB Library
+// comes in with all of ITS transitives excluded, which is why nothing else arrives with it.
+// Asserted rather than assumed, with `:common:dependencies` -- that is how "no JEI arrives
+// transitively" was actually checked, and how it would be checked again after a version bump.
+//
+// Neither coordinate is written out here on purpose. `.utils/check_integration.py` fails the build
+// on a third-party *package* name in a build file, and a coordinate is one keystroke away from one
+// -- the rule it enforces is that a transitive dependency is contained rather than adopted, and the
+// check is what keeps that true rather than the comment above it.
+// ---------------------------------------------------------------------------
+dependencies {
+    compileOnly "dev.ftb.mods:ftb-teams-neoforge:${ftb_teams_version}"
+    compileOnly "maven.modrinth:open-parties-and-claims:${opac_version}"
+
+    // `compileOnly` reaches the test *compile* classpath and not the test *runtime* one, so a test
+    // that ever constructs an adapter would compile and then fail at class loading with a
+    // NoClassDefFoundError naming a mod. These are here so that the first test which does is not
+    // debugging that. Nothing needs them today -- TeamProvidersTest pins the resolution chain with
+    // its own providers, which is the point of the seam.
+    testImplementation "dev.ftb.mods:ftb-teams-neoforge:${ftb_teams_version}"
+    testImplementation "maven.modrinth:open-parties-and-claims:${opac_version}"
 }
 
 // Declare capabilities on the outgoing configurations.

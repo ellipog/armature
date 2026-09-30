@@ -70,6 +70,7 @@ public final class RecordingRenderer implements GuiRenderer {
                 case ICON -> "icon(" + x + "," + y + " " + x2 + "px)";
                 case CLIP -> "clip(" + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case UNCLIP -> "unclip";
+                case FLUSH -> "flush";
             };
         }
 
@@ -79,7 +80,7 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /** What a recorded call was. */
-    public enum Op { FILL, TEXT, ICON, CLIP, UNCLIP }
+    public enum Op { FILL, TEXT, ICON, CLIP, UNCLIP, FLUSH }
 
     private final List<Call> calls = new ArrayList<>();
     private final int charWidth;
@@ -121,6 +122,21 @@ public final class RecordingRenderer implements GuiRenderer {
     @Override
     public void fill(int left, int top, int right, int bottom, int argb) {
         calls.add(new Call(Op.FILL, left, top, right, bottom, argb, ""));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p><b>Recorded rather than ignored</b>, and that is the whole value of it being here. A flush is
+     * where a caller declares a layering boundary — "everything up to here is behind everything after
+     * it" — so a test can assert the boundary exists by finding the marker between two draws. An
+     * implementation that silently did nothing would make {@code QuestBookScreen}'s z-order fix
+     * unassertable, which is exactly the class of defect it was written to fix: an item icon landing on
+     * top of a button, ordered by batching rather than by the order the code drew them in.
+     */
+    @Override
+    public void flush() {
+        calls.add(new Call(Op.FLUSH, 0, 0, 0, 0, 0, ""));
     }
 
     @Override
@@ -207,6 +223,44 @@ public final class RecordingRenderer implements GuiRenderer {
     /** The clips, in order. */
     public List<Call> clips() {
         return calls.stream().filter(call -> call.op() == Op.CLIP).toList();
+    }
+
+    /**
+     * Where the layering boundaries were, as indices into {@link #calls()}.
+     *
+     * <p>Indices rather than the calls themselves, because the question a test asks is <i>relative</i>
+     * order — "was the flush between the icons and the panel" — and an index is what a comparison
+     * against another call's position needs. Returning the calls would make every such assertion
+     * re-derive that.
+     */
+    public List<Integer> flushes() {
+        List<Integer> out = new ArrayList<>();
+        for (int i = 0; i < calls.size(); i++) {
+            if (calls.get(i).op() == Op.FLUSH) {
+                out.add(i);
+            }
+        }
+        return out;
+    }
+
+    /** The index of the first call with this op, or -1. For asserting relative order. */
+    public int firstIndex(Op op) {
+        for (int i = 0; i < calls.size(); i++) {
+            if (calls.get(i).op() == op) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The index of the last call with this op, or -1. */
+    public int lastIndex(Op op) {
+        for (int i = calls.size() - 1; i >= 0; i--) {
+            if (calls.get(i).op() == op) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

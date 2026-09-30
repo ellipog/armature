@@ -61,11 +61,6 @@ public record Team(UUID id,
         return new Team(id, name, owner, Map.of(owner, TeamRole.OWNER), Set.of(), now, true);
     }
 
-    /** A team of one that is stored, as opposed to the synthesised kind. */
-    public boolean isSolo() {
-        return members.size() <= 1;
-    }
-
     public boolean isMember(UUID player) {
         return members.containsKey(player);
     }

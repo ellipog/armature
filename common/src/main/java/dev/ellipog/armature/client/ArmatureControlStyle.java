@@ -71,12 +71,36 @@ public final class ArmatureControlStyle {
         SELECTED,
 
         /** No fill at all: text that behaves like a control. A link, a section header. */
-        FLAT
+        FLAT,
+
+        /**
+         * A heading: no fill, ruled off underneath, and brighter than the rows beneath it.
+         *
+         * <h2>Why this is not {@link #FLAT}</h2>
+         *
+         * <p>Flat was what the quest book's group headings used, and the report that came back was
+         * immediate and correct: <i>"no like thing to make the categories look like buttons"</i>. Flat
+         * draws nothing at all — no fill, no border, no rule — so a heading whose whole row is
+         * clickable looked exactly like a word. There was no affordance saying it could be pressed,
+         * which makes a working control read as broken text.
+         *
+         * <p>So a section is flat <i>plus a rule</i>. The rule is the smallest thing that says "this is
+         * a control" without giving a heading the filled box that {@link #PLAIN} would — a box that
+         * would make a heading look like the chapters it groups, which is the confusion the fill is
+         * supposed to prevent. Brighter text does the rest, because a heading has to outrank its own
+         * contents.
+         */
+        SECTION
     }
 
-    /** Whether this variant is drawn with a fill and a border. False only for {@link Variant#FLAT}. */
+    /**
+     * Whether this variant is drawn with a fill and a border.
+     *
+     * <p>False for {@link Variant#FLAT}, which draws nothing, and for {@link Variant#SECTION}, which
+     * draws a rule rather than a box — see {@link Variant#SECTION} for why those are different things.
+     */
     public static boolean drawsBox(Variant variant) {
-        return variant != Variant.FLAT;
+        return variant != Variant.FLAT && variant != Variant.SECTION;
     }
 
     /**
@@ -89,6 +113,16 @@ public final class ArmatureControlStyle {
      */
     public static int fill(Variant variant, boolean enabled, boolean held, boolean hovered) {
         Theme.Controls c = ArmatureTheme.controls();
+        if (variant == Variant.SECTION) {
+            // Fully transparent, and that is the point rather than a placeholder. A section is drawn
+            // with a rule and no fill at all, so there is no fill to compute -- and returning zero
+            // rather than a colour means `fillAt` blends zero with zero and the `resting == hovered`
+            // shortcut in it takes the branch, so a heading costs no lerp.
+            //
+            // Checked before `enabled`, deliberately: a disabled heading is still a heading, and
+            // greying one out would make its chapters look like they belonged to nothing.
+            return 0;
+        }
         if (!enabled) {
             return c.disabled();
         }
@@ -154,6 +188,19 @@ public final class ArmatureControlStyle {
      */
     public static int edge(Variant variant, boolean enabled, boolean held, boolean hovered) {
         Theme.Controls c = ArmatureTheme.controls();
+        if (variant == Variant.SECTION) {
+            // The heading's rule, and the **one place in this class where hover changes the edge.**
+            //
+            // Everywhere else the border says what a control *is* and hover must not touch it -- see
+            // the class comment. A section is the exception because it has no fill, so hover has
+            // nowhere else to show: with the rule constant, a heading would give no feedback at all
+            // when the pointer arrived. Without the rule brightening, the row would feel dead.
+            //
+            // `edgeSelected` rather than `edgeBright`: it is the same "this one is the current,
+            // brighter thing" relationship the selected fill uses, so a theme that has tuned those two
+            // against each other gets a heading that reads correctly without a new token.
+            return hovered ? c.edgeSelected() : ArmatureTheme.panelEdge();
+        }
         if (!enabled) {
             return ArmatureTheme.panelEdge();
         }
@@ -174,6 +221,12 @@ public final class ArmatureControlStyle {
      * separately from its background is how you get text you cannot read.
      */
     public static int text(Variant variant, boolean enabled) {
+        if (variant == Variant.SECTION) {
+            // The brightest text, unconditionally, for the same reason the fill is skipped before the
+            // enabled check: a heading that dimmed would stop doing the one job it has, which is to
+            // outrank the rows it groups.
+            return ArmatureTheme.title();
+        }
         if (!enabled) {
             return ArmatureTheme.blocked();
         }

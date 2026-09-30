@@ -68,6 +68,18 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         graphics.fill(left, top, right, bottom, argb);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code GuiGraphics.flush} is the batching flush, and it is the right one here rather than
+     * {@code BufferSource.endBatch()}: this wrapper cannot see the buffer source, and asking the
+     * context to flush is the same act expressed at the level this class is allowed to know about.
+     */
+    @Override
+    public void flush() {
+        graphics.flush();
+    }
+
     // ------------------------------------------------------------------
     // Text
     // ------------------------------------------------------------------

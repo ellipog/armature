@@ -1,21 +1,33 @@
 package dev.ellipog.armature.impl.teams;
 
 import dev.ellipog.armature.Constants;
+import dev.ellipog.armature.api.teams.MutableTeamManager;
 import dev.ellipog.armature.api.teams.Team;
 import dev.ellipog.armature.api.teams.TeamEvents;
+import dev.ellipog.armature.api.teams.TeamManager;
 import dev.ellipog.armature.api.teams.TeamRole;
 
 import net.minecraft.server.MinecraftServer;
 
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Teams for one server: the queries, the mutations, and the events.
+ * Armature's own teams: the queries, the mutations, and the events.
+ *
+ * <h2>What it is now, and what it was</h2>
+ *
+ * <p>This was {@code TeamManager}, and it owned the <i>name</i> as well as the behaviour. Teams are
+ * no longer necessarily Armature's: a server running a parties mod has parties already, and the whole
+ * point of {@link TeamProviders} is that a caller asking for teams gets whichever of them this server
+ * resolved to. So the interface took the name — {@code api/teams/TeamManager} — and this class is
+ * what that interface looks like when the answer is a {@code SavedData} in the world.
+ *
+ * <p>It is the <b>fallback</b>, and the one that is always available: a server with nothing else
+ * installed, and every test JVM, resolves here. Which is what makes it safe for {@code TeamProviders}
+ * to place it last and treat it as unconditionally present.
  *
  * <h2>Two things this deliberately does not do</h2>
  *
@@ -36,69 +48,83 @@ import java.util.UUID;
  * that is deliberate rather than tidy. Forgetting the dirty flag produces a team that works all
  * session and is gone tomorrow, and the surest way to never forget it is to have no call site that
  * could.
+ *
+ * <p>The reads — {@code teamOf}, {@code realTeamOf}, {@code invitesFor}, {@code allTeams},
+ * {@code teamCount} — are no longer written here. They are default methods on
+ * {@code TeamManager}, which is the point of the split: a source that can only read gets the whole
+ * read surface for nothing, and this class does not carry a second copy of it.
  */
-public final class TeamManager {
+public final class StoredTeamManager implements MutableTeamManager {
+
+    /** What {@link #name()} returns, and what the resolution log names. */
+    public static final String NAME = "stored";
 
     private final MinecraftServer server;
     private final TeamStore store;
 
-    private TeamManager(MinecraftServer server, TeamStore store) {
+    private StoredTeamManager(MinecraftServer server, TeamStore store) {
         this.server = server;
         this.store = store;
     }
 
     /** The manager for this server, finding or creating the store. */
-    public static TeamManager of(MinecraftServer server) {
-        return new TeamManager(server, TeamStore.of(server));
+    public static StoredTeamManager of(MinecraftServer server) {
+        return new StoredTeamManager(server, TeamStore.of(server));
     }
-
-    // ------------------------------------------------------------------
-    // Queries
-    // ------------------------------------------------------------------
 
     /**
-     * The team a player is in — their real team, or a solo team of one.
+     * This manager as something {@link TeamProviders} can consider.
      *
-     * <p>Never empty, which is the point: a caller does not have to decide what to do about a player
-     * with no team, because there is no such player.
+     * <p>The presence test is {@code true} unconditionally, and that is not laziness: a store is
+     * created on demand in the overworld's data storage and needs nothing installed. So this is the
+     * source that cannot decline, which is what lets the resolution chain end here rather than
+     * needing a special case for "nothing was chosen".
      */
-    public Team teamOf(UUID player) {
-        return realTeamOf(player).orElseGet(() -> Team.solo(player));
-    }
-
-    /** The real team a player is in, if any. Empty for a solo player. */
-    public Optional<Team> realTeamOf(UUID player) {
-        for (Team team : store.all()) {
-            if (team.isMember(player)) {
-                return Optional.of(team);
+    public static TeamProvider provider() {
+        return new TeamProvider() {
+            @Override
+            public String id() {
+                return NAME;
             }
-        }
-        return Optional.empty();
+
+            @Override
+            public boolean isPresent(MinecraftServer server) {
+                return true;
+            }
+
+            @Override
+            public TeamManager create(MinecraftServer server2) {
+                return of(server2);
+            }
+        };
     }
 
-    /**
-     * The teams a player has been invited to.
-     *
-     * <p>A list, not one, because a player may be invited to two and choose — and because silently
-     * keeping only the most recent invitation is a way to lose one without telling anybody.
-     */
-    public List<Team> invitesFor(UUID player) {
-        return store.all().stream().filter(team -> team.isInvited(player)).toList();
+    @Override
+    public String name() {
+        return NAME;
     }
 
+    @Override
+    public Collection<Team> teams() {
+        return store.all();
+    }
+
+    @Override
     public Optional<Team> byId(UUID id) {
         return store.byId(id);
     }
 
-    /** Every real team, sorted by name so a listing reads the same way twice. */
-    public Collection<Team> allTeams() {
-        return store.all().stream()
-                .sorted(Comparator.comparing(team -> team.name().toLowerCase(Locale.ROOT)))
-                .toList();
-    }
-
-    public int teamCount() {
-        return store.size();
+    /**
+     * True, and it is true on behalf of its own mutations only.
+     *
+     * <p>Every write below fires the matching {@link TeamEvents} event, so a listener on this manager
+     * sees everything that happens through it. What it cannot do is see a change made by something
+     * else, because nothing else can change this store — which is a stronger position than it sounds,
+     * since it means {@code false} here is only ever about a foreign source.
+     */
+    @Override
+    public boolean firesEvents() {
+        return true;
     }
 
     // ------------------------------------------------------------------
@@ -113,6 +139,7 @@ public final class TeamManager {
      *
      * @throws IllegalStateException if the owner is already in a team
      */
+    @Override
     public Team create(String name, UUID owner) {
         if (realTeamOf(owner).isPresent()) {
             throw new IllegalStateException("That player is already in a team; leave it first.");
@@ -125,7 +152,7 @@ public final class TeamManager {
         return team;
     }
 
-    /** Invites a player. False if they are already in the team or already invited. */
+    @Override
     public boolean invite(UUID teamId, UUID player) {
         Optional<Team> found = store.byId(teamId);
         if (found.isEmpty()) {
@@ -145,9 +172,8 @@ public final class TeamManager {
      * <p>If the player is in a team already, they leave it first — which fires
      * {@link TeamEvents.Reason#LEFT} so that anything they were carrying, like quest progress, knows
      * to deal with it. Doing that silently is how a player ends up with progress in two teams.
-     *
-     * @return the team they joined, or empty if there was no invitation to accept
      */
+    @Override
     public Optional<Team> acceptInvite(UUID player) {
         Optional<Team> target = invitesFor(player).stream().findFirst();
         if (target.isEmpty()) {
@@ -170,9 +196,8 @@ public final class TeamManager {
      *
      * <p>A solo player leaving is a no-op rather than an error — there is nothing to leave, and a
      * command that fails for the commonest case is a command nobody can use.
-     *
-     * @return true if a real team was left
      */
+    @Override
     public boolean leave(UUID player) {
         Optional<Team> current = realTeamOf(player);
         if (current.isEmpty()) {
@@ -181,12 +206,7 @@ public final class TeamManager {
         return depart(current.get(), player, TeamEvents.Reason.LEFT);
     }
 
-    /**
-     * Removes somebody else.
-     *
-     * @return false if the actor has no authority over the target, which the caller should report
-     *         rather than swallow
-     */
+    @Override
     public boolean kick(UUID actor, UUID target) {
         Optional<Team> teamOfTarget = realTeamOf(target);
         if (teamOfTarget.isEmpty()) {
@@ -200,11 +220,7 @@ public final class TeamManager {
         return depart(team, target, TeamEvents.Reason.KICKED);
     }
 
-    /**
-     * Disbands a team entirely.
-     *
-     * @return false if the actor is not the owner
-     */
+    @Override
     public boolean disband(UUID actor, UUID teamId) {
         Optional<Team> found = store.byId(teamId);
         if (found.isEmpty()) {

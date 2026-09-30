@@ -87,12 +87,20 @@ class ThemeTest {
     }
 
     @Test
-    @DisplayName("the seven new tokens are all things that already existed, not new colours")
+    @DisplayName("the token registry did not change the look, and the one later change was deliberate")
     void theNewTokensDidNotChangeTheLook() {
         // The four node borders and the three scrollbar and tooltip colours are new with the token
         // registry. Each is deliberately a colour this theme already had, because a theme system that
         // changed the default appearance on the day it arrived is indistinguishable from one that
         // broke it. This test is the assertion of that intent, and it is cheap.
+        //
+        // **One of the seven has since been changed on purpose**, and this test is where that is
+        // recorded rather than hidden. `scrollThumb` was `#4C4C62` and is now `#3E3E50`: a scrollbar
+        // grip was drawing as a solid object beside a list of buttons, and the report came from
+        // looking at the screen — "make it not such an obnoxious colour by default". So this test now
+        // asserts six unchanged colours and one deliberate change, and the reason it says so in the
+        // one place is that a test whose whole point is "the appearance did not move" must not be
+        // quietly edited into a test that says "the appearance is whatever it is now".
         assertEquals(Themes.MODERN.available(), Themes.MODERN.nodeEdgeAvailable(),
                 "a node's available ring should be the available colour it has always been");
         assertEquals(Themes.MODERN.inProgress(), Themes.MODERN.nodeEdgeInProgress());
@@ -107,11 +115,40 @@ class ThemeTest {
                 "the locked node's outline should be dimmer than the word, in every shipped theme");
 
         // The scrollbar and tooltip colours were borrowed from `raised`, `controlEdge` and `canvas`.
-        // They are now tokens, and each still resolves to the colour that was being drawn before.
-        assertEquals(0xFF1C1C24, Themes.MODERN.scrollTrack());
-        assertEquals(0xFF4C4C62, Themes.MODERN.scrollThumb());
-        assertEquals(0xF00A0A0E, Themes.MODERN.tooltipFill());
+        // They are now tokens, and three of the four still resolve to the colour that was being drawn
+        // before.
+        assertEquals(0xFF1C1C24, Themes.MODERN.scrollTrack(), "the track is unchanged");
+        assertEquals(0xF00A0A0E, Themes.MODERN.tooltipFill(), "and both tooltip colours");
         assertEquals(0xFF5C5C74, Themes.MODERN.tooltipEdge());
+
+        // The thumb is the one that moved, for the reason above. Asserted at its *new* value rather
+        // than deleted, so the change is a recorded decision with a number attached instead of a line
+        // that disappeared -- and so a later "tidy-up" back to the borrowed colour fails here.
+        assertEquals(0xFF3E3E50, Themes.MODERN.scrollThumb(),
+                "the scrollbar grip was retuned darker on visual feedback -- see the note above");
+
+        // The property that actually motivated retuning it, and the one worth asserting: the grip has
+        // to be **visible against its own track**, because a bar nobody can find is a bar nobody can
+        // drag. That is the other half of the report this change answers.
+        assertTrue(luminance(Themes.MODERN.scrollThumb()) > luminance(Themes.MODERN.scrollTrack()),
+                "the grip must read against the track it moves along");
+
+        // The retune was against the *old borrowed* colour, so that is what this compares to -- not
+        // against an arbitrary other token. `#4C4C62` was `raised`-ish slate borrowed for a job it was
+        // never chosen for; the point of the change is that the grip is no longer that bright.
+        //
+        // Worth recording what I got wrong here, because the assertion I *wrote* first looked
+        // reasonable and was false: "the grip is quieter than a control fill". It is not, and it should
+        // not be — `#3E3E50` against a fill of `#3E3E4C` is the same slate within four units of blue,
+        // which is deliberate. A three-pixel grip and a hundred-pixel button at the same brightness read
+        // completely differently, and a grip dimmer than a control is a grip that has stopped being
+        // findable, which is the failure this whole change exists to avoid rather than to cause.
+        //
+        // Comparing against the retired value rather than against a live token is the honest form: the
+        // claim is "this got darker than it was", which is exactly what the feedback asked for and what
+        // a future thinning of the palette should not silently undo.
+        assertTrue(luminance(Themes.MODERN.scrollThumb()) < luminance(0xFF4C4C62),
+                "the grip should be dimmer than the colour it borrowed before the retune");
     }
 
     @Test

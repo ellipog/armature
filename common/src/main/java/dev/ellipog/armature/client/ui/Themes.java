@@ -150,7 +150,12 @@ public final class Themes {
 
             // --- scrollbar ---
             "scrollTrack", "#FF1C1C24",
-            "scrollThumb", "#FF4C4C62",
+            // Dimmer than it was, on the same feedback that produced the tokens in the first place.
+            // `#4C4C62` is a mid slate that reads as a solid object beside a list of buttons; a grip
+            // wants to be discoverable and then get out of the way, and it is the one element on the
+            // screen that is pure chrome. Dimmer than this and it stops being findable, which is the
+            // other half of the report to avoid.
+            "scrollThumb", "#FF3E3E50",
 
             // --- tooltips ---
             "tooltipFill", "#F00A0A0E",

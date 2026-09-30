@@ -26,7 +26,7 @@ import java.util.UUID;
  *
  * <p>An earlier version had this hold the teams and a nested {@code SavedData} class wrap it for
  * Minecraft's benefit. That is one layer of indirection that earned nothing: every call from
- * {@link TeamManager} had to go through the wrapper to reach the same map, and the wrapper's only
+ * {@link StoredTeamManager} had to go through the wrapper to reach the same map, and the wrapper's only
  * job was to implement {@code save}. Extending {@code SavedData} directly removes it.
  *
  * <h2>Why UUIDs are written as strings</h2>
@@ -146,11 +146,15 @@ public final class TeamStore extends SavedData {
     /**
      * Reads the store back.
      *
-     * <p>Private, because the only caller is the factory above — Minecraft's own loading path. A
-     * public loader would invite a second way to build a store, which is a second way for it to be
-     * wrong.
+     * <p>Package-private rather than private, and that is the whole of the reason it is not
+     * {@code public}: Minecraft's own loading path is the only production caller, but a test needs a
+     * second one. A test can build a store, save it and read it back with no server and no world —
+     * which is the only way to assert the properties that outlive a session, and the only way to
+     * check that a disbanded team's id is still recorded as spent after a round trip. {@code public}
+     * would invite a second <i>production</i> way to build a store, which is a second way for it to
+     * be wrong; package-private invites exactly one caller, from the test in this package.
      */
-    private static TeamStore load(CompoundTag tag, HolderLookup.Provider registries) {
+    static TeamStore load(CompoundTag tag, HolderLookup.Provider registries) {
         TeamStore store = new TeamStore();
 
         ListTag list = tag.getList("teams", Tag.TAG_COMPOUND);
