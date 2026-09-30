@@ -50,7 +50,6 @@ public final class ArmatureNeoForgeClient {
 
         // Before the first frame, and here rather than in the common initialiser: this is client
         // state read by client drawing, and a dedicated server has no window to look at.
-        Appearance.loadFromConfig();
     }
 
     /**

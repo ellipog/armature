@@ -373,7 +373,9 @@ class AppearanceTest {
         // one session — without it a theme saved in game would be invisible until the next launch,
         // which is the difference between an editor being usable and being a way to generate a file.
         ThemeFiles.reload(dir);
-        Appearance.load(dir.resolve("appearance.json"));
+        // The directory the theme is written into is the caller's now -- that is the whole point of the
+        // split, so a test that saves supplies one exactly as a mod does.
+        Appearance.load(dir.resolve("appearance.json"), dir);
         // Note that the two files live side by side here, which is *not* how a client arranges them --
         // see ThemeFiles.NOT_THEMES. It is worth keeping that way in a test: the settings file and a
         // theme file share three key names with different types, so a reader that confuses them fails
@@ -409,7 +411,9 @@ class AppearanceTest {
     @DisplayName("saving with no name at all derives one rather than refusing")
     void savingWithoutANameDerivesOne(@TempDir Path dir) throws Exception {
         ThemeFiles.reload(dir);
-        Appearance.load(dir.resolve("appearance.json"));
+        // The directory the theme is written into is the caller's now -- that is the whole point of the
+        // split, so a test that saves supplies one exactly as a mod does.
+        Appearance.load(dir.resolve("appearance.json"), dir);
         Appearance.setTheme("tome");
         Appearance.beginEditing();
         Appearance.setCustom("panel", 0xFF010203);
@@ -425,7 +429,9 @@ class AppearanceTest {
     @DisplayName("two saves of one name do not collide with the derived name of the next")
     void derivedNamesAvoidWhatExists(@TempDir Path dir) throws Exception {
         ThemeFiles.reload(dir);
-        Appearance.load(dir.resolve("appearance.json"));
+        // The directory the theme is written into is the caller's now -- that is the whole point of the
+        // split, so a test that saves supplies one exactly as a mod does.
+        Appearance.load(dir.resolve("appearance.json"), dir);
 
         Appearance.setTheme("tome");
         Appearance.beginEditing();
@@ -461,13 +467,19 @@ class AppearanceTest {
     }
 
     @Test
-    @DisplayName("saving with no theme directory known reports failure rather than throwing")
-    void savingWithoutADirectoryFailsQuietly() {
-        // Reachable if the platform layer has not been installed, which is a startup ordering mistake
-        // rather than a user's problem. The useful answer is a warning and a null, not a crash on a
-        // button press.
-        ThemeFiles.reset();
-        assertNull(Appearance.saveAsTheme("nothing"));
+    @DisplayName("saving with no theme directory supplied reports failure rather than throwing")
+    void savingWithoutADirectoryFailsQuietly(@TempDir Path dir) {
+        // Still a real case, and now a *caller's* mistake rather than a missing platform: a mod that
+        // loads its settings without telling the library where to save. The refusal is a null and a log
+        // line, because an editor's Save button that throws is worse than one that says nothing happened.
+        Appearance.reset();
+        Appearance.load(dir.resolve("appearance.json"));
+        Appearance.setTheme("tome");
+        Appearance.beginEditing();
+        Appearance.setCustom("panel", 0xFF010203);
+
+        assertNull(Appearance.saveAsTheme(null), "nowhere to write is not a crash");
+        assertNull(Appearance.saveAsTheme("named"), "and a name does not conjure a directory");
     }
 
     // ------------------------------------------------------------------

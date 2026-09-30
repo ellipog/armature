@@ -1,7 +1,6 @@
 package dev.ellipog.armature.client.ui;
 
 import dev.ellipog.armature.Constants;
-import dev.ellipog.armature.api.ArmatureApi;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -105,33 +104,17 @@ public final class ThemeFiles {
     /** Every problem from the last read, for a message. Empty is the normal case. */
     private static List<String> problems = List.of();
 
-    /** Where the directory is, once resolved. Null before {@link #reload}. */
+    /**
+     * The directory the last read used, or null before one.
+     *
+     * <p>Kept so {@code reset} and a message can name it. It is <b>the caller's path</b>, never one this
+     * class resolved -- see {@code .utils/check_library.py}, which fails the build if that ever changes.
+     */
     private static Path directory;
 
     // ------------------------------------------------------------------
     // Reading
     // ------------------------------------------------------------------
-
-    /** Reads the theme directory from the platform's config directory. Called on client start. */
-    public static void reload() {
-        Path path = null;
-        try {
-            path = ArmatureApi.platform().configDir("armature").resolve(DIRECTORY);
-        }
-        catch (RuntimeException e) {
-            // The platform is installed by Armature's own entry point, so this is reachable only if
-            // something reads themes earlier than mod construction. Defaults are a working appearance.
-            Constants.LOG.warn("armature: the platform layer was not ready, so no themes were read from"
-                    + " disk. The built-in themes are available.");
-        }
-        if (path == null) {
-            loaded = Map.of();
-            problems = List.of();
-            directory = null;
-            return;
-        }
-        reload(path);
-    }
 
     /**
      * Reads one directory of theme files.
@@ -336,10 +319,6 @@ public final class ThemeFiles {
     }
 
     /** The directory being read, or null. The editor shows it, since a saved theme's home matters. */
-    public static Path directory() {
-        return directory;
-    }
-
     /** Everything wrong with the last read, in the order it was found. Empty is the normal case. */
     public static List<String> problems() {
         return problems;

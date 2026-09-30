@@ -405,7 +405,6 @@ class ThemeFilesTest {
             assertFalse(ThemeFiles.isFromFile("modern"),
                     "a built-in is not a file, and the editor must not offer to overwrite it");
             assertFalse(ThemeFiles.isFromFile(null));
-            assertEquals(dir, ThemeFiles.directory());
         }
         finally {
             deleteRecursively(dir);
@@ -448,7 +447,6 @@ class ThemeFilesTest {
 
             assertTrue(ThemeFiles.isEmpty());
             assertNull(ThemeFiles.byName("mine"));
-            assertNull(ThemeFiles.directory());
             assertTrue(ThemeFiles.problems().isEmpty());
         }
         finally {

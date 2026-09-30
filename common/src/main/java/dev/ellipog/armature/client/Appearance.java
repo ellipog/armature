@@ -152,6 +152,9 @@ public final class Appearance {
 
     private static Path file;
 
+    /** Where a saved theme is written. The caller's directory, never one this class picked. */
+    private static Path themesDirectory;
+
     // ------------------------------------------------------------------
     // Reading
     // ------------------------------------------------------------------
@@ -431,7 +434,7 @@ public final class Appearance {
      * Writes the player's current edits out as a theme file, and returns its name.
      *
      * <p>The bridge between the editor and the file format, and the reason
-     * {@link ThemeFiles#reload()} is called at the end: a theme saved in-game should be selectable in the
+     * {@code ThemeFiles.reload} is called at the end: a theme saved in-game should be selectable in the
      * same session, which is the difference between an editor being usable and being a way to generate a
      * file you still have to restart to see.
      *
@@ -440,10 +443,10 @@ public final class Appearance {
      * @return the name it was saved under, or null when there was nowhere to write
      */
     public static String saveAsTheme(String name) {
-        Path directory = ThemeFiles.directory();
+        Path directory = themesDirectory;
         if (directory == null) {
-            Constants.LOG.warn("armature: no theme directory is known, so the theme could not be saved."
-                    + " Is the platform layer installed?");
+            Constants.LOG.warn("armature: no theme directory was supplied, so the theme could not be"
+                    + " saved. A mod that wants the editor's Save passes one to Appearance.load.");
             return null;
         }
 
@@ -543,27 +546,6 @@ public final class Appearance {
     // Persistence
     // ------------------------------------------------------------------
 
-    /** Reads the settings from the platform's config directory, then applies them. */
-    public static void loadFromConfig() {
-        Path path = null;
-        try {
-            path = ArmatureApi.platform().configDir("armature").resolve(FILE_NAME);
-        }
-        catch (RuntimeException e) {
-            // The platform is installed by Armature's own entry point, so this is reachable only if
-            // something calls this earlier than mod construction. Worth a line rather than a crash:
-            // the defaults are a working appearance.
-            Constants.LOG.warn("armature: the platform layer was not ready, so the appearance settings"
-                    + " were not read. The defaults are in use.", e);
-        }
-
-        if (path == null) {
-            apply();
-            return;
-        }
-        load(path);
-    }
-
     /**
      * Reads the settings from one file, then applies them.
      *
@@ -572,7 +554,28 @@ public final class Appearance {
      * says where it is and what to do about it. Neither case stops the client.
      */
     public static void load(Path path) {
+        load(path, null);
+    }
+
+    /**
+     * The same, with the directory a saved theme is written into.
+     *
+     * <h2>Why both paths come from the caller</h2>
+     *
+     * <p>Because a library owns things and no choices. This class held a settings file and a theme
+     * directory under its own name in the config folder, which meant two mods depending on it shared one
+     * player's one look -- a quest book in one theme and a panel in another was not expressible, and the
+     * library had quietly become a framework with a settings screen. The paths belong to the mod that
+     * draws now, each under its own directory, and this class is handed them.
+     *
+     * <p>{@code .utils/check_library.py} fails the build if this file ever resolves a configuration for
+     * itself again, so the rule is mechanical rather than remembered.
+     *
+     * @param themesDirectory where {@link #saveAsTheme} writes, or null to refuse to save
+     */
+    public static void load(Path path, Path themesDirectory) {
         file = path;
+        Appearance.themesDirectory = themesDirectory;
 
         if (Files.isRegularFile(path)) {
             try {
