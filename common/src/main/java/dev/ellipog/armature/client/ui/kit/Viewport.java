@@ -203,6 +203,37 @@ public final class Viewport {
     }
 
     /**
+     * Drags the content so that the point grabbed at {@code grabContentX, grabContentY} lands under
+     * {@code screenX, screenY}.
+     *
+     * <h2>Why the grab is a content point rather than an offset</h2>
+     *
+     * <p>Because a pan is "I am holding <i>this bit of the world</i>", and a drag anchored to an offset
+     * captured at press is a claim about the world that stops being true the moment anything else moves
+     * the view. A zoom does exactly that: {@link #zoomAt} writes the offset to keep the point under the
+     * pointer, and a drag that then put back the offset it remembered from the press would throw the
+     * zoom away on the next mouse move — the canvas sliding back to where the drag started, once per
+     * wheel notch, which is what holding a drag and scrolling actually looked like.
+     *
+     * <p>With the grab in content coordinates the two agree by construction: the zoom pivots on the
+     * point being held (it is under the pointer), and the drag re-places that same point under the
+     * pointer, so neither undoes the other and a zoom mid-drag simply zooms.
+     *
+     * <p>It does not drift the way accumulating per-event deltas does: the arithmetic is written from
+     * the press, so a long drag lands where the pointer is rather than a pixel per event away from it.
+     *
+     * @param screenX      where the pointer is now
+     * @param screenY      where the pointer is now
+     * @param grabContentX the content x that was under the pointer when the drag began
+     * @param grabContentY the content y that was under the pointer when the drag began
+     */
+    public void dragTo(double screenX, double screenY, float grabContentX, float grabContentY) {
+        offsetX = Math.round((float) screenX - originX - grabContentX * scale);
+        offsetY = Math.round((float) screenY - originY - grabContentY * scale);
+        clampOffset();
+    }
+
+    /**
      * How big the content is, so the offset can be clamped. Negative means unbounded.
      *
      * <p>Switching this on is what makes a view a scrolling list rather than a canvas. A content that

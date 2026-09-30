@@ -267,6 +267,52 @@ class ViewportTest {
     }
 
     @Test
+    void draggingKeepsTheGrabbedPointUnderThePointer() {
+        for (int startPan = -400; startPan <= 400; startPan += 200) {
+            for (float startScale : new float[] {0.4F, 1F, 1.9F}) {
+                Viewport view = canvas();
+                view.setOffset(startPan, startPan / 2);
+                view.setScale(startScale);
+
+                float grabX = view.contentX(300.0);
+                float grabY = view.contentY(200.0);
+                view.dragTo(340.0, 260.0, grabX, grabY);
+
+                float tolerance = 0.51F / view.scale();
+                assertEquals(grabX, view.contentX(340.0), tolerance,
+                        "the grabbed x left the pointer, pan " + startPan + " scale " + startScale);
+                assertEquals(grabY, view.contentY(260.0), tolerance,
+                        "the grabbed y left the pointer, pan " + startPan + " scale " + startScale);
+            }
+        }
+    }
+
+    @Test
+    void aZoomDuringADragIsNotUndoneByTheNextDragEvent() {
+        // The regression this method was written for. The first version of the canvas drag anchored to
+        // the *offset* captured at press, so a mouse move after a wheel notch put that offset back and
+        // threw the zoom away -- holding the canvas and turning the wheel made the view jump back to
+        // where the drag had started, once per notch. Holding the *content point* instead makes the two
+        // agree: the zoom pivots on the point being held, and the drag re-places that same point.
+        Viewport view = canvas();
+        view.setOffset(0, 0);
+
+        double pointerX = 300.0;
+        double pointerY = 200.0;
+        float grabX = view.contentX(pointerX);
+        float grabY = view.contentY(pointerY);
+
+        view.zoomAt(pointerX, pointerY, 1.5F);
+        view.dragTo(pointerX, pointerY, grabX, grabY);
+
+        float tolerance = 0.51F / view.scale();
+        assertEquals(grabY, view.contentY(pointerY), tolerance,
+                "the point the drag holds left the pointer, so the zoom had been undone");
+        assertEquals(1.5F, view.scale(), 0.0001F, "and the zoom itself stands");
+        assertEquals(grabX, view.contentX(pointerX), tolerance, "the same on the other axis");
+    }
+
+    @Test
     void zoomingInThenOutComesBack() {
         Viewport view = canvas();
         view.setOffset(-77, -31);
