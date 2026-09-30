@@ -56,18 +56,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>Static state, so every test restores it</h2>
  *
- * <p>{@code Appearance} is process-wide — {@code ArmatureTheme.current()} reads it — so a test that sets
- * a theme leaves it set for the next one. {@code Appearance.reset()} clears the settings, the pack's
+ * <p>{@code Look} is process-wide — {@code ArmatureTheme.current()} reads it — so a test that sets
+ * a theme leaves it set for the next one. {@code look.reset()} clears the settings, the pack's
  * default and the file association, and {@code ThemeFiles.reset()} clears the disk catalogue; without
  * both, a test could pass because of a theme another test wrote to a temporary directory that no longer
  * exists.
  */
 @DisplayName("The main theme, and who chooses it")
-class AppearanceTest {
+class LookTest {
+
+    /** One look per test: there is no global any more, which is the property this file now rests on. */
+    private final Look look = new Look();
+
 
     @BeforeEach
-    void resetAppearance() {
-        Appearance.reset();
+    void resetLook() {
+        look.reset();
         ThemeFiles.reset();
     }
 
@@ -78,28 +82,28 @@ class AppearanceTest {
     @Test
     @DisplayName("settings survive a round trip through the file format")
     void theFormatRoundTrips() {
-        Appearance.Settings written =
-                new Appearance.Settings("tome", false, true, Map.of("panel", 0xFF26212E));
-        assertEquals(written, Appearance.read(Appearance.write(written)));
+        Look.Settings written =
+                new Look.Settings("tome", false, true, Map.of("panel", 0xFF26212E));
+        assertEquals(written, Look.read(Look.write(written)));
     }
 
     @Test
     @DisplayName("a missing field takes its default rather than failing")
     void missingFieldsTakeDefaults() {
-        assertEquals(Themes.DEFAULT.name(), Appearance.read("{}").theme());
-        assertTrue(Appearance.read("{}").motion(),
+        assertEquals(Themes.DEFAULT.name(), Look.read("{}").theme());
+        assertTrue(Look.read("{}").motion(),
                 "an absent motion field must mean on — a file written by an older build, or by hand"
                         + " with one field in it, must not turn animation off for someone who never"
                         + " asked for that");
         // Absent means "the player has not chosen", which is what lets a pack set a theme at all. A
         // file that defaulted this to true would make a pack's theme apply only until the file was
         // written for the first time, which is a bug that would look like the pack's theme not working.
-        assertFalse(Appearance.read("{}").chosen(),
+        assertFalse(Look.read("{}").chosen(),
                 "an absent 'chosen' must mean the player has not chosen, or a pack could never set one");
 
-        assertEquals("tome", Appearance.read("{\"theme\": \"tome\"}").theme());
-        assertFalse(Appearance.read("{\"motion\": false}").motion());
-        assertTrue(Appearance.read("{\"chosen\": true}").chosen());
+        assertEquals("tome", Look.read("{\"theme\": \"tome\"}").theme());
+        assertFalse(Look.read("{\"motion\": false}").motion());
+        assertTrue(Look.read("{\"chosen\": true}").chosen());
     }
 
     @Test
@@ -108,7 +112,7 @@ class AppearanceTest {
         // Reachable two ways, and both are ordinary: a file edited by hand, and a file left behind by a
         // build that had a theme this one does not. The alternative — throwing — would take the client
         // down on a typo in a config file, which is not a proportionate answer.
-        assertEquals(Themes.DEFAULT.name(), Appearance.read("{\"theme\": \"marble\"}").theme());
+        assertEquals(Themes.DEFAULT.name(), Look.read("{\"theme\": \"marble\"}").theme());
     }
 
     @Test
@@ -117,7 +121,7 @@ class AppearanceTest {
         // A custom edit is a value the editor wrote. A build that no longer has that token would
         // otherwise carry it around forever doing nothing, which is a file that lies about what it
         // contains — and this is exactly the shape of bug this project has found three times.
-        Appearance.Settings read = Appearance.read(
+        Look.Settings read = Look.read(
                 "{\"custom\": {\"panel\": \"#26212E\", \"panell\": \"#445566\"}}");
 
         assertEquals(1, read.custom().size());
@@ -128,7 +132,7 @@ class AppearanceTest {
     @Test
     @DisplayName("a custom colour that is not a hex value is dropped, and the others kept")
     void aBadCustomColourIsDropped() {
-        Appearance.Settings read = Appearance.read(
+        Look.Settings read = Look.read(
                 "{\"custom\": {\"panel\": \"#26212E\", \"canvas\": \"not a colour\"}}");
         assertEquals(1, read.custom().size());
         assertEquals(0xFF26212E, read.custom().get("panel"));
@@ -140,12 +144,12 @@ class AppearanceTest {
         Path path = dir.resolve("appearance.json");
         Files.writeString(path, "this is not json at all {{{", StandardCharsets.UTF_8);
 
-        Appearance.load(path);
+        look.load(path);
 
         // The assertion is really "this did not throw": `load` is called once during client startup,
         // and a startup that dies because a config file is malformed is the failure this guards.
-        assertEquals(Appearance.Settings.DEFAULT, Appearance.settings());
-        assertEquals(Themes.DEFAULT.name(), Appearance.main().name());
+        assertEquals(Look.Settings.DEFAULT, look.settings());
+        assertEquals(Themes.DEFAULT.name(), look.main().name());
     }
 
     @Test
@@ -153,21 +157,21 @@ class AppearanceTest {
     void aMissingFileIsNormal(@TempDir Path dir) {
         // A first run. There is nothing to assert beyond the defaults, which is the point: this has no
         // error path at all, so there is no branch here that a malformed file could fall into.
-        Appearance.load(dir.resolve("nope").resolve("appearance.json"));
-        assertEquals(Appearance.Settings.DEFAULT, Appearance.settings());
+        look.load(dir.resolve("nope").resolve("appearance.json"));
+        assertEquals(Look.Settings.DEFAULT, look.settings());
     }
 
     @Test
     @DisplayName("a change is written to the file it was loaded from")
     void changesAreSaved(@TempDir Path dir) throws Exception {
         Path path = dir.resolve("appearance.json");
-        Appearance.load(path);
+        look.load(path);
 
-        Appearance.setTheme("tome");
+        look.setTheme("tome");
 
         // Read back through the real parser rather than through a field, because the field is what
         // would be right if `save` did nothing at all — this is the half that a restart exercises.
-        Appearance.Settings onDisk = Appearance.read(Files.readString(path, StandardCharsets.UTF_8));
+        Look.Settings onDisk = Look.read(Files.readString(path, StandardCharsets.UTF_8));
         assertEquals("tome", onDisk.theme());
         assertTrue(onDisk.chosen(), "choosing a theme must record that the player chose it");
     }
@@ -179,8 +183,8 @@ class AppearanceTest {
         // and curve into `Motion`. A caller that set the field without calling this would have a theme
         // with the previous theme's motion — which is what `vanilla_plus` would look like if its zero
         // went missing, presenting as "this theme's motion setting does nothing".
-        Appearance.load(dir.resolve("appearance.json"));
-        Appearance.setTheme("vanilla_plus");
+        look.load(dir.resolve("appearance.json"), dir);
+        look.setTheme("vanilla_plus");
 
         assertEquals("vanilla_plus", ArmatureTheme.current().name());
         assertEquals(0, ArmatureTheme.current().cornerRadius());
@@ -196,12 +200,12 @@ class AppearanceTest {
     void aPackSetsTheThemeForAPlayerWhoHasNotChosen() {
         // Most of the point of a themed pack: a modpack with a look should get it without every player
         // configuring anything.
-        Appearance.setServerDefault("amethyst");
+        look.setServerDefault("amethyst");
 
-        assertEquals("amethyst", Appearance.main().name());
-        assertEquals("amethyst", Appearance.serverDefault(),
+        assertEquals("amethyst", look.main().name());
+        assertEquals("amethyst", look.serverDefault(),
                 "the pack's name should be remembered, so a control can say where the theme came from");
-        assertFalse(Appearance.chosen());
+        assertFalse(look.chosen());
     }
 
     @Test
@@ -211,28 +215,28 @@ class AppearanceTest {
         // theme's presence. "I picked modern" and "nobody has picked and the pack happens to say
         // modern" are different facts that produce the same appearance, and only one of them should
         // survive a pack sending something else.
-        Appearance.setServerDefault("amethyst");
-        Appearance.setTheme("tome");
+        look.setServerDefault("amethyst");
+        look.setTheme("tome");
 
-        assertEquals("tome", Appearance.main().name());
+        assertEquals("tome", look.main().name());
 
         // And the pack changing its mind does not undo the player's choice, which is the case a
         // naive implementation gets wrong: reconnecting to a pack that now asks for `neon`.
-        Appearance.setServerDefault("neon");
-        assertEquals("tome", Appearance.main().name(),
+        look.setServerDefault("neon");
+        assertEquals("tome", look.main().name(),
                 "a pack overrode a player who had chosen for themselves");
-        assertTrue(Appearance.chosen());
+        assertTrue(look.chosen());
     }
 
     @Test
     @DisplayName("a pack with no theme leaves the player's own choice alone, and the default otherwise")
     void aPackMaySendNothing() {
-        Appearance.setServerDefault(null);
-        assertEquals(Themes.DEFAULT.name(), Appearance.main().name());
+        look.setServerDefault(null);
+        assertEquals(Themes.DEFAULT.name(), look.main().name());
 
-        Appearance.setTheme("paper");
-        Appearance.setServerDefault(null);
-        assertEquals("paper", Appearance.main().name());
+        look.setTheme("paper");
+        look.setServerDefault(null);
+        assertEquals("paper", look.main().name());
     }
 
     @Test
@@ -242,10 +246,10 @@ class AppearanceTest {
         // reporting once and because the client may load a file that defines it later. And `main` treats
         // an unresolvable name as absent, because it is resolved while drawing a frame -- where there is
         // nobody to tell and the only useful behaviour is to draw something.
-        Appearance.setServerDefault("a_theme_this_build_has_never_had");
+        look.setServerDefault("a_theme_this_build_has_never_had");
 
-        assertEquals("a_theme_this_build_has_never_had", Appearance.serverDefault());
-        assertEquals(Themes.DEFAULT.name(), Appearance.main().name(),
+        assertEquals("a_theme_this_build_has_never_had", look.serverDefault());
+        assertEquals(Themes.DEFAULT.name(), look.main().name(),
                 "an unresolvable pack theme must fall through rather than draw nothing");
     }
 
@@ -255,13 +259,13 @@ class AppearanceTest {
         // The sticky-state bug this is written against: a pack's look persisting onto the next server
         // is an appearance nobody chose, with nothing on screen saying where it came from.
         // `ClientQuestCache.clear` calls this with null on disconnect, and null has to *clear*.
-        Appearance.setServerDefault("neon");
-        assertEquals("neon", Appearance.main().name());
+        look.setServerDefault("neon");
+        assertEquals("neon", look.main().name());
 
-        Appearance.setServerDefault(null);
+        look.setServerDefault(null);
 
-        assertNull(Appearance.serverDefault());
-        assertEquals(Themes.DEFAULT.name(), Appearance.main().name());
+        assertNull(look.serverDefault());
+        assertEquals(Themes.DEFAULT.name(), look.main().name());
     }
 
     @Test
@@ -271,12 +275,12 @@ class AppearanceTest {
         // A player who deliberately picks `modern` must keep it when a pack asks for `neon` — a
         // comparison of names would see "modern vs neon" and let the pack win, and the player would
         // watch their explicit choice be replaced by a pack's preference.
-        Appearance.setServerDefault("neon");
-        assertTrue(Appearance.setTheme("modern"));
+        look.setServerDefault("neon");
+        assertTrue(look.setTheme("modern"));
 
-        Appearance.setServerDefault("amethyst");
+        look.setServerDefault("amethyst");
 
-        assertEquals("modern", Appearance.main().name(),
+        assertEquals("modern", look.main().name(),
                 "a player who chose the default theme had it taken away by a pack");
     }
 
@@ -287,10 +291,10 @@ class AppearanceTest {
     @Test
     @DisplayName("an edit applies over the theme in force, and over a pack's theme too")
     void editsSitOnTop() {
-        Appearance.setServerDefault("amethyst");
-        Appearance.setCustom("panel", 0xFF26212E);
+        look.setServerDefault("amethyst");
+        look.setCustom("panel", 0xFF26212E);
 
-        Theme resolved = Appearance.main();
+        Theme resolved = look.main();
         assertEquals(0xFF26212E, resolved.panel(), "the edit should be applied over the pack's theme");
         assertEquals(Themes.AMETHYST.available(), resolved.available(),
                 "the rest of the pack's theme should come through untouched");
@@ -302,42 +306,42 @@ class AppearanceTest {
         // The decision worth stating: a player who has changed the panel colour and then switches
         // theme keeps the change. The alternative — editing a full theme and saving it — would mean a
         // theme switch discarded their work, which makes an editor feel like it is fighting you.
-        Appearance.setCustom("panel", 0xFF010203);
-        assertEquals(0xFF010203, Appearance.main().panel());
+        look.setCustom("panel", 0xFF010203);
+        assertEquals(0xFF010203, look.main().panel());
 
-        Appearance.setTheme("paper");
+        look.setTheme("paper");
 
-        assertEquals(0xFF010203, Appearance.main().panel(), "a theme switch discarded the player's edit");
-        assertEquals(Themes.PAPER.canvas(), Appearance.main().canvas(),
+        assertEquals(0xFF010203, look.main().panel(), "a theme switch discarded the player's edit");
+        assertEquals(Themes.PAPER.canvas(), look.main().canvas(),
                 "and the rest of the new theme should be in force");
     }
 
     @Test
     @DisplayName("an edit can be undone one at a time or all at once")
     void editsCanBeUndone() {
-        Appearance.setTheme("tome");
-        Appearance.setCustom("panel", 0xFF010203);
-        Appearance.setCustom("canvas", 0xFF040506);
-        assertEquals(2, Appearance.custom().size());
+        look.setTheme("tome");
+        look.setCustom("panel", 0xFF010203);
+        look.setCustom("canvas", 0xFF040506);
+        assertEquals(2, look.custom().size());
 
-        Appearance.clearCustom("panel");
+        look.clearCustom("panel");
 
-        assertEquals(1, Appearance.custom().size());
-        assertEquals(Themes.TOME.panel(), Appearance.main().panel(),
+        assertEquals(1, look.custom().size());
+        assertEquals(Themes.TOME.panel(), look.main().panel(),
                 "clearing an edit should reveal the theme underneath it");
-        assertEquals(0xFF040506, Appearance.main().canvas(), "and leave the other edit alone");
+        assertEquals(0xFF040506, look.main().canvas(), "and leave the other edit alone");
 
-        Appearance.clearAllCustom();
-        assertTrue(Appearance.custom().isEmpty());
-        assertEquals(Themes.TOME.panel(), Appearance.main().panel());
-        assertEquals(Themes.TOME.canvas(), Appearance.main().canvas());
+        look.clearAllCustom();
+        assertTrue(look.custom().isEmpty());
+        assertEquals(Themes.TOME.panel(), look.main().panel());
+        assertEquals(Themes.TOME.canvas(), look.main().canvas());
     }
 
     @Test
     @DisplayName("an edit naming no token this build has is refused rather than stored")
     void anUnknownEditIsRefused() {
-        Appearance.setCustom("panell", 0xFF010203);
-        assertTrue(Appearance.custom().isEmpty(),
+        look.setCustom("panell", 0xFF010203);
+        assertTrue(look.custom().isEmpty(),
                 "a stored edit for a token nothing reads is a file that lies about its contents");
     }
 
@@ -349,20 +353,20 @@ class AppearanceTest {
         // was written against: save five colours over `amethyst`, switch to `paper`, and the result is
         // a paper theme with five amethyst colours in it — which is not what anybody meant and which
         // no amount of interface can explain.
-        Appearance.setTheme("amethyst");
-        Appearance.beginEditing();
+        look.setTheme("amethyst");
+        look.beginEditing();
 
-        assertEquals(ThemeToken.ALL.size(), Appearance.custom().size(),
+        assertEquals(ThemeToken.ALL.size(), look.custom().size(),
                 "editing should start from the resolved theme, with every colour a visible decision");
 
         for (ThemeToken token : ThemeToken.ALL) {
-            assertEquals(Themes.AMETHYST.colour(token.id()), Appearance.custom().get(token.id()),
+            assertEquals(Themes.AMETHYST.colour(token.id()), look.custom().get(token.id()),
                     token.id() + " was not materialised, so the editor would show it as unset");
         }
         // And the resolved appearance is unchanged by materialising it, which is the point: the
         // editor opens showing exactly what was on screen.
-        assertEquals(Themes.AMETHYST.panel(), Appearance.main().panel());
-        assertEquals(Themes.AMETHYST.title(), Appearance.main().title());
+        assertEquals(Themes.AMETHYST.panel(), look.main().panel());
+        assertEquals(Themes.AMETHYST.title(), look.main().title());
     }
 
     @Test
@@ -375,16 +379,16 @@ class AppearanceTest {
         ThemeFiles.reload(dir);
         // The directory the theme is written into is the caller's now -- that is the whole point of the
         // split, so a test that saves supplies one exactly as a mod does.
-        Appearance.load(dir.resolve("appearance.json"), dir);
+        look.load(dir.resolve("appearance.json"), dir);
         // Note that the two files live side by side here, which is *not* how a client arranges them --
         // see ThemeFiles.NOT_THEMES. It is worth keeping that way in a test: the settings file and a
         // theme file share three key names with different types, so a reader that confuses them fails
         // here rather than only on the machine of somebody who happens to keep a backup in the folder.
-        Appearance.setTheme("modern");
-        Appearance.beginEditing();
-        Appearance.setCustom("panel", 0xFF26212E);
+        look.setTheme("modern");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF26212E);
 
-        String saved = Appearance.saveAsTheme("My Theme!");
+        String saved = look.saveAsTheme("My Theme!");
 
         assertEquals("my_theme", saved, "the name should be sanitised into a filename and a lookup key");
         assertTrue(Files.isRegularFile(dir.resolve("my_theme.json")),
@@ -396,8 +400,8 @@ class AppearanceTest {
 
         // And the player is now using it, because saving a theme and not switching to it leaves them
         // looking at something other than what they just made -- with the only clue being a file.
-        assertEquals("my_theme", Appearance.main().name());
-        assertTrue(Appearance.custom().isEmpty(),
+        assertEquals("my_theme", look.main().name());
+        assertTrue(look.custom().isEmpty(),
                 "the edits are now the theme, so keeping them would double-apply them over it");
 
         // The file names the theme it started from, so the radius, motion and easing still come from
@@ -413,12 +417,12 @@ class AppearanceTest {
         ThemeFiles.reload(dir);
         // The directory the theme is written into is the caller's now -- that is the whole point of the
         // split, so a test that saves supplies one exactly as a mod does.
-        Appearance.load(dir.resolve("appearance.json"), dir);
-        Appearance.setTheme("tome");
-        Appearance.beginEditing();
-        Appearance.setCustom("panel", 0xFF010203);
+        look.load(dir.resolve("appearance.json"), dir);
+        look.setTheme("tome");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF010203);
 
-        String saved = Appearance.saveAsTheme(null);
+        String saved = look.saveAsTheme(null);
 
         assertNotNull(saved);
         assertTrue(saved.startsWith("tome"), "the derived name should say what it came from: " + saved);
@@ -431,17 +435,17 @@ class AppearanceTest {
         ThemeFiles.reload(dir);
         // The directory the theme is written into is the caller's now -- that is the whole point of the
         // split, so a test that saves supplies one exactly as a mod does.
-        Appearance.load(dir.resolve("appearance.json"), dir);
+        look.load(dir.resolve("appearance.json"), dir);
 
-        Appearance.setTheme("tome");
-        Appearance.beginEditing();
-        Appearance.setCustom("panel", 0xFF010203);
-        String first = Appearance.saveAsTheme(null);
+        look.setTheme("tome");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF010203);
+        String first = look.saveAsTheme(null);
 
-        Appearance.setTheme("tome");
-        Appearance.beginEditing();
-        Appearance.setCustom("panel", 0xFF040506);
-        String second = Appearance.saveAsTheme(null);
+        look.setTheme("tome");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF040506);
+        String second = look.saveAsTheme(null);
 
         assertEquals("tome_edited", first);
         assertFalse(first.equals(second),
@@ -455,14 +459,14 @@ class AppearanceTest {
         // One rule preventing three unrelated bugs: a name with a slash in it is a path traversal, a
         // name with a quote in it breaks the JSON, and a name with a space in it cannot be typed as a
         // command argument without quotes.
-        assertEquals("my_theme", Appearance.sanitise("My Theme!"));
-        assertEquals("a_b_c", Appearance.sanitise("a/b\\c"));
-        assertEquals("quoted", Appearance.sanitise("\"quoted\""));
-        assertEquals("tome_2", Appearance.sanitise("Tome 2"));
-        assertEquals("", Appearance.sanitise(""));
-        assertEquals("", Appearance.sanitise(null));
-        assertEquals("", Appearance.sanitise("!!!"), "a name of nothing but punctuation is no name");
-        assertFalse(Appearance.sanitise("../../etc/passwd").contains("/"),
+        assertEquals("my_theme", Look.sanitise("My Theme!"));
+        assertEquals("a_b_c", Look.sanitise("a/b\\c"));
+        assertEquals("quoted", Look.sanitise("\"quoted\""));
+        assertEquals("tome_2", Look.sanitise("Tome 2"));
+        assertEquals("", Look.sanitise(""));
+        assertEquals("", Look.sanitise(null));
+        assertEquals("", Look.sanitise("!!!"), "a name of nothing but punctuation is no name");
+        assertFalse(Look.sanitise("../../etc/passwd").contains("/"),
                 "a saved theme's name becomes a path in a config directory");
     }
 
@@ -472,14 +476,16 @@ class AppearanceTest {
         // Still a real case, and now a *caller's* mistake rather than a missing platform: a mod that
         // loads its settings without telling the library where to save. The refusal is a null and a log
         // line, because an editor's Save button that throws is worse than one that says nothing happened.
-        Appearance.reset();
-        Appearance.load(dir.resolve("appearance.json"));
-        Appearance.setTheme("tome");
-        Appearance.beginEditing();
-        Appearance.setCustom("panel", 0xFF010203);
+        // One argument, and the missing one is the point of the test: this is a caller that named its
+        // settings file and never said where a theme should go.
+        look.reset();
+        look.load(dir.resolve("appearance.json"));
+        look.setTheme("tome");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF010203);
 
-        assertNull(Appearance.saveAsTheme(null), "nowhere to write is not a crash");
-        assertNull(Appearance.saveAsTheme("named"), "and a name does not conjure a directory");
+        assertNull(look.saveAsTheme(null), "nowhere to write is not a crash");
+        assertNull(look.saveAsTheme("named"), "and a name does not conjure a directory");
     }
 
     // ------------------------------------------------------------------
@@ -492,9 +498,9 @@ class AppearanceTest {
         String first = Themes.ALL.get(0).name();
         String seen = first;
         for (int i = 1; i < Themes.ALL.size(); i++) {
-            seen = Appearance.nextName(seen);
+            seen = Look.nextName(seen);
         }
-        assertEquals(first, Appearance.nextName(seen),
+        assertEquals(first, Look.nextName(seen),
                 "cycling past the last theme must come back to the first, not stop");
 
         // And every theme is reachable, which is the half a wrap test alone would miss.
@@ -502,7 +508,7 @@ class AppearanceTest {
         String step = first;
         for (int i = 0; i < Themes.ALL.size(); i++) {
             visited.add(step);
-            step = Appearance.nextName(step);
+            step = Look.nextName(step);
         }
         assertEquals(Themes.ALL.size(), visited.size());
     }
@@ -510,8 +516,8 @@ class AppearanceTest {
     @Test
     @DisplayName("cycling from a name this build does not have starts at the beginning")
     void cyclingFromAnUnknownNameStarts() {
-        assertEquals(Themes.ALL.get(0).name(), Appearance.nextName("marble"));
-        assertEquals(Themes.ALL.get(0).name(), Appearance.nextName(null));
+        assertEquals(Themes.ALL.get(0).name(), Look.nextName("marble"));
+        assertEquals(Themes.ALL.get(0).name(), Look.nextName(null));
     }
 
     @Test
@@ -523,7 +529,7 @@ class AppearanceTest {
         for (int i = 0; i < Themes.ALL.size(); i++) {
             String thisOne = Themes.ALL.get(i).name();
             String next = Themes.ALL.get((i + 1) % Themes.ALL.size()).name();
-            assertEquals(next, Appearance.nextName(thisOne));
+            assertEquals(next, Look.nextName(thisOne));
         }
     }
 
@@ -541,7 +547,7 @@ class AppearanceTest {
         String step = Themes.ALL.get(0).name();
         for (int i = 0; i <= Themes.ALL.size(); i++) {
             visited.add(step);
-            step = Appearance.nextName(step);
+            step = Look.nextName(step);
         }
 
         assertTrue(visited.contains("mine"),
@@ -555,35 +561,35 @@ class AppearanceTest {
         // A real temporary directory rather than a made-up path. `setTheme` saves, and `save` creates
         // the parent directory it is given -- so a test passing `Path.of("a").resolve(...)` leaves a
         // directory called `a` in whichever directory the test runner happened to be in.
-        Appearance.load(dir.resolve("appearance.json"));
-        String before = Appearance.main().name();
+        look.load(dir.resolve("appearance.json"), dir);
+        String before = look.main().name();
 
-        Appearance.cycleTheme();
+        look.cycleTheme();
 
-        assertFalse(before.equals(Appearance.main().name()), "the theme did not change");
-        assertEquals(Appearance.main().name(), ArmatureTheme.current().name(),
+        assertFalse(before.equals(look.main().name()), "the theme did not change");
+        assertEquals(look.main().name(), ArmatureTheme.current().name(),
                 "cycling changed the setting without applying it");
-        assertTrue(Appearance.chosen(), "and it is the player's own choice from here on");
+        assertTrue(look.chosen(), "and it is the player's own choice from here on");
     }
 
     @Test
     @DisplayName("setting an unknown theme is refused rather than applied")
     void anUnknownThemeIsRefused() {
-        Appearance.setTheme("tome");
+        look.setTheme("tome");
 
-        assertFalse(Appearance.setTheme("nope"));
-        assertEquals("tome", Appearance.main().name());
+        assertFalse(look.setTheme("nope"));
+        assertEquals("tome", look.main().name());
     }
 
     @Test
     @DisplayName("the current name is the resolved theme's, whatever decided it")
     void currentNameIsTheResolvedOne() {
-        Appearance.setServerDefault("obsidian");
-        assertEquals("obsidian", Appearance.currentName(),
+        look.setServerDefault("obsidian");
+        assertEquals("obsidian", look.currentName(),
                 "an appearance set by a pack is still the appearance in force");
 
-        Appearance.setTheme("paper");
-        assertEquals("paper", Appearance.currentName());
+        look.setTheme("paper");
+        assertEquals("paper", look.currentName());
     }
 
     // ------------------------------------------------------------------
@@ -598,10 +604,10 @@ class AppearanceTest {
         // because a reskin must not be able to re-enable animation for someone who cannot comfortably
         // use it. Note that selecting a theme pushes its duration at `Motion`, so the two touch — and
         // this is the assertion that the switch is not overridden by that push.
-        Appearance.setMotion(false);
-        Appearance.setTheme("tome");
+        look.setMotion(false);
+        look.setTheme("tome");
 
-        assertFalse(Appearance.motion());
+        assertFalse(look.motion());
         assertFalse(Motion.enabled(),
                 "choosing a theme re-enabled animation for someone who turned it off");
         assertEquals(0L, Motion.scaledDuration(Themes.TOME.motion()),
@@ -611,11 +617,11 @@ class AppearanceTest {
     @Test
     @DisplayName("motion on is the default, and survives a reload of a file that does not mention it")
     void motionDefaultsOn() {
-        assertTrue(Appearance.motion());
-        assertEquals(Appearance.Settings.DEFAULT, Appearance.settings());
-        assertFalse(Appearance.chosen(), "a fresh client has not chosen a theme");
-        assertTrue(Appearance.custom().isEmpty());
-        assertNull(Appearance.serverDefault());
+        assertTrue(look.motion());
+        assertEquals(Look.Settings.DEFAULT, look.settings());
+        assertFalse(look.chosen(), "a fresh client has not chosen a theme");
+        assertTrue(look.custom().isEmpty());
+        assertNull(look.serverDefault());
     }
 
     @Test
@@ -627,26 +633,26 @@ class AppearanceTest {
         Files.writeString(dir.resolve("broken.json"), "not json {{{", StandardCharsets.UTF_8);
         ThemeFiles.reload(dir);
 
-        assertFalse(Appearance.themeProblems().isEmpty());
-        assertTrue(Appearance.themeProblems().get(0).contains("broken.json"),
-                Appearance.themeProblems().toString());
+        assertFalse(look.themeProblems().isEmpty());
+        assertTrue(look.themeProblems().get(0).contains("broken.json"),
+                look.themeProblems().toString());
     }
 
     @Test
     @DisplayName("a reset leaves nothing behind, which is what every test here depends on")
     void resetClearsEverything() {
-        Appearance.setServerDefault("neon");
-        Appearance.setTheme("tome");
-        Appearance.setMotion(false);
-        Appearance.setCustom("panel", 0xFF010203);
+        look.setServerDefault("neon");
+        look.setTheme("tome");
+        look.setMotion(false);
+        look.setCustom("panel", 0xFF010203);
 
-        Appearance.reset();
+        look.reset();
 
-        assertEquals(Appearance.Settings.DEFAULT, Appearance.settings());
-        assertNull(Appearance.serverDefault());
-        assertTrue(Appearance.motion());
-        assertTrue(Appearance.custom().isEmpty());
-        assertEquals(Themes.DEFAULT.name(), Appearance.main().name());
+        assertEquals(Look.Settings.DEFAULT, look.settings());
+        assertNull(look.serverDefault());
+        assertTrue(look.motion());
+        assertTrue(look.custom().isEmpty());
+        assertEquals(Themes.DEFAULT.name(), look.main().name());
         assertSame(Themes.DEFAULT, ArmatureTheme.current());
     }
 
@@ -657,11 +663,11 @@ class AppearanceTest {
         // state of a freshly opened editor -- forty-one edits that happen to equal the theme. Nothing
         // about that should change the appearance, which is what stops the editor shifting a colour the
         // moment it is opened.
-        Appearance.setTheme("copper");
-        Appearance.beginEditing();
+        look.setTheme("copper");
+        look.beginEditing();
 
         Theme before = Themes.COPPER;
-        Theme after = Appearance.main();
+        Theme after = look.main();
 
         for (ThemeToken token : ThemeToken.ALL) {
             assertEquals(before.colour(token.id()), after.colour(token.id()), token.id());
@@ -674,8 +680,8 @@ class AppearanceTest {
     @Test
     @DisplayName("an edit reaches the toolkit, so the editor's preview is the real appearance")
     void anEditReachesTheToolkit() {
-        Appearance.setTheme("modern");
-        Appearance.setCustom("panel", 0xFF112233);
+        look.setTheme("modern");
+        look.setCustom("panel", 0xFF112233);
 
         assertEquals(0xFF112233, ArmatureTheme.panel(),
                 "a screen built on Armature does not read this and would show the unedited colour");
@@ -688,12 +694,12 @@ class AppearanceTest {
         // A setting file written on every change should not churn: a diff of two saves should show the
         // difference rather than the insertion order. Cheap, and it makes the file reviewable.
         Path path = dir.resolve("appearance.json");
-        Appearance.load(path);
-        Appearance.setCustom("title", 0xFFFFFFFF);
-        Appearance.setCustom("available", 0xFF7FB4E8);
+        look.load(path);
+        look.setCustom("title", 0xFFFFFFFF);
+        look.setCustom("available", 0xFF7FB4E8);
 
         String first = Files.readString(path, StandardCharsets.UTF_8);
-        Appearance.setCustom("panel", 0xFF24242E);
+        look.setCustom("panel", 0xFF24242E);
         String second = Files.readString(path, StandardCharsets.UTF_8);
 
         assertTrue(second.contains("\"available\""), second);
@@ -708,38 +714,38 @@ class AppearanceTest {
         // A setting rather than a theme edit, so it gets the treatment every setting in this class gets:
         // clamped at the boundary it declares, written to the file only when somebody chose it, and
         // revertible to what the theme underneath says.
-        Appearance.reset();
+        look.reset();
         Path file = dir.resolve("appearance.json");
-        Appearance.load(file);
+        look.load(file);
 
-        int themeRadius = Appearance.radius();
-        assertFalse(Appearance.radiusChosen(), "a fresh client takes the theme's corners");
+        int themeRadius = look.radius();
+        assertFalse(look.radiusChosen(), "a fresh client takes the theme's corners");
 
-        Appearance.setRadius(6);
-        assertEquals(6, Appearance.radius());
-        assertTrue(Appearance.radiusChosen());
+        look.setRadius(6);
+        assertEquals(6, look.radius());
+        assertTrue(look.radiusChosen());
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radius\":6"),
                 "and it is on disk, because a setting that is not written is not a setting");
 
-        Appearance.setRadius(999);
-        assertEquals(Appearance.MAX_RADIUS, Appearance.radius(),
+        look.setRadius(999);
+        assertEquals(Look.MAX_RADIUS, look.radius(),
                 "clamped by the setting rather than by the control that offers it");
 
-        Appearance.clearRadius();
-        assertFalse(Appearance.radiusChosen());
-        assertEquals(themeRadius, Appearance.radius(), "back to the theme's own corners");
+        look.clearRadius();
+        assertFalse(look.radiusChosen());
+        assertEquals(themeRadius, look.radius(), "back to the theme's own corners");
         assertFalse(Files.readString(file, StandardCharsets.UTF_8).contains("radius"),
                 "and the file stops carrying one, which is what makes the theme's own reachable again");
 
         // A file with no radius is the theme's own: an older file keeps the look it always had.
-        Appearance.load(file);
-        assertFalse(Appearance.radiusChosen());
-        assertEquals(themeRadius, Appearance.radius());
+        look.load(file);
+        assertFalse(look.radiusChosen());
+        assertEquals(themeRadius, look.radius());
 
         // And a theme's own radius is never taken away -- only overridden and given back.
-        Appearance.setRadius(0);
-        assertEquals(0, Appearance.radius(), "square corners are a look, not the absence of one");
+        look.setRadius(0);
+        assertEquals(0, look.radius(), "square corners are a look, not the absence of one");
 
-        Appearance.reset();
+        look.reset();
     }
 }

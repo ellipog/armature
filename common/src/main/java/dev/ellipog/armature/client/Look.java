@@ -78,12 +78,13 @@ import java.util.Map;
  * <p>Because the alternative is a setting that survives a clean shutdown and is lost to a crash, and the
  * amount of state is four fields. There is no batching worth the complexity here.
  */
-public final class Appearance {
+public final class Look {
 
     /** Under {@code config/armature/}. Named for what it holds rather than for the mod. */
     private static final String FILE_NAME = "appearance.json";
 
-    private Appearance() {
+    /** A look of somebody's own. The mod that draws owns one; nothing here is shared. */
+    public Look() {
     }
 
     /**
@@ -145,37 +146,37 @@ public final class Appearance {
     public static final int MIN_RADIUS = 0;
     public static final int MAX_RADIUS = 12;
 
-    private static Settings settings = Settings.DEFAULT;
+    private Settings settings = Settings.DEFAULT;
 
     /** What this connection's pack asked for, or null. Never persisted; see {@link Settings}. */
-    private static String serverDefault;
+    private String serverDefault;
 
-    private static Path file;
+    private Path file;
 
     /** Where a saved theme is written. The caller's directory, never one this class picked. */
-    private static Path themesDirectory;
+    private Path themesDirectory;
 
     // ------------------------------------------------------------------
     // Reading
     // ------------------------------------------------------------------
 
     /** The player's stored settings, as they are on disk. */
-    public static Settings settings() {
+    public Settings settings() {
         return settings;
     }
 
     /** The name the pack asked for, or null. For a control that wants to say where a theme came from. */
-    public static String serverDefault() {
+    public String serverDefault() {
         return serverDefault;
     }
 
     /** Whether the player has chosen for themselves, which is what beats the pack's default. */
-    public static boolean chosen() {
+    public boolean chosen() {
         return settings.chosen();
     }
 
     /** The player's own colour edits, if any. */
-    public static Map<String, Integer> custom() {
+    public Map<String, Integer> custom() {
         return settings.custom();
     }
 
@@ -205,7 +206,7 @@ public final class Appearance {
      * <b>last</b>, so they override the pack's theme as well as the built-in one. A player who has gone
      * to the trouble of editing a colour means it, and a pack that replaced the base must not undo it.
      */
-    public static Theme main() {
+    public Theme main() {
         Theme base = null;
 
         if (settings.chosen()) {
@@ -233,12 +234,12 @@ public final class Appearance {
      * that precedence is enforced — in the one place that reads both.
      */
     /** The corner radius in force: the player's if they set one, else the theme's own. */
-    public static int radius() {
+    public int radius() {
         return main().cornerRadius();
     }
 
     /** Whether the player has set a radius of their own, rather than taking the theme's. */
-    public static boolean radiusChosen() {
+    public boolean radiusChosen() {
         return settings.radius() != null;
     }
 
@@ -249,7 +250,7 @@ public final class Appearance {
      * it persists, and the theme underneath is what it overrides. {@code saveAsTheme} bakes it into the
      * file when the player decides the look is worth keeping.
      */
-    public static void setRadius(int radius) {
+    public void setRadius(int radius) {
         settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom(),
                 radius);
         apply();
@@ -257,7 +258,7 @@ public final class Appearance {
     }
 
     /** Back to the theme's own corners. */
-    public static void clearRadius() {
+    public void clearRadius() {
         if (settings.radius() == null) {
             return;
         }
@@ -266,7 +267,7 @@ public final class Appearance {
         save();
     }
 
-    public static boolean motion() {
+    public boolean motion() {
         return settings.motion();
     }
 
@@ -283,10 +284,10 @@ public final class Appearance {
      * is not hypothetical — it is what {@code vanilla_plus}'s zero would look like if it went missing, and
      * it would present as "this theme's motion setting does nothing".
      */
-    public static void apply() {
+    public void apply() {
         // The player's motion flag first, and it was missing until a test caught it. `setCurrent`
         // pushes the *theme's* duration and curve into `Motion`; this pushes the player's own switch
-        // into the same class. Without this line the switch did nothing at all: `Appearance.motion()`
+        // into the same class. Without this line the switch did nothing at all: `motion()`
         // reported the right answer, `Motion.enabled()` never heard about it, and turning motion off
         // left every hover easing exactly as before — a setting that is read by nothing, which is the
         // failure this codebase has now found four times.
@@ -304,7 +305,7 @@ public final class Appearance {
      *
      * @return whether the name matched a theme; false leaves everything alone
      */
-    public static boolean setTheme(String name) {
+    public boolean setTheme(String name) {
         if (Themes.any(name) == null) {
             return false;
         }
@@ -315,12 +316,12 @@ public final class Appearance {
     }
 
     /** Moves the player's choice to the next theme, wrapping. What the sidebar control does. */
-    public static void cycleTheme() {
+    public void cycleTheme() {
         setTheme(nextName(currentName()));
     }
 
     /** The name the main theme is currently taken from — the player's, the pack's, or the default. */
-    public static String currentName() {
+    public String currentName() {
         return main().name();
     }
 
@@ -352,7 +353,7 @@ public final class Appearance {
     }
 
     /** Turns animation on or off for this client. The accessibility switch. */
-    public static void setMotion(boolean on) {
+    public void setMotion(boolean on) {
         settings = new Settings(settings.theme(), on, settings.chosen(), settings.custom());
         apply();
         save();
@@ -370,7 +371,7 @@ public final class Appearance {
      * alternative — editing a full theme and saving it — would mean a theme switch discarded their work,
      * which is the behaviour that makes an editor feel like it is fighting you.
      */
-    public static void setCustom(String tokenId, int argb) {
+    public void setCustom(String tokenId, int argb) {
         if (!ThemeToken.exists(tokenId)) {
             return;
         }
@@ -382,7 +383,7 @@ public final class Appearance {
     }
 
     /** Undoes one edit, back to whatever the theme under it says. */
-    public static void clearCustom(String tokenId) {
+    public void clearCustom(String tokenId) {
         if (!settings.custom().containsKey(tokenId.toLowerCase(java.util.Locale.ROOT))) {
             return;
         }
@@ -394,7 +395,7 @@ public final class Appearance {
     }
 
     /** Undoes every edit. The editor's "revert". */
-    public static void clearAllCustom() {
+    public void clearAllCustom() {
         if (settings.custom().isEmpty() && settings.radius() == null) {
             return;
         }
@@ -418,7 +419,7 @@ public final class Appearance {
      * blending two. It costs a bigger file and it buys the property that matters: <b>what the editor
      * shows is what the file says.</b>
      */
-    public static void beginEditing() {
+    public void beginEditing() {
         Theme resolved = main();
         Map<String, Integer> every = new LinkedHashMap<>();
         int[] colours = resolved.allColours();
@@ -442,11 +443,11 @@ public final class Appearance {
      *     blank gives a name derived from the theme being edited, so a save never has to be refused
      * @return the name it was saved under, or null when there was nowhere to write
      */
-    public static String saveAsTheme(String name) {
+    public String saveAsTheme(String name) {
         Path directory = themesDirectory;
         if (directory == null) {
             Constants.LOG.warn("armature: no theme directory was supplied, so the theme could not be"
-                    + " saved. A mod that wants the editor's Save passes one to Appearance.load.");
+                    + " saved. A mod that wants the editor's Save passes one to load.");
             return null;
         }
 
@@ -536,7 +537,7 @@ public final class Appearance {
      * worth reporting once and because the client may have loaded a file later. {@link #main} treats an
      * unresolvable name as absent, so a bad one costs nothing but a line in the log.
      */
-    public static void setServerDefault(String name) {
+    public void setServerDefault(String name) {
         String trimmed = name == null ? null : name.trim();
         serverDefault = trimmed == null || trimmed.isEmpty() ? null : trimmed;
         apply();
@@ -553,7 +554,7 @@ public final class Appearance {
      * defaults are the answer. A file that exists and cannot be read is worth a word, and gets one that
      * says where it is and what to do about it. Neither case stops the client.
      */
-    public static void load(Path path) {
+    public void load(Path path) {
         load(path, null);
     }
 
@@ -573,9 +574,12 @@ public final class Appearance {
      *
      * @param themesDirectory where {@link #saveAsTheme} writes, or null to refuse to save
      */
-    public static void load(Path path, Path themesDirectory) {
+    public void load(Path path, Path themesDirectory) {
         file = path;
-        Appearance.themesDirectory = themesDirectory;
+        // `this.`, and it is not a style point: the parameter has the field's name, so the version
+        // without it assigned the parameter to itself and the directory stayed null -- which three
+        // tests caught by asking where the saved theme went.
+        this.themesDirectory = themesDirectory;
 
         if (Files.isRegularFile(path)) {
             try {
@@ -671,7 +675,7 @@ public final class Appearance {
         return root.toString();
     }
 
-    private static void save() {
+    private void save() {
         if (file == null) {
             return;
         }
@@ -697,7 +701,7 @@ public final class Appearance {
      * that has loaded a temporary file and then sets a theme would otherwise write to it, and a test
      * that writes to the file it is reading is one that passes for the wrong reason.
      */
-    public static void reset() {
+    public void reset() {
         settings = Settings.DEFAULT;
         serverDefault = null;
         file = null;
@@ -706,7 +710,7 @@ public final class Appearance {
     }
 
     /** Every problem from the last theme-file read, for the editor to show. */
-    public static List<String> themeProblems() {
+    public List<String> themeProblems() {
         return new ArrayList<>(ThemeFiles.problems());
     }
 }
