@@ -225,9 +225,9 @@ class PartyRosterTest {
             PartyRoster.Member ownerRow = roster.members().get(0);
             assertTrue(ownerRow.self());
             assertFalse(ownerRow.canRemove(),
-                    "removing yourself is /tasked party leave, which is a different act -- and the "
-                            + "owner leaving by kick would hand ownership to the fallback rule rather "
-                            + "than to a decision");
+                    "removing yourself is *leaving*, which is a different act -- and the owner "
+                            + "leaving by kick would hand ownership to the fallback rule rather than "
+                            + "to a decision");
         }
 
         @Test
