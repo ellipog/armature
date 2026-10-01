@@ -129,8 +129,8 @@ public final class TextField {
      */
     public TextField selectTo(int position) {
         history.breakRun();
-        caret = Math.max(0, Math.min(value.length(), position));
-        anchor = Math.max(0, Math.min(value.length(), anchor));
+        caret = Codepoints.snap(value, position);
+        anchor = Codepoints.snap(value, anchor);
         return this;
     }
 
@@ -147,7 +147,7 @@ public final class TextField {
      */
     public TextField selectWordAt(int position) {
         history.breakRun();
-        caret = Math.max(0, Math.min(value.length(), position));
+        caret = Codepoints.snap(value, position);
         anchor = caret;
         if (value.isEmpty()) {
             return this;
@@ -176,6 +176,75 @@ public final class TextField {
         return Character.isLetterOrDigit(character) || character == '#' || character == '_';
     }
 
+    // ------------------------------------------------------------------
+    // The clipboard. The rules live here; the widget's only job is the OS handoff.
+    // ------------------------------------------------------------------
+
+    /**
+     * What a copy takes: the mark when there is one, the whole value otherwise.
+     *
+     * <p>The whole value when nothing is marked is what every field here has always done, and it is what
+     * makes a double click worth doing at all: a hex code, an id, a name is one value, and "copy" on a
+     * field holding one thing means that thing. Empty when the field is.
+     *
+     * <p>Here rather than in the widget because it is a rule about text, and rules about text are what a
+     * test can hold without a client; the widget carries the answer to the OS clipboard and decides
+     * nothing.
+     */
+    public String copyText() {
+        return hasSelection() ? selectedText() : value;
+    }
+
+    /**
+     * What a cut takes: the mark, removed as one edit. Nothing marked is nothing taken, and nothing
+     * changes.
+     *
+     * <p>A cut that took the whole unmarked value would empty a field on one keystroke, which no editor
+     * means -- vanilla's own cut copies the highlight, and the highlight of nothing is nothing.
+     */
+    public String cutText() {
+        if (!hasSelection()) {
+            return "";
+        }
+        String cut = selectedText();
+        history.before(TextHistory.Edit.WHOLE, state());
+        dropSelection();
+        return cut;
+    }
+
+    /**
+     * Takes a clipboard's text as the field's new value, as one edit.
+     *
+     * <p>Whole-value rather than inserted at the caret, because a field here holds one thing: a hex
+     * code, an id, a title, and pasting into the middle of one is not a thing anybody means to do.
+     *
+     * <p>Control characters are dropped -- a single-line field has nowhere for a newline, and a paste is
+     * not exempt from the rule typing follows -- and the limit is the field's own. Text with nothing left
+     * after that changes nothing: pasting nothing must not be a way to empty a field. A null text (a
+     * clipboard that answered nothing) is the same as an empty one.
+     */
+    public TextField pasteText(String text) {
+        String taken = pasteable(text);
+        if (taken.isEmpty()) {
+            return this;
+        }
+        return setValue(taken);
+    }
+
+    private static String pasteable(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        StringBuilder kept = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char each = text.charAt(i);
+            if (!Character.isISOControl(each)) {
+                kept.append(each);
+            }
+        }
+        return kept.toString();
+    }
+
     /**
      * Replaces the text and puts the caret at the end.
      *
@@ -187,7 +256,7 @@ public final class TextField {
     public TextField setValue(String next) {
         Objects.requireNonNull(next, "next");
         history.before(TextHistory.Edit.WHOLE, state());
-        value = next.length() > maxLength ? next.substring(0, maxLength) : next;
+        value = Codepoints.prefix(next, maxLength);
         caret = value.length();
         anchor = caret;
         return this;
@@ -251,8 +320,9 @@ public final class TextField {
             dropSelection();
             return this;
         }
-        value = value.substring(0, caret - 1) + value.substring(caret);
-        caret--;
+        int from = Codepoints.before(value, caret);
+        value = value.substring(0, from) + value.substring(caret);
+        caret = from;
         anchor = caret;
         return this;
     }
@@ -267,7 +337,8 @@ public final class TextField {
             dropSelection();
             return this;
         }
-        value = value.substring(0, caret) + value.substring(caret + 1);
+        int to = Codepoints.after(value, caret);
+        value = value.substring(0, caret) + value.substring(to);
         anchor = caret;
         return this;
     }
@@ -289,7 +360,7 @@ public final class TextField {
     /** Left, or — with something marked — to the selection's left edge, which dismisses it. */
     public TextField left() {
         history.breakRun();
-        caret = hasSelection() ? selectionStart() : Math.max(0, caret - 1);
+        caret = hasSelection() ? selectionStart() : Codepoints.before(value, caret);
         anchor = caret;
         return this;
     }
@@ -297,7 +368,7 @@ public final class TextField {
     /** Right, or to the selection's right edge. */
     public TextField right() {
         history.breakRun();
-        caret = hasSelection() ? selectionEnd() : Math.min(value.length(), caret + 1);
+        caret = hasSelection() ? selectionEnd() : Codepoints.after(value, caret);
         anchor = caret;
         return this;
     }
@@ -310,7 +381,7 @@ public final class TextField {
      */
     public TextField caretTo(int position) {
         history.breakRun();
-        caret = Math.max(0, Math.min(value.length(), position));
+        caret = Codepoints.snap(value, position);
         anchor = caret;
         return this;
     }

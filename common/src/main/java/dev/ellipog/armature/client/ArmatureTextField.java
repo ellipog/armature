@@ -216,19 +216,29 @@ public final class ArmatureTextField extends AbstractWidget {
             }
             case 67 -> {                // C
                 if (control) {
-                    // The mark when there is one, the whole value otherwise -- what every field does, and
-                    // what makes a double click worth doing at all.
-                    Minecraft.getInstance().keyboardHandler.setClipboard(
-                            model.hasSelection() ? model.selectedText() : model.value());
+                    // The mark when there is one, the whole value otherwise -- the model's `copyText`,
+                    // which is where the rule is asserted; this carries its answer to the OS.
+                    Minecraft.getInstance().keyboardHandler.setClipboard(model.copyText());
                     return true;
                 }
             }
             case 86 -> {                // V
                 if (control) {
-                    // Replaces the whole value rather than inserting at the caret, mark or no mark: a hex
-                    // code is one value, and pasting into the middle of one is not a thing anybody means
-                    // to do.
-                    model.setValue(Minecraft.getInstance().keyboardHandler.getClipboard());
+                    // Whole-value, not inserted at the caret: a field here holds one thing. The rule,
+                    // the filtering and the limit are the model's `pasteText`.
+                    model.pasteText(Minecraft.getInstance().keyboardHandler.getClipboard());
+                    return true;
+                }
+            }
+            case 88 -> {                // X: the mark, and nothing else
+                if (control) {
+                    // A cut that took the whole unmarked value would empty a field on one keystroke, so
+                    // the model cuts the mark or nothing -- and nothing leaves the OS clipboard alone
+                    // rather than overwriting it with an empty string.
+                    String cut = model.cutText();
+                    if (!cut.isEmpty()) {
+                        Minecraft.getInstance().keyboardHandler.setClipboard(cut);
+                    }
                     return true;
                 }
             }

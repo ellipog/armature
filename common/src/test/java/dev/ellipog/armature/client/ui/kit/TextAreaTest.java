@@ -219,6 +219,90 @@ class TextAreaTest {
     }
 
     // ------------------------------------------------------------------
+    // The clipboard, and a character outside the basic plane
+    // ------------------------------------------------------------------
+
+    /** One character, two chars: what an input method outside the basic plane commits. */
+    private static final String EMOJI = "\uD83D\uDE00";   // check_glyphs: allow -- the subject is the pair, never drawn
+
+    @Test
+    @DisplayName("a paste arrives at the caret, replaces the mark, and is one step back")
+    void pasteIsOneEdit() {
+        TextArea area = TextArea.of(200).setValue("one two").clearHistory();
+        area.caretTo(3);
+
+        area.pasteText("and\nthree ");
+        assertEquals("oneand\nthree  two", area.value(), "at the caret, newline and all");
+        area.undo();
+        assertEquals("one two", area.value(), "and the whole paste is one press back, not one character");
+
+        area.selectAll();
+        area.pasteText("0123456789");
+        assertEquals("0123456789", area.value(), "a paste over a mark replaces it");
+    }
+
+    @Test
+    @DisplayName("a clipboard's carriage returns go, its newlines stay, and the limit holds")
+    void pasteFiltersAndClamps() {
+        TextArea area = TextArea.of(64);
+        area.pasteText("one\r\ntwo");
+        assertEquals("one\ntwo", area.value(), "a Windows clipboard's carriage return goes; the newline is a line");
+
+        TextArea full = TextArea.of(5).setValue("abc").clearHistory();
+        full.selectAll().pasteText("0123456789");
+        assertEquals("01234", full.value(), "stopping at the limit rather than overflowing");
+        assertEquals(5, full.caret());
+
+        TextArea untouched = TextArea.of(64).setValue("kept").clearHistory();
+        untouched.pasteText("\r");
+        assertEquals("kept", untouched.value(),
+                "a paste with nothing left after the filter changes nothing");
+        assertFalse(untouched.canUndo());
+    }
+
+    @Test
+    @DisplayName("a copy takes the mark or the whole block, and a cut takes the mark only")
+    void copyAndCut() {
+        TextArea area = TextArea.of(200).setValue("first\nsecond").clearHistory();
+        assertEquals("first\nsecond", area.copyText(), "nothing marked: the block is the thing a copy takes");
+
+        area.caretTo(0).selectTo(5);
+        assertEquals("first", area.copyText());
+        assertEquals("first", area.cutText());
+        assertEquals("\nsecond", area.value(), "the mark went, nothing else");
+        area.undo();
+        assertEquals("first\nsecond", area.value(), "one edit, one undo");
+
+        TextArea unmarked = TextArea.of(200).setValue("kept").clearHistory();
+        assertEquals("", unmarked.cutText(), "nothing marked is nothing to cut");
+        assertEquals("kept", unmarked.value());
+        assertFalse(unmarked.canUndo());
+    }
+
+    @Test
+    @DisplayName("a character outside the basic plane is one character to the caret and to the break")
+    void aPairIsOneCharacter() {
+        TextArea area = TextArea.of(200).setValue("a" + EMOJI + "b").clearHistory();
+        area.caretTo(3).backspace();
+        assertEquals("ab", area.value(), "backspace beside a pair takes the whole character");
+        assertEquals(1, area.caret());
+
+        TextArea snapped = TextArea.of(200).setValue("a" + EMOJI + "b");
+        snapped.caretTo(2);
+        assertEquals(1, snapped.caret(), "the middle of a pair is not a caret position");
+
+        // Two characters a line (6px each): the pair moves to the next line whole rather than half a
+        // glyph heading one -- and when the pair alone is wider than the line, it is taken anyway, the
+        // same failure any single character too wide gets.
+        assertEquals(List.of("a", EMOJI, "b"), wrap("a" + EMOJI + "b", 12).stream()
+                        .map(span -> span.text("a" + EMOJI + "b")).toList(),
+                "the break moved off the pair rather than through it");
+        assertEquals(List.of(EMOJI, "b"), wrap(EMOJI + "b", 6).stream()
+                        .map(span -> span.text(EMOJI + "b")).toList(),
+                "a pair that cannot fit is one line too wide, not two lines of half a glyph");
+    }
+
+    // ------------------------------------------------------------------
     // The two gestures: a click moves the caret, a drag extends the mark
     // ------------------------------------------------------------------
 

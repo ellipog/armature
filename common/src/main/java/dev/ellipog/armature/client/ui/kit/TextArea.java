@@ -94,7 +94,7 @@ public final class TextArea {
     public TextArea setValue(String next) {
         Objects.requireNonNull(next, "next");
         history.before(TextHistory.Edit.WHOLE, state());
-        value = next.length() > maxLength ? next.substring(0, maxLength) : next;
+        value = Codepoints.prefix(next, maxLength);
         caret = value.length();
         anchor = caret;
         return this;
@@ -114,7 +114,7 @@ public final class TextArea {
     /** Puts the caret at an index, clamped, and drops any selection. */
     public TextArea caretTo(int position) {
         history.breakRun();
-        caret = Math.max(0, Math.min(value.length(), position));
+        caret = Codepoints.snap(value, position);
         anchor = caret;
         return this;
     }
@@ -128,9 +128,79 @@ public final class TextArea {
 
     public TextArea selectTo(int position) {
         history.breakRun();
-        caret = Math.max(0, Math.min(value.length(), position));
-        anchor = Math.max(0, Math.min(value.length(), anchor));
+        caret = Codepoints.snap(value, position);
+        anchor = Codepoints.snap(value, anchor);
         return this;
+    }
+
+    // ------------------------------------------------------------------
+    // The clipboard. The rules live here; the widget's only job is the OS handoff.
+    // ------------------------------------------------------------------
+
+    /**
+     * What a copy takes: the mark when there is one, the whole block otherwise.
+     *
+     * <p>The same rule as {@link TextField#copyText}, and here for the same reason: a block nobody has
+     * marked is one document, and "copy" on it means the document.
+     */
+    public String copyText() {
+        return hasSelection() ? selectedText() : value;
+    }
+
+    /**
+     * What a cut takes: the mark, removed as one edit. Nothing marked is nothing taken, and nothing
+     * changes -- see {@link TextField#cutText} for why a cut never takes an unmarked block.
+     */
+    public String cutText() {
+        if (!hasSelection()) {
+            return "";
+        }
+        String cut = selectedText();
+        history.before(TextHistory.Edit.WHOLE, state());
+        dropSelection();
+        return cut;
+    }
+
+    /**
+     * Takes a clipboard's text in at the caret, replacing the mark, as one edit.
+     *
+     * <p>Inserted at the caret rather than replacing the whole value, unlike {@link TextField}: a block
+     * of prose is edited in the middle, and "paste" meaning "replace everything" is a gesture nobody
+     * means in a description. It is one history step whatever it carries -- so one Ctrl+Z takes the
+     * paste back whole rather than one character of it -- and it stops at the limit rather than
+     * overflowing: what is shown is what is held.
+     *
+     * <p>Control characters are dropped, a newline excepted, because a newline is a line: a Windows
+     * clipboard arrives without its carriage returns. Text with nothing left after that changes nothing;
+     * a null text (a clipboard that answered nothing) is the same as an empty one.
+     */
+    public TextArea pasteText(String text) {
+        String kept = pasteable(text);
+        int room = maxLength - (value.length() - (selectionEnd() - selectionStart()));
+        String taken = Codepoints.prefix(kept, Math.max(0, room));
+        if (taken.isEmpty()) {
+            return this;
+        }
+        history.before(TextHistory.Edit.WHOLE, state());
+        dropSelection();
+        value = value.substring(0, caret) + taken + value.substring(caret);
+        caret += taken.length();
+        anchor = caret;
+        return this;
+    }
+
+    private static String pasteable(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        StringBuilder kept = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char each = text.charAt(i);
+            if (each == '\n' || !Character.isISOControl(each)) {
+                kept.append(each);
+            }
+        }
+        return kept.toString();
     }
 
     // ------------------------------------------------------------------
@@ -171,8 +241,9 @@ public final class TextArea {
             dropSelection();
             return this;
         }
-        value = value.substring(0, caret - 1) + value.substring(caret);
-        caret--;
+        int from = Codepoints.before(value, caret);
+        value = value.substring(0, from) + value.substring(caret);
+        caret = from;
         anchor = caret;
         return this;
     }
@@ -187,7 +258,8 @@ public final class TextArea {
             dropSelection();
             return this;
         }
-        value = value.substring(0, caret) + value.substring(caret + 1);
+        int to = Codepoints.after(value, caret);
+        value = value.substring(0, caret) + value.substring(to);
         anchor = caret;
         return this;
     }
@@ -195,7 +267,7 @@ public final class TextArea {
     /** Left, or to the selection's left edge. */
     public TextArea left() {
         history.breakRun();
-        caret = hasSelection() ? selectionStart() : Math.max(0, caret - 1);
+        caret = hasSelection() ? selectionStart() : Codepoints.before(value, caret);
         anchor = caret;
         return this;
     }
@@ -203,7 +275,7 @@ public final class TextArea {
     /** Right, or to the selection's right edge. */
     public TextArea right() {
         history.breakRun();
-        caret = hasSelection() ? selectionEnd() : Math.min(value.length(), caret + 1);
+        caret = hasSelection() ? selectionEnd() : Codepoints.after(value, caret);
         anchor = caret;
         return this;
     }
@@ -240,7 +312,7 @@ public final class TextArea {
         }
         int column = caret - lines.get(index).start();
         Span above = lines.get(index - 1);
-        caret = Math.min(above.start() + column, above.end());
+        caret = Codepoints.snap(value, Math.min(above.start() + column, above.end()));
         anchor = caret;
         return this;
     }
@@ -254,7 +326,7 @@ public final class TextArea {
         }
         int column = caret - lines.get(index).start();
         Span below = lines.get(index + 1);
-        caret = Math.min(below.start() + column, below.end());
+        caret = Codepoints.snap(value, Math.min(below.start() + column, below.end()));
         anchor = caret;
         return this;
     }
@@ -542,6 +614,14 @@ public final class TextArea {
             }
             if (fits <= 0) {
                 fits = 1;   // a single character wider than the box still gets its own line
+            }
+            if (fits < remaining.length() && Character.isHighSurrogate(remaining.charAt(fits - 1))
+                    && Character.isLowSurrogate(remaining.charAt(fits))) {
+                // The break fell inside one character: a character outside the basic plane is two chars
+                // and still one character, so the whole pair moves to the next line and this one ends
+                // before it -- unless the pair is what the line starts with, in which case it is taken
+                // whole and one column too wide, the same failure any single character too wide gets.
+                fits = fits > 1 ? fits - 1 : 2;
             }
             int space = remaining.lastIndexOf(' ', fits - 1);
             if (space > 0) {

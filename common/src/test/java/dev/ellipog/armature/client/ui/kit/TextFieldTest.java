@@ -235,6 +235,103 @@ class TextFieldTest {
     }
 
     // ------------------------------------------------------------------
+    // The clipboard. The rules, because the OS handoff is all the widget owns.
+    // ------------------------------------------------------------------
+
+    @Test
+    void aCopyTakesTheMarkAndFallsBackToTheWholeValue() {
+        // The whole value when nothing is marked, which is what makes a double click worth doing: a hex
+        // code, an id, a name is one value, and "copy" on a field holding one thing means that thing.
+        TextField field = typed("#4A90D9 red");
+        assertEquals("#4A90D9 red", field.copyText(), "nothing marked: the value is the thing a field holds");
+
+        field.selectWordAt(1);
+        assertEquals("#4A90D9", field.copyText(), "marked: the mark is what a copy takes");
+        assertEquals("", TextField.of(8).copyText(), "and an empty field copies nothing");
+    }
+
+    @Test
+    void aCutTakesTheMarkAndNothingElse() {
+        TextField field = typed("one two").clearHistory().selectWordAt(1);
+        assertEquals("one", field.cutText());
+        assertEquals(" two", field.value(), "the mark went, the rest stayed");
+        assertEquals(0, field.caret());
+        field.undo();
+        assertEquals("one two", field.value(), "and it was one edit, so one undo brings it back");
+
+        // Nothing marked is nothing to cut: a cut that took the whole unmarked value would empty a field
+        // on one keystroke, which no editor means -- vanilla's own cut copies the highlight, and the
+        // highlight of nothing is nothing.
+        TextField unmarked = typed("one").clearHistory();
+        assertEquals("", unmarked.cutText());
+        assertEquals("one", unmarked.value());
+        assertFalse(unmarked.canUndo(), "and it is not an edit that happened");
+    }
+
+    @Test
+    void aPasteIsTheWholeValueInOneStep() {
+        TextField field = TextField.of(64).setValue("unchanged").clearHistory();
+
+        field.pasteText("pasted");
+        assertEquals("pasted", field.value(), "a field here holds one thing, so a paste is a replacement");
+        assertEquals(6, field.caret(), "the caret lands after what arrived");
+        field.undo();
+        assertEquals("unchanged", field.value(), "and the whole paste is one press back");
+
+        TextField kept = typed("kept").clearHistory();
+        kept.pasteText("\n");
+        assertEquals("kept", kept.value(),
+                "a newline is where a single-line field has no room for anything, so a paste of nothing "
+                        + "left is not a way to empty a field");
+        assertFalse(kept.canUndo());
+
+        assertEquals("abcd", TextField.of(4).pasteText("abcdef").value(),
+                "and a paste stops at the limit like everything else");
+    }
+
+    // ------------------------------------------------------------------
+    // A character is a code point, not a char
+    // ------------------------------------------------------------------
+
+    /** One character, two chars: what an input method outside the basic plane commits. */
+    private static final String EMOJI = "\uD83D\uDE00";   // check_glyphs: allow -- the subject is the pair, never drawn
+
+    @Test
+    void leftAndRightStepOverAWholeCharacter() {
+        TextField field = typed("a" + EMOJI + "b");
+        assertEquals(4, field.caret());
+
+        field.left();
+        assertEquals(3, field.caret(), "first step is the plain character after the pair");
+        field.left();
+        assertEquals(1, field.caret(), "and one press over the pair, not two");
+
+        field.right();
+        assertEquals(3, field.caret(), "right steps over it whole too");
+    }
+
+    @Test
+    void backspaceAndDeleteRemoveAWholeCharacter() {
+        TextField back = typed("a" + EMOJI + "b").caretTo(3).backspace();
+        assertEquals("ab", back.value(), "backspace beside a pair removes the pair, not half of it");
+        assertEquals(1, back.caret());
+
+        TextField forward = typed("a" + EMOJI + "b").caretTo(1).deleteForward();
+        assertEquals("ab", forward.value());
+        assertEquals(1, forward.caret(), "and Delete does not move the caret");
+    }
+
+    @Test
+    void aClickCannotLandInsideACharacter() {
+        TextField field = typed("a" + EMOJI + "b").caretTo(2);
+
+        assertEquals(1, field.caret(), "the middle of a pair is not a caret position; it snaps out");
+        field.selectTo(2);
+        assertEquals(1, field.selectionEnd(), "and a drag cannot end inside one either");
+        assertFalse(field.hasSelection(), "so a drag that never left the character marks nothing");
+    }
+
+    // ------------------------------------------------------------------
     // The history
     // ------------------------------------------------------------------
 

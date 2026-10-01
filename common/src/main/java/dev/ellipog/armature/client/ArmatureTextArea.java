@@ -338,18 +338,27 @@ public final class ArmatureTextArea extends AbstractWidget {
                 model.end();
                 return true;
             }
-            case 67 -> {                // C: the mark, or the whole block
+            case 67 -> {                // C: the mark, or the whole block -- the model's rule
                 if (control) {
-                    Minecraft.getInstance().keyboardHandler.setClipboard(
-                            model.hasSelection() ? model.selectedText() : model.value());
+                    Minecraft.getInstance().keyboardHandler.setClipboard(model.copyText());
                     return true;
                 }
             }
             case 86 -> {                // V: inserted at the caret, unlike the one-line field
                 if (control) {
-                    String pasted = Minecraft.getInstance().keyboardHandler.getClipboard();
-                    for (int i = 0; i < pasted.length(); i++) {
-                        model.insert(pasted.charAt(i));
+                    // One edit whatever it carries; the filtering, the limit and replacing the mark are
+                    // the model's `pasteText`.
+                    model.pasteText(Minecraft.getInstance().keyboardHandler.getClipboard());
+                    return true;
+                }
+            }
+            case 88 -> {                // X: the mark, and nothing else
+                if (control) {
+                    // Nothing marked cuts nothing, and leaves the OS clipboard alone rather than
+                    // overwriting it with an empty string; see the one-line field's case.
+                    String cut = model.cutText();
+                    if (!cut.isEmpty()) {
+                        Minecraft.getInstance().keyboardHandler.setClipboard(cut);
                     }
                     return true;
                 }
