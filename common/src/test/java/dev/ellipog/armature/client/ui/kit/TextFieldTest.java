@@ -129,4 +129,175 @@ class TextFieldTest {
 
         assertTrue(field.isEmpty());
     }
+
+    // ------------------------------------------------------------------
+    // The selection
+    // ------------------------------------------------------------------
+
+    @Test
+    void aDoubleClickMarksTheWordItLandedIn() {
+        // The gesture that asked for all of this: "double clicking the text in text fields should mark it".
+        for (int at : new int[] {1, 3, 5, 8}) {
+            TextField field = typed("#4A90D9").selectWordAt(at);
+            assertEquals("#4A90D9", field.selectedText(),
+                    () -> "a click at " + at + " is inside the code, and the code is one word because '#' "
+                            + "is a word character -- which is why it is one");
+        }
+    }
+
+    @Test
+    void aWordIsAWordAndPunctuationIsNot() {
+        TextField field = typed("#4A90D9 extra").selectWordAt(11);
+        assertEquals("extra", field.selectedText(), "a later word is its own");
+
+        // Whitespace on its own has no word in it: the caret moves and nothing is marked, because marking
+        // the gap between two words is a selection nobody wants and a second gesture to undo.
+        TextField blank = typed("   ").selectWordAt(1);
+        assertFalse(blank.hasSelection());
+        assertEquals(1, blank.caret());
+
+        // And a click in the space just after a word marks that word: it is where a click on the last
+        // letter lands, and the character before the pointer is the one being pointed at.
+        TextField after = typed("one two").selectWordAt(3);
+        assertEquals("one", after.selectedText());
+
+        TextField edge = typed("one two").selectWordAt(7);
+        assertEquals("two", edge.selectedText(), "and the same at the end of the value");
+    }
+
+    @Test
+    void typingOverAMarkReplacesIt() {
+        TextField field = typed("#4A90D9").selectWordAt(2);
+
+        field.insert('#');
+
+        assertEquals("#", field.value(), "the mark went, the character came");
+        assertEquals(1, field.caret());
+    }
+
+    @Test
+    void backspaceAndDeleteRemoveTheMarkRatherThanOneCharacter() {
+        TextField back = typed("one two three").selectWordAt(4).backspace();
+        assertEquals("one  three", back.value(), "the word and not the character before the caret");
+        assertEquals(4, back.caret(), "and the caret is where the mark began");
+
+        TextField forward = typed("one two three").selectWordAt(4).deleteForward();
+        assertEquals("one  three", forward.value());
+    }
+
+    @Test
+    void selectAllThenTypeLeavesOnlyWhatWasTyped() {
+        TextField field = typed("#4A90D9").selectAll();
+
+        assertEquals("#4A90D9", field.selectedText());
+        assertEquals(0, field.selectionStart());
+        assertEquals(7, field.selectionEnd());
+
+        field.insert('x');
+        assertEquals("x", field.value());
+    }
+
+    @Test
+    void movingTheCaretDropsTheMarkAndArrowsGoToItsEdge() {
+        TextField clicked = typed("one two").selectWordAt(1).caretTo(5);
+        assertFalse(clicked.hasSelection(), "a click says where the caret is and nothing else");
+
+        // An arrow moves to the selection's edge rather than past it, so a mark can be dismissed in the
+        // direction a person is already going -- which is where this differs from a plain step.
+        assertEquals(3, typed("one two").selectWordAt(1).right().caret(), "right goes to the mark's end");
+        TextField marked = typed("one two").selectWordAt(5);
+        assertEquals(4, marked.left().caret(), "and left to its start");
+        assertFalse(marked.hasSelection());
+    }
+
+    @Test
+    void typingNeverLeavesAMarkBehind() {
+        // The invariant the class rests on, and the one whose absence broke every test in this file when
+        // the anchor was added: an edit that is not a selection gesture leaves one caret behind, because a
+        // stale anchor is not a harmless leftover -- it is a mark, and the next keystroke replaces the text
+        // with it.
+        TextField field = typed("abc").left().insert('x').backspace().deleteForward().right();
+
+        assertFalse(field.hasSelection(), "no step of typing, deleting or arrowing marks anything");
+    }
+
+    @Test
+    void aMarkedFieldKnowsItsEdgesWhicheverWayItWasMade() {
+        // The anchor is where the gesture started, and either end may be the caret; every question below
+        // is about the pair, not about which of them is which.
+        TextField field = typed("abcdef");
+        field.caretTo(5).selectTo(2);
+
+        assertTrue(field.hasSelection());
+        assertEquals(2, field.selectionStart());
+        assertEquals(5, field.selectionEnd());
+        assertEquals("cde", field.selectedText());
+    }
+
+    // ------------------------------------------------------------------
+    // The history
+    // ------------------------------------------------------------------
+
+    @Test
+    void typingARunIsOneStepBack() {
+        TextField field = TextField.of(64);
+        field.insert('a');
+        field.insert('b');
+        field.insert('c');
+        assertEquals("abc", field.value());
+
+        field.undo();
+        assertEquals("", field.value(), "the whole run goes back, not the last letter of it");
+        field.redo();
+        assertEquals("abc", field.value(), "and forward again");
+    }
+
+    @Test
+    void undoPutsTheCaretAndTheMarkBackWhereTheEditWas() {
+        TextField field = TextField.of(64);
+        field.insert('a');
+        field.insert('b');
+        field.insert('c');
+        field.caretTo(1);                       // a navigation ends the run: the next edit is its own step
+        field.insert('X');
+        assertEquals("aXbc", field.value());
+
+        field.undo();
+        assertEquals("abc", field.value());
+        assertEquals(1, field.caret(), "the caret comes back to the edit, not to the end of the text");
+        assertFalse(field.hasSelection());
+    }
+
+    @Test
+    void replacingAMarkedRunUndoesAsOneStepAndComesBackMarked() {
+        TextField field = TextField.of(64).setValue("hello world").clearHistory();
+        field.selectAll();
+        field.insert('!');
+        assertEquals("!", field.value());
+
+        field.undo();
+        assertEquals("hello world", field.value());
+        assertEquals(0, field.selectionStart());
+        assertEquals(11, field.selectionEnd(), "the mark the edit replaced is put back too");
+    }
+
+    @Test
+    void aNewEditDropsTheRedo() {
+        TextField field = TextField.of(64);
+        field.insert('a');
+        field.undo();
+        assertTrue(field.canRedo());
+        field.insert('b');
+        assertFalse(field.canRedo(), "redo describes a history that no longer happened");
+    }
+
+    @Test
+    void theOpenedValueIsWhereTheHistoryStarts() {
+        TextField field = TextField.of(64).setValue("open").clearHistory();
+        assertFalse(field.canUndo(), "a just-opened field has nothing to undo");
+        field.insert('!');
+        field.undo();
+        assertEquals("open", field.value());
+        assertFalse(field.canUndo());
+    }
 }
