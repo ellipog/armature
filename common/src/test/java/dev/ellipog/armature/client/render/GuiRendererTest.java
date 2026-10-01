@@ -518,4 +518,27 @@ class GuiRendererTest {
         assertThrows(NullPointerException.class, () -> Measure.truncate("a", 10, null));
         assertNotNull(Measure.truncate("a", 10, measure), "a valid call must not return null");
     }
+
+    @Test
+    void styledTextCarriesItsRunsAndMeasuresThemStyled() {
+        RecordingRenderer r = RecordingRenderer.withCharWidth(6);
+        r.styledText(java.util.List.of(new GuiRenderer.StyledRun("bo", true, false, false),
+                new GuiRenderer.StyledRun("ld", false, true, true),
+                new GuiRenderer.StyledRun("hl", false, false, false, 2F)), 10, 20, 0xFFFFFFFF);
+
+        java.util.List<RecordingRenderer.Call> styled = r.styled();
+        assertEquals(1, styled.size(), "one call per line, not one per run");
+        assertEquals("boldhl", styled.get(0).text(), "the call carries the whole line");
+        assertEquals(3, styled.get(0).runs().size());
+        assertTrue(styled.get(0).runs().get(0).bold());
+        assertTrue(styled.get(0).runs().get(1).italic());
+        assertTrue(styled.get(0).runs().get(1).underline(), "a link is underlined, which is all it is");
+
+        // What a layout has to lay out with: bold is one pixel wider per glyph, as the game's font is.
+        assertEquals(14, r.styledWidth("bo", true, false, 1F), "two bold glyphs at seven pixels");
+        assertEquals(12, r.styledWidth("ld", false, false, 1F));
+        assertEquals(12, r.styledWidth("ld", false, true, 1F), "italic is not wider, and is not pretended to be");
+        assertEquals(2F, styled.get(0).runs().get(2).scale());
+        assertEquals(24, r.styledWidth("hl", false, false, 2F), "and a doubled run is twice as wide");
+    }
 }

@@ -56,7 +56,13 @@ public final class RecordingRenderer implements GuiRenderer {
      * {@code fills()} and {@code texts()}, and a test that wants "was this label drawn over that
      * rectangle" compares numbers from two lists. Six types would be six visitors.
      */
-    public record Call(Op op, int x, int y, int x2, int y2, int argb, String text) {
+    public record Call(Op op, int x, int y, int x2, int y2, int argb, String text,
+                       java.util.List<GuiRenderer.StyledRun> runs) {
+
+        /** A call with no runs: every op but styled text, which is the only one that carries them. */
+        public Call(Op op, int x, int y, int x2, int y2, int argb, String text) {
+            this(op, x, y, x2, y2, argb, text, java.util.List.of());
+        }
 
         /** Whether this call is a filled rectangle covering the given point. */
         public boolean covers(int px, int py) {
@@ -68,6 +74,8 @@ public final class RecordingRenderer implements GuiRenderer {
             return switch (op) {
                 case FILL -> "fill(" + x + "," + y + " -> " + x2 + "," + y2 + ", " + hex(argb) + ")";
                 case TEXT -> "text(\"" + text + "\" at " + x + "," + y + ", " + hex(argb) + ")";
+                case STYLED_TEXT -> "styledText(\"" + text + "\" in " + runs.size() + " run(s) at "
+                        + x + "," + y + ")";
                 case ICON -> "icon(" + x + "," + y + " " + x2 + "px)";
                 case FACE -> "face(" + text + " at " + x + "," + y + " " + x2 + "px)";
                 case BLUR -> "blur(yes)";
@@ -83,7 +91,7 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /** What a recorded call was. */
-    public enum Op { FILL, TEXT, ICON, FACE, BLUR, CLIP, UNCLIP, FLUSH }
+    public enum Op { FILL, TEXT, STYLED_TEXT, ICON, FACE, BLUR, CLIP, UNCLIP, FLUSH }
 
     private final List<Call> calls = new ArrayList<>();
     private final int charWidth;
@@ -158,6 +166,26 @@ public final class RecordingRenderer implements GuiRenderer {
     @Override
     public void text(String text, int x, int y, int argb) {
         calls.add(new Call(Op.TEXT, x, y, 0, 0, argb, text));
+    }
+
+    @Override
+    public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
+        StringBuilder whole = new StringBuilder();
+        for (StyledRun run : runs) {
+            whole.append(run.text());
+        }
+        calls.add(new Call(Op.STYLED_TEXT, x, y, 0, 0, argb, whole.toString(), java.util.List.copyOf(runs)));
+    }
+
+    @Override
+    public int styledWidth(String text, boolean bold, boolean italic, float scale) {
+        if (text == null) {
+            return 0;
+        }
+        // Bold is one pixel wider per glyph, which is what the game's font does, and a scaled run is that
+        // much larger throughout -- so a fake that ignored either could not tell a correct layout from a
+        // wrong one.
+        return Math.round(text.length() * (charWidth + (bold ? 1 : 0)) * scale);
     }
 
     @Override
@@ -241,6 +269,11 @@ public final class RecordingRenderer implements GuiRenderer {
     /** The text, in order. */
     public List<Call> texts() {
         return calls.stream().filter(call -> call.op() == Op.TEXT).toList();
+    }
+
+    /** The styled lines, in order, with the runs each carried. */
+    public List<Call> styled() {
+        return calls.stream().filter(call -> call.op() == Op.STYLED_TEXT).toList();
     }
 
     /** The icons, in order. */

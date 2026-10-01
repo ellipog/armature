@@ -7,6 +7,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.PlayerSkin;
@@ -96,6 +98,66 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         // makes vanilla's text legible against vanilla's background, and this UI draws an opaque
         // backdrop behind every label instead. Both at once reads as a smudged label.
         graphics.drawString(font(), text, x, y, argb, false);
+    }
+
+    @Override
+    public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
+        int at = x;
+        for (StyledRun run : runs) {
+            if (run.scale() == 1F) {
+                drawRun(run, at, y, argb);
+            }
+            else {
+                // Bigger is the pose, scaled about the run's own top-left: the font has one size, and this
+                // keeps the run's top on the line's top while it grows downward into the taller line the
+                // caller reserved for it.
+                graphics.pose().pushPose();
+                graphics.pose().translate(at, y, 0F);
+                graphics.pose().scale(run.scale(), run.scale(), 1F);
+                drawRun(run, 0, 0, argb);
+                graphics.pose().popPose();
+            }
+            at += styledWidth(run.text(), run.bold(), run.italic(), run.scale());
+        }
+    }
+
+    /** One run, with the styles the font answers to. A literal component, so no code is interpreted. */
+    private void drawRun(StyledRun run, int x, int y, int argb) {
+        net.minecraft.network.chat.MutableComponent text = Component.literal(run.text());
+        if (run.bold() || run.italic() || run.underline()) {
+            text = text.withStyle(styleOf(run));
+        }
+        graphics.drawString(font(), text, x, y, argb, false);
+    }
+
+    @Override
+    public int styledWidth(String text, boolean bold, boolean italic, float scale) {
+        // Measured through the same style it will be drawn with: the game's bold font is one pixel wider
+        // per glyph, so measuring plain and drawing bold is a line that runs past its column.
+        int plain;
+        if (!bold && !italic) {
+            plain = font().width(text);         // underline is not wider, so it does not enter the measure
+        }
+        else {
+            plain = font().width(Component.literal(text).withStyle(styleOf(new StyledRun(text, bold, italic,
+                    false))));
+        }
+        return Math.round(plain * scale);
+    }
+
+    /** The game's style for a run: the whole of what this seam's two flags mean. */
+    private static Style styleOf(StyledRun run) {
+        Style style = Style.EMPTY;
+        if (run.bold()) {
+            style = style.withBold(true);
+        }
+        if (run.italic()) {
+            style = style.withItalic(true);
+        }
+        if (run.underline()) {
+            style = style.withUnderlined(true);
+        }
+        return style;
     }
 
     @Override

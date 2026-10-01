@@ -43,11 +43,14 @@ import java.util.UUID;
  * the knowledge that an item is 16 units square until something scales it lives in exactly one place
  * instead of being rediscovered by whoever writes the next icon box.
  *
- * <p><b>No text with styling, and no {@code Component}.</b> {@link #text} takes a {@code String},
- * because a plain string is what all thirty-odd call sites have by the time they draw — a component
- * is resolved to its display text before it reaches here, and the tooltip lists that do carry
- * components are stored as strings. Nothing in this UI draws one string in two styles, so taking a
- * {@code Component} would put a Minecraft type on the seam to serve no caller.
+ * <p><b>Styling exists, and it is this seam's own type; {@code Component} still does not cross.</b> This
+ * paragraph used to say that no text was styled anywhere, which was true when it was written and is not
+ * any more: a quest description is markdown, and emphasis is not emphasis if it is not drawn differently.
+ * The fix is the one the {@code ArmatureButton} note promised for the day a styled string turned up —
+ * <b>give the seam a styled-text type rather than put {@code Style} in the caller's hands</b> — so
+ * {@link StyledRun} is a plain string and two booleans, {@link #styledText} draws a line of them, and
+ * {@link #styledWidth} measures one. A {@code Component} would carry far more than that (events, fonts,
+ * colours, hover) and would tie every caller to the game to say "bold".
  *
  * <p><b>No {@code renderItemDecorations}, no gradients, no nine-slice, no atlas.</b> R5's work. This
  * interface is what today's code needs and nothing more, which is what makes it small enough that a
@@ -114,6 +117,49 @@ public interface GuiRenderer {
 
     /** Draws one line of text with the top-left of its first glyph at {@code x}, {@code y}. */
     void text(String text, int x, int y, int argb);
+
+    /**
+     * One run of a styled line: its text, and the two things a font can actually do with it.
+     *
+     * <p>A record here rather than in the kit because this is the seam's vocabulary — what a renderer
+     * promises to draw — and because the alternative names a Minecraft type in every caller. It is
+     * deliberately smaller than the game's own notion of style: three booleans are what a markdown
+     * paragraph needs, and a colour travels beside the run rather than inside it.
+     *
+     * <p>{@code underline} is here for links, and it is the whole of how they are marked: the card has no
+     * colour of its own for a link, and the theme's palette deliberately has no borrowed one ("a colour
+     * borrowed for a job it was not chosen for is a colour that will be wrong for one of the two jobs" --
+     * the scrollbar's note). Under the body's own ink, an underline reads as a link and can never read as a
+     * state the card does not have.
+     *
+     * <p>{@code scale} is here because the game's font has one size, and a heading has to be bigger than
+     * the prose under it: a scaled run is drawn about its own top-left, so it grows downward from the line
+     * it starts on -- which is the room a caller reserving a taller line has left for it.
+     */
+    record StyledRun(String text, boolean bold, boolean italic, boolean underline, float scale) {
+
+        /** A run at the font's own size, which is what every run but a heading is. */
+        public StyledRun(String text, boolean bold, boolean italic, boolean underline) {
+            this(text, bold, italic, underline, 1F);
+        }
+    }
+
+    /**
+     * Draws a line as a sequence of styled runs, left to right, each where the last one ended.
+     *
+     * <p>The caller does not position the runs: a renderer is the only thing that knows how wide a run
+     * <i>is</i>, so asking the caller to add up widths would be asking it to guess at the font. One call
+     * per line, the same shape as {@link #text} one dimension up.
+     */
+    void styledText(java.util.List<StyledRun> runs, int x, int y, int argb);
+
+    /**
+     * How wide a styled string is, which is not the same as the width of the same string plain: bold is
+     * wider and a scaled run is larger throughout, and a caller laying out styled prose has to know by how
+     * much -- a layout that reserved the plain width for a scaled heading reserves a line the drawing
+     * overflows.
+     */
+    int styledWidth(String text, boolean bold, boolean italic, float scale);
 
     /**
      * Forces everything queued so far to be drawn now, before anything after it.

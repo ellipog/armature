@@ -231,7 +231,8 @@ public class ArmatureButton extends AbstractWidget {
      * now, and the reason that costs nothing is worth stating rather than assuming: every tooltip in
      * both mods is built from {@code Component.literal}, so none of them carries a style to lose. If
      * one ever does, it will draw unstyled — visibly, not silently, and the fix is to give the seam a
-     * styled-text type rather than to put {@code Style} back into the caller's hands.
+     * styled-text type rather than to put {@code Style} back into the caller's hands. One did (a quest
+     * description is markdown), and the fix was made exactly so: {@link GuiRenderer.StyledRun}.
      */
     public ArmatureButton tooltip(List<Component> lines) {
         this.tooltip = lines.isEmpty() ? null : lines.stream()
