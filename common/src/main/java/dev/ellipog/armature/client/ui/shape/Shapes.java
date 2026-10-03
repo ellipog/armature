@@ -36,7 +36,7 @@ import java.util.function.IntBinaryOperator;
  * <h2>Two conventions for one half pixel, and why both survive</h2>
  *
  * <p>The sampler asks about pixel <i>centres</i>. A shape whose arithmetic has always been written on
- * row indices — the rounded rectangle, the diamond, the octagon, the shield, the tome — is asked one
+ * row indices — the rounded rectangle, the diamond, the octagon, the tome — is asked one
  * half-pixel higher through {@link #gridV}, because that is the convention its pixels were drawn with,
  * and moving it would move every existing node's outline by a pixel or three. The circle and the heart,
  * which were always written on centres, are asked directly. The difference is invisible in a picture and
@@ -89,10 +89,48 @@ public final class Shapes {
     /** Where a regular octagon's chamfer starts: {@code |u| + |v| ≤ 1/√2} inside the square. */
     private static final double OCTAGON_DIAGONAL = 1.0 / Math.sqrt(2.0);
 
-    /** Where a shield's vertical flanks end, as a fraction of the height below its middle. */
-    private static final double PENTAGON_SHOULDER = 0.0;
+    /** The angle between two of a pentagon's vertices: a fifth of a turn. */
+    private static final double PENTAGON_VERTEX = 2.0 * Math.PI / 5.0;
 
-    /** How far above its box's middle a shield's item sits, as a fraction of the size. */
+    /** Half the angle between two vertices: where a side's outward normal sits from a vertex. */
+    private static final double PENTAGON_APOTHEM = PENTAGON_VERTEX / 2.0;
+
+    /**
+     * How deep the star's sides bow in: the exponent of {@code |2u|^p + |2v|^p ≤ 1}.
+     *
+     * <p>Half is the astroid, which is the Bézier curve the shape's notes describe; one is the diamond,
+     * whose sides are straight. See {@link #STAR} for why this sits between them and nearer the deep end.
+     */
+    private static final double STAR_PINCH = 0.62;
+
+    /**
+     * How fast the star's points widen away from their tips, in pixels of half-width per row.
+     *
+     * <p>A cusp is a mathematical point and a pixel is not: the wedge this draws is what a person means
+     * by a star's point at these sizes. See {@link #STAR}.
+     */
+    private static final double STAR_TIP_GROWTH = 0.25;
+
+    /**
+     * The pentagon's circumradius, in unit terms, so that it fills the node's width.
+     *
+     * <p>Its widest points are the two upper vertices, at {@code R * cos(18°)} from the middle either
+     * way, and those reach half the node.
+     */
+    private static final double PENTAGON_RADIUS = 0.5 / Math.cos(Math.PI / 2.0 - PENTAGON_VERTEX);
+
+    /**
+     * How far the pentagon's own centre sits above its box's: {@code (R - apothem) / 2}.
+     *
+     * <p>The apex is a full circumradius above the middle and the base only an apothem below it, so a
+     * pentagon drawn about its centre is not centred in its own bounding box — five percent of the size
+     * too high, which showed up as empty rows at the bottom and, worse, as a turn that shrank the shape
+     * at every angle because the fit found it hanging out of the box on the way round.
+     */
+    private static final double PENTAGON_SAG = (PENTAGON_RADIUS - PENTAGON_RADIUS
+            * Math.cos(PENTAGON_APOTHEM)) / 2.0;
+
+    /** How far below its box's middle the pentagon's item sits, as a fraction of the size. */
     private static final double PENTAGON_ANCHOR = 0.03;
 
     /** A tome's fore-edge radius, as a divisor of the size: the same third it has always been. */
@@ -242,8 +280,39 @@ public final class Shapes {
      */
     public static final Shape DIAMOND = unit((u, v, size) -> {
         double y = gridV(v, size);
-        return Math.abs(u) + Math.abs(y) <= 0.5 + ON_BOUNDARY || Math.abs(u) <= 0.5 / size + ON_BOUNDARY;
+        return Math.abs(u) + Math.abs(y) <= 0.5 + ON_BOUNDARY
+                || (Math.abs(y) <= 0.5 + ON_BOUNDARY && Math.abs(u) <= 0.5 / size + ON_BOUNDARY);
     });
+
+    /**
+     * A four-point star: tips at the top, right, bottom and left, and sides that bow inward between them.
+     *
+     * <h2>The curve, and why one power rather than four Béziers</h2>
+     *
+     * <p>The shape is the classic four-cusped star: a diamond whose sides are not straight but bent, so
+     * the waist between two tips is further in than the edge of the box. Drawn as four cubic Béziers from
+     * tip to tip with the control points pulled onto the axes — the inner pinch factor of about 0.32 in
+     * the notes this came from — the curve passes {@code 0.245} of the way to the corner. The same
+     * family written as a power, {@code |2u|^p + |2v|^p ≤ 1}, puts its waist at {@code 0.5^(1/p)} of the
+     * way out: the <b>astroid</b> at {@code p = 0.5} is the Bézier's curve to a pixel, and {@code p = 1}
+     * is the diamond. One comparison per point, no curve intersections per sample, and a single number
+     * that says how deep the bend is.
+     *
+     * <p>{@value #STAR_PINCH} rather than the astroid's 0.5, and the difference is the item: at 0.5 the
+     * waist is a third of the way out and the largest square that fits is a quarter of the node — which
+     * is the icon scale's own floor, so the scale would do nothing at all and the item would be a smudge
+     * on a 48-pixel node. At 0.62 the bend is unmistakable and the item's box is a third of the node,
+     * with the icon scale still having room to mean something. The star's points are the part that had to
+     * survive, and they did.
+     *
+     * <p>Those points are cusps, and a cusp is thinner than a pixel for several rows, so each point is
+     * drawn as the wedge a pixel artist draws — see {@link #STAR_TIP_GROWTH} — gated on the box like the
+     * diamond's and the shield's minimum widths, so the shape cannot answer true past its own square and
+     * fool the turn's fit measurement.
+     *
+     * <p>Symmetric about both axes, so its item sits on the middle of the box — no anchor.
+     */
+    public static final Shape STAR = unit(Shapes::starInside);
 
     /**
      * A regular octagon: a square with equal straight chamfers on all four corners.
@@ -261,21 +330,25 @@ public final class Shapes {
     });
 
     /**
-     * A shield: a full-width flat top, vertical flanks, and a taper to a point at the bottom.
+     * A regular pentagon, point up: five equal sides, a flat base, and its widest row above the middle.
      *
-     * <h2>Why the old pentagon was replaced rather than kept</h2>
+     * <h2>Regular, which is the whole read</h2>
      *
-     * <p>It was a point-up pentagon with a flat base — the "house" orientation, and the reason the shape
-     * read as an irregular house: a point at the top of a node is where an item's own head wants to be,
-     * so the silhouette and the sprite fought. The shield puts the point where an item has nothing (the
-     * bottom) and the flat edge where a sprite's top sits, which is also why every pennant, badge and
-     * escutcheon is drawn that way.
+     * <p>The shape this replaced was a shield — a flat top with vertical flanks and a point at the
+     * bottom — and the one before it was a point-up shape whose taper was measured by hand, so it read
+     * as an irregular house. This is the plain regular pentagon a person draws from a circle: five
+     * vertices 72 degrees apart, the apex up, the base flat and 0.618 of the node across, the widest
+     * row at the two upper vertices rather than at the bottom.
      *
-     * <p>Its widest row is its top, so its mass is not its middle: the item's anchor sits
-     * {@code PENTAGON_ANCHOR} of the size above the box's centre, under the flat edge. See
+     * <p>Regular proportions, fitted like every other shape: it fills the node's width and is
+     * {@code 0.951} of it tall, centred, so the angles are the pentagon's own rather than stretched to
+     * fill a square.
+     *
+     * <p>Its mass is below its middle — the base is wide and the apex is empty — so the item's anchor
+     * sits {@code PENTAGON_ANCHOR} of the size <b>down</b> from the centre, where the material is. See
      * {@link Shape#iconAnchor}.
      */
-    public static final Shape PENTAGON = anchored(Shapes::pentagonInside, 0.0, -PENTAGON_ANCHOR);
+    public static final Shape PENTAGON = anchored(Shapes::pentagonInside, 0.0, PENTAGON_ANCHOR);
 
     /**
      * A gear: eight trapezoidal teeth around a large solid hub, six teeth when the node is small.
@@ -382,6 +455,9 @@ public final class Shapes {
             case "pentagon" -> PENTAGON;
             case "gear" -> GEAR;
             case "heart" -> HEART;
+            // The four-point star, under the name a file is most likely to write and the one the shape's
+            // own notes use.
+            case "star", "star_4" -> STAR;
             case "rect", "rectangle", "square" -> RECT;
             default -> fallback;
         };
@@ -501,10 +577,14 @@ public final class Shapes {
             // is the only honest sample.
             return v;
         }
+        // No clamp at the edges, and that is the whole of it. The shift lands exactly on `+/-0.5` for the
+        // outermost rows, so in the box nothing changes; out of the box a clamped value reads as the
+        // edge, the shape's own `|v| > 0.5` guards never fire, and the shape answers *inside* at any
+        // distance. The turn's fit measurement casts rays to a radius of one and needs the answers out
+        // there to be false: with the clamp, a tome measured a reach of 1.0 instead of 0.5, halved
+        // itself, and collapsed into a narrow bar at a one-degree turn.
         double shift = 0.5 / size;
-        return v < 0
-                ? Math.max(-0.5, v - shift)
-                : Math.min(0.5, v + shift);
+        return v < 0 ? v - shift : v + shift;
     }
 
     /** Whether a pixel is inside a rounded rectangle. See {@link #rounded} and {@link #ROUNDED}. */
@@ -515,20 +595,62 @@ public final class Shapes {
         return qx * qx + qy * qy <= radius * radius + ON_BOUNDARY;
     }
 
-    /** Whether a pixel is inside a shield. See {@link #PENTAGON}. */
-    private static boolean pentagonInside(double u, double v, int size) {
-        double y = gridV(v, size);
-        if (Math.abs(y) > 0.5) {
-            return false;
+    /**
+     * Whether a pixel is inside the star. See {@link #STAR}.
+     *
+     * <p>Doubled so the tips land on the box's edge at {@code ±1}, then one power of each axis. Bounded
+     * by that test rather than by a guard — a point past a tip fails it — which is what keeps the turn's
+     * fit measurement honest; the wedge clause is gated on the box for the same reason.
+     */
+    private static boolean starInside(double u, double v, int size) {
+        double a = Math.abs(u) * 2.0;
+        double b = Math.abs(v) * 2.0;
+        if (Math.pow(a, STAR_PINCH) + Math.pow(b, STAR_PINCH) <= 1.0 + ON_BOUNDARY) {
+            return true;
         }
-        // Vertical flanks down to the shoulder, then a straight taper to the point at the bottom.
-        double halfWidth = y <= PENTAGON_SHOULDER
-                ? 0.5
-                : 0.5 * (0.5 - y) / (0.5 - PENTAGON_SHOULDER);
-        // Never narrower than half a pixel: a shield one pixel tall is still a shield, and a row that
-        // rounds to nothing is a hole in the outline rather than a small shape.
-        halfWidth = Math.max(0.5 / size, halfWidth);
-        return Math.abs(u) <= halfWidth + ON_BOUNDARY;
+        // All four points are cusps: their honest width is under a pixel for several rows, so a rasteriser
+        // that drew only what is truly inside would leave the point blunt, and one that drew a one-pixel
+        // column all the way in would draw a needle. What a pixel artist draws is a wedge, and that is
+        // what this is: a minimum width growing {@value #STAR_TIP_GROWTH} of a pixel per row away from
+        // each tip, inside the box and only there -- the same gating the diamond's and the shield's
+        // minimum widths have, so the shape cannot answer true past its own square and fool the turn's
+        // fit measurement. Away from the tips the curve is the wider of the two, so the wedges touch it
+        // rather than fattening it, and the waist is untouched.
+        if (Math.abs(v) <= 0.5 + ON_BOUNDARY) {
+            double minHalf = 0.5 / size + STAR_TIP_GROWTH * (0.5 - Math.abs(v));
+            if (Math.abs(u) <= minHalf + ON_BOUNDARY) {
+                return true;
+            }
+        }
+        if (Math.abs(u) <= 0.5 + ON_BOUNDARY) {
+            double minHalf = 0.5 / size + STAR_TIP_GROWTH * (0.5 - Math.abs(u));
+            if (Math.abs(v) <= minHalf + ON_BOUNDARY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a pixel is inside the pentagon. See {@link #PENTAGON}.
+     *
+     * <p>Five half-planes, one per side: a point is inside when it is on the inner side of all of them.
+     * Written from the vertices rather than from a width per row, so the shape is a regular pentagon by
+     * construction and cannot come out as a house with the taper in the wrong place.
+     */
+    private static boolean pentagonInside(double u, double v, int size) {
+        // Screen y grows downward; the geometry below is the ordinary maths orientation with y up, and
+        // the pentagon is drawn about its own centroid-box centre rather than about its circumcentre.
+        double x = u;
+        double y = -v + PENTAGON_SAG;
+        double limit = PENTAGON_RADIUS * Math.cos(PENTAGON_APOTHEM);
+        for (int side = 0; side < 5; side++) {
+            double angle = Math.PI / 2.0 + PENTAGON_VERTEX * side + PENTAGON_APOTHEM;
+            if (x * Math.cos(angle) + y * Math.sin(angle) > limit + ON_BOUNDARY) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

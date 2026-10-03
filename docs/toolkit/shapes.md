@@ -32,7 +32,7 @@ public interface Unit {
 `Shapes.unit(unit)` samples that into the span table, so the definition is one piece of arithmetic
 rather than one per row. Two things follow that are worth knowing:
 
-- **A turn is exact.** [[rotated|rotated]] rotates the definition itself, so nothing is re-sampled
+- **A turn is exact.** `rotated` rotates the definition itself, so nothing is re-sampled
   twice and a curved shape turned by 41 degrees is the curve at 41 degrees rather than a rotated
   raster.
 - **The definition must answer false outside the square.** The turn's fit measurement asks about points
@@ -54,10 +54,11 @@ meaning anything.
 | `DIAMOND` | A square turned 45 degrees, fitted: points at the middle of each edge. |
 | `HEXAGON` | A true flat-topped hexagon: a horizontal edge top and bottom, straight flanks, points at the sides. Regular, so it keeps a few rows of air above and below. |
 | `OCTAGON` | A regular octagon: equal straight chamfers on all four corners. |
-| `PENTAGON` | A shield: a flat full-width top, vertical flanks, and a point at the bottom. |
+| `PENTAGON` | A regular pentagon, point up: five equal sides, a flat base, its widest row above the middle. |
 | `GEAR` | A cog with eight wide-rooted trapezoidal teeth (six on the smallest nodes) round a large hub. |
 | `HEART` | The classic curve, fitted whole — its own proportions, not stretched to fill the square. |
 | `TOME` | A book: a flat spine notched at its head and tail, and a rounded fore-edge. |
+| `STAR` | A four-point star: tips at the top, right, bottom and left, and curved sides pinching in between them. |
 
 ## Building one
 

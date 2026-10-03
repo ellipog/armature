@@ -60,7 +60,7 @@ class ShapeTest {
     /** Every built-in, so one cannot be forgotten in a sweep by not being listed. */
     private static final List<Shape> ALL = List.of(
             Shapes.ROUNDED, Shapes.RECT, Shapes.CIRCLE, Shapes.DIAMOND, Shapes.HEXAGON,
-            Shapes.OCTAGON, Shapes.PENTAGON, Shapes.GEAR, Shapes.HEART, Shapes.TOME);
+            Shapes.OCTAGON, Shapes.PENTAGON, Shapes.GEAR, Shapes.HEART, Shapes.TOME, Shapes.STAR);
 
     private static List<Integer> sizes() {
         List<Integer> out = new ArrayList<>();
@@ -268,13 +268,15 @@ class ShapeTest {
             // The two sampled shapes are not in this sweep at all, and that is not a concession: a
             // gear has <b>gaps</b> between its teeth, so a row through a gap above the root circle has
             // no material on it by design, and a predicate asked about pixel centres misses a feature
-            // thinner than the distance between two of them. The hexagon is here for a different reason:
-            // a regular hexagon is shorter than its square — that is what keeps its angles right — so
-            // the node keeps a few rows of air above and below it on purpose. What holds them to account
-            // instead is the icon-fit sweep below (a shape with no material anywhere fits no square),
-            // the gear's own teeth-and-gaps test, the heart's notch test and the hexagon's six-sidedness.
+            // thinner than the distance between two of them. The hexagon and the pentagon are here for a
+            // different reason: both are drawn at their own regular proportions, so both are shorter than
+            // their square — that is what keeps their angles right — and the node keeps a few rows of air
+            // above and below them on purpose. What holds them to account instead is the icon-fit sweep
+            // below (a shape with no material anywhere fits no square), the gear's own teeth-and-gaps
+            // test, the heart's notch test, the hexagon's six-sidedness and the pentagon's five.
             for (Shape shape : ALL) {
-                if (shape == Shapes.GEAR || shape == Shapes.HEART || shape == Shapes.HEXAGON) {
+                if (shape == Shapes.GEAR || shape == Shapes.HEART || shape == Shapes.HEXAGON
+                        || shape == Shapes.PENTAGON) {
                     continue;
                 }
                 for (int size : sizes()) {
@@ -547,32 +549,52 @@ class ShapeTest {
         }
 
         @Test
-        @DisplayName("PENTAGON is a shield: a flat full-width top, vertical flanks, and a point at the bottom")
-        void pentagonIsAShield() {
+        @DisplayName("PENTAGON is a regular pentagon: an apex, a widest row above the middle, a flat base")
+        void pentagonIsARegularPentagon() {
             int size = 48;
-            // The shape this replaced was point-up with a flat base — the "house" orientation — which put
-            // its point exactly where an item's own head wants to sit, so the silhouette and the sprite
-            // fought. The shield inverts it: the flat edge where a sprite's top goes, the point where an
-            // item has nothing.
-            assertEquals(size, width(Shapes.PENTAGON, 0, size), "the top edge should be the full width");
-            for (int row = 0; row < size / 2; row++) {
-                assertEquals(size, width(Shapes.PENTAGON, row, size),
-                        "row " + row + " is not full width, so the flank is not vertical");
+            // The plain five-sided shape a person draws from a circle: five equal sides, the apex up, the
+            // base flat at 0.618 of the width, and the widest row at the two upper vertices rather than at
+            // the bottom. That last one is what tells a pentagon from the shield that replaced it -- whose
+            // widest row was its top edge -- and from the irregular house before that.
+            assertTrue(width(Shapes.PENTAGON, 0, size) <= 2, "the top should be a point");
+            int widest = 0;
+            int widestRow = -1;
+            for (int row = 0; row < size; row++) {
+                int w = width(Shapes.PENTAGON, row, size);
+                if (w > widest) {
+                    widest = w;
+                    widestRow = row;
+                }
             }
-            assertTrue(width(Shapes.PENTAGON, size - 1, size) <= 2, "the bottom should be a point");
-            assertTrue(width(Shapes.PENTAGON, size / 2, size) < size,
-                    "the taper should have started by the middle row of the node");
-            int previous = width(Shapes.PENTAGON, size / 2, size);
-            for (int row = size / 2 + 1; row < size; row++) {
-                int current = width(Shapes.PENTAGON, row, size);
-                assertTrue(current <= previous, "row " + row + " widened on the taper to the point");
-                previous = current;
+            assertTrue(widest >= size - 1, "the widest row should fill the node's width, and is " + widest);
+            assertTrue(widestRow < size / 2,
+                    "the widest row should be above the middle, and is at row " + widestRow);
+            int bottom = -1;
+            for (int row = size - 1; row >= 0; row--) {
+                if (width(Shapes.PENTAGON, row, size) > 0) {
+                    bottom = row;
+                    break;
+                }
             }
-            // Deliberately asymmetric top to bottom, and the asymmetry is the read: the mass is at the
-            // top, which is why the item's anchor is upward.
-            assertTrue(width(Shapes.PENTAGON, 0, size) > width(Shapes.PENTAGON, size - 1, size),
-                    "the flat edge should be at the top and the point at the bottom");
-            assertTrue(Shapes.PENTAGON.iconAnchor(size)[1] < 0, "the shield's anchor should be upward");
+            assertTrue(bottom > size * 0.9, "the base should sit at the bottom of the node");
+            int base = width(Shapes.PENTAGON, bottom, size);
+            assertTrue(Math.abs(base - size * 0.618) <= 2,
+                    "the base should be a flat 0.618 of the node, and is " + base);
+            // Symmetric about the middle, and never wider on the way down the taper.
+            for (int row = 1; row < size; row++) {
+                int[] spans = Shapes.PENTAGON.spans(row, size);
+                if (spans == null) {
+                    continue;
+                }
+                assertEquals(size - spans[1], spans[0], "row " + row + " is not symmetric");
+                if (row > widestRow + 1 && width(Shapes.PENTAGON, row - 1, size) > 0) {
+                    assertTrue(width(Shapes.PENTAGON, row, size) <= width(Shapes.PENTAGON, row - 1, size),
+                            "row " + row + " widened on the way to the base");
+                }
+            }
+            // Its mass is at the base, so the item's anchor is downward -- the same principle as the
+            // heart's and the tome's, with the sign the shape's own mass asks for.
+            assertTrue(Shapes.PENTAGON.iconAnchor(size)[1] > 0, "the pentagon's anchor should be downward");
         }
 
         @Test
@@ -721,6 +743,39 @@ class ShapeTest {
                             (int) Math.round(centre - halfWidth), (int) Math.round(centre + halfWidth)});
                 }
             }
+        }
+
+        @Test
+        @DisplayName("STAR has a point on each axis and sides that pinch in between them")
+        void starIsAStar() {
+            int size = 48;
+            // The shape's own read: a point at each cardinal direction, each reaching the node's edge, and
+            // a waist between two points far narrower than a diamond's straight side would be. The points
+            // are cusps, so they are drawn as wedges -- asserted as "narrow and present", not as one pixel.
+            assertTrue(width(Shapes.STAR, 0, size) <= 3, "the top point should be narrow");
+            assertTrue(width(Shapes.STAR, size - 1, size) <= 3, "and so should the bottom point");
+            assertEquals(size, width(Shapes.STAR, size / 2, size),
+                    "the middle row should reach both side points");
+            for (int row = 0; row < size; row++) {
+                int[] spans = Shapes.STAR.spans(row, size);
+                if (spans == null) {
+                    continue;
+                }
+                assertEquals(size - spans[1], spans[0], "row " + row + " is not symmetric");
+            }
+            // Bent sides, which is the whole difference between this and the diamond: a quarter of the way
+            // down, the star is a fraction of the diamond's width.
+            int star = width(Shapes.STAR, size / 4, size);
+            int diamond = width(Shapes.DIAMOND, size / 4, size);
+            assertTrue(star * 2 < diamond, "the star's side is not pinched: " + star + " at a quarter of"
+                    + " the way down, against the diamond's " + diamond + " at the same row");
+            assertTrue(area(Shapes.STAR, size) < area(Shapes.DIAMOND, size) * 0.6,
+                    "the star's area should be well under a diamond's, and is " + area(Shapes.STAR, size));
+            // The deepest pinch of any shape here, so the icon's box is about half the node: the item sits
+            // in the body and the points read around it.
+            assertTrue(size - 2 * Shapes.STAR.maxInset(size) <= size / 2 + 2,
+                    "the star's inscribed square should be about half the node, and is "
+                            + (size - 2 * Shapes.STAR.maxInset(size)));
         }
 
         @Test
@@ -896,6 +951,30 @@ class ShapeTest {
                         "the turned square does not reach the top and bottom of its node");
                 assertTrue(box[2] == 0 && box[3] == size,
                         "the turned square does not reach the left and right of its node");
+            }
+        }
+
+        @Test
+        @DisplayName("a small turn does not shrink a shape: the fit is measuring a reach it does not have")
+        void aSmallTurnKeepsTheShape() {
+            // The defect this pins, and it was invisible until a shape was actually turned: a point test
+            // that answers true outside the unit square -- `gridV` clamped anything beyond the box to the
+            // box's own edge, and the diamond's minimum-width tip did the same in the other axis -- makes
+            // the turn's fit measurement find material at a radius of one instead of half. The fit then
+            // halves the shape, and a tome at one degree came out a narrow bar. A degree or three can
+            // only cost a shape a few percent of its area, and this says so for every one of them.
+            int size = 48;
+            for (Shape shape : ALL) {
+                int flat = area(shape, size);
+                for (double angle : List.of(1.0, 3.0)) {
+                    int turned = area(Shapes.rotated(shape, angle), size);
+                    double ratio = turned / (double) flat;
+                    double least = angle < 2.0 ? 0.9 : 0.85;
+                    assertTrue(ratio >= least, shape + " turned " + angle + " degrees covers " + turned
+                            + " pixels of its own " + flat + ", a ratio of "
+                            + String.format("%.3f", ratio) + " -- the fit has found a reach it does not"
+                            + " have, which means the point test answers true outside the square");
+                }
             }
         }
 
