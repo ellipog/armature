@@ -78,6 +78,23 @@ repositories {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
     }
+
+    // -------------------------------------------------------------------------
+    // The two repositories the recipe-viewer adapters need. The third viewer's
+    // artefacts are already covered by BlameJared above.
+    //
+    // TerraformersMC answers and then redirects to the same maintainer's newer
+    // host; Gradle follows the redirect, and the coordinate is the one the
+    // viewer's own README documents for a multi-loader project.
+    // -------------------------------------------------------------------------
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/'
+    }
+    maven {
+        name = 'Shedaniel'
+        url = 'https://maven.shedaniel.me/'
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +139,28 @@ dependencies {
     // its own providers, which is the point of the seam.
     testImplementation "dev.ftb.mods:ftb-teams-neoforge:${ftb_teams_version}"
     testImplementation "maven.modrinth:open-parties-and-claims:${opac_version}"
+
+    // The three viewer APIs, for the adapters under integration/. Same rule as the parties mods
+    // above: `compileOnly`, so none of them reaches a jar, the published POM, or a consumer's
+    // classpath -- and a client without any of them loses nothing.
+    //
+    // EMI is read from its full loader-neutral jar rather than its `:api` classifier, deliberately:
+    // the adapter needs the reload entry point, and that lives in the runtime package the classifier
+    // excludes. JEI's `common-api` is the opposite case -- the whole API package, no dependencies,
+    // no loader types at all. REI has no loader-neutral mojmap artefact, so its NeoForge API jar is
+    // the compile target for both loader projects: common/ reads official names, and the Fabric
+    // module remaps its output to intermediary on the way into the jar, which is what makes one
+    // compile target correct for both.
+    //
+    // No `testImplementation` here, and that is the opposite of the decision recorded above for the
+    // parties mods. There, a test might one day construct an adapter directly, so the jars were put
+    // on the test runtime classpath to keep the first such test from debugging a NoClassDefFoundError.
+    // Here, no test ever constructs an adapter -- the rule is that everything decidable is pushed
+    // into QuestContent and ItemQuestIndex, which name no viewer -- so putting a viewer jar on the
+    // test runtime classpath would only make it easier to break that rule.
+    compileOnly "dev.emi:emi-xplat-mojmap:${emi_version}"
+    compileOnly "mezz.jei:jei-1.21.1-common-api:${jei_version}"
+    compileOnly "me.shedaniel:RoughlyEnoughItems-api-neoforge:${rei_version}"
 }
 
 // Declare capabilities on the outgoing configurations.
