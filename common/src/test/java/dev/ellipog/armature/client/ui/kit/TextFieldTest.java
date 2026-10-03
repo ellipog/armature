@@ -397,4 +397,21 @@ class TextFieldTest {
         assertEquals("open", field.value());
         assertFalse(field.canUndo());
     }
+
+    /** Six pixels a character, the same stand-in the layout tests measure with. */
+    private static final java.util.function.ToIntFunction<String> SIX_PX = text -> text.length() * 6;
+
+    @Test
+    void scrollOffsetKeepsTheCaretInsideTheRoomAndNothingMore() {
+        // The report behind this: a chapter subtitle "Five quests, no tricks" was drawn as its own tail,
+        // "s quests, no tricks", because the offset was read from a caret that `setValue` parks at the
+        // end. The widget asks for this only while focused; this is the arithmetic it gets.
+        TextField field = TextField.of(64).setValue("Five quests, no tricks");
+
+        assertEquals(0, field.scrollOffset(200, SIX_PX), "a value that fits is not scrolled");
+        assertEquals(0, field.home().scrollOffset(88, SIX_PX), "the start is never scrolled");
+        field.end();
+        assertEquals(132 - 88, field.scrollOffset(88, SIX_PX),
+                "a caret at the end scrolls exactly the overflow");
+    }
 }

@@ -284,7 +284,7 @@ class GuiRendererTest {
         //
         // A diamond, so every row has a different span and no two can be merged: the widest row is the
         // middle, and the corners of the bounding box are empty.
-        ArmatureTheme.RowSpans diamond = (row, size) -> {
+        ArmatureTheme.Spans diamond = (row, size) -> {
             int half = size / 2;
             int distance = Math.abs(row - half);
             int width = half - distance;
@@ -310,7 +310,7 @@ class GuiRendererTest {
         // an optimisation detail -- it is the reason a node's wash can be a shape rather than a
         // rectangle without costing 48 primitives each. A shape drawn a row at a time is 48 fills per
         // node, and a chapter shows thirty nodes.
-        ArmatureTheme.RowSpans square = (row, size) -> new int[] {0, size};
+        ArmatureTheme.Spans square = (row, size) -> new int[] {0, size};
 
         RecordingRenderer r = RecordingRenderer.create();
         ArmatureTheme.fillShape(r, 0, 0, 48, 0xFFFFFFFF, square);
@@ -327,7 +327,7 @@ class GuiRendererTest {
         // Same argument as the rectangle panel: the border is the shape at full size and the fill is a
         // two-pixel-smaller copy inset by one. Reversed, the fill covers the border entirely and the
         // node loses its state colour -- which reads as the palette being wrong.
-        ArmatureTheme.RowSpans square = (row, size) -> new int[] {0, size};
+        ArmatureTheme.Spans square = (row, size) -> new int[] {0, size};
 
         RecordingRenderer r = RecordingRenderer.create();
         ArmatureTheme.shapePanel(r, 0, 0, 10, 0xFF111111, 0xFF222222, square);
@@ -350,7 +350,7 @@ class GuiRendererTest {
         // `size > 2` guards the inset, because at 2 or below the inner shape would be zero or negative
         // -- and a negative size passed to a span lookup produces spans that run backwards, which a
         // renderer draws as a rectangle going the other way. Reachable by dragging a window to nothing.
-        ArmatureTheme.RowSpans square = (row, size) -> new int[] {0, size};
+        ArmatureTheme.Spans square = (row, size) -> new int[] {0, size};
 
         for (int size : new int[] {0, 1, 2}) {
             RecordingRenderer r = RecordingRenderer.create();
@@ -372,7 +372,7 @@ class GuiRendererTest {
     void aNullSpanSkipsRatherThanStops() {
         // A shape with a genuine hole in it. Truncating instead would cut the bottom off a node whose
         // lookup ran off the end, which is a one-line mistake with a very visible symptom.
-        ArmatureTheme.RowSpans holed = (row, size) -> row == 2 ? null : new int[] {0, size};
+        ArmatureTheme.Spans holed = (row, size) -> row == 2 ? null : new int[] {0, size};
 
         RecordingRenderer r = RecordingRenderer.create();
         ArmatureTheme.fillShape(r, 0, 0, 6, 0xFFFFFFFF, holed);
@@ -540,5 +540,29 @@ class GuiRendererTest {
         assertEquals(12, r.styledWidth("ld", false, true, 1F), "italic is not wider, and is not pretended to be");
         assertEquals(2F, styled.get(0).runs().get(2).scale());
         assertEquals(24, r.styledWidth("hl", false, false, 2F), "and a doubled run is twice as wide");
+    }
+
+    @Test
+    @DisplayName("a batched region is recorded around what it draws, and hands back what it drew")
+    void batchedWrapsItsDrawing() {
+        // The contract the canvas depends on: everything drawn inside is *inside* the markers, so a test
+        // can assert "this region is one batch" -- and the supplier's value is passed through, because
+        // the canvas returns its hovered node from inside its batched call.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        String returned = r.batched(() -> {
+            r.fill(0, 0, 10, 10, 0xFF112233);
+            r.text("inside", 2, 2, 0xFFFFFFFF);
+            return "the node";
+        });
+
+        assertEquals("the node", returned, "the supplier's value is the caller's");
+        assertEquals(1, r.batches(), "one region, one batch");
+        int open = r.firstIndex(RecordingRenderer.Op.BATCH);
+        int close = r.firstIndex(RecordingRenderer.Op.END_BATCH);
+        int fill = r.firstIndex(RecordingRenderer.Op.FILL);
+        assertTrue(open < fill && fill < close,
+                "the drawing sits between the markers: open=" + open + " fill=" + fill + " close=" + close);
+        assertTrue(r.clipsBalanced(), "and a batch does not disturb the clip accounting");
     }
 }

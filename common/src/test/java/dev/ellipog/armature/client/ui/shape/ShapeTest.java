@@ -23,16 +23,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the expectation. What matters is the set of properties every <i>caller</i> relies on:
  *
  * <ul>
- *   <li>A span is never empty and never leaves the square, at <b>every</b> size. A zero-width row is a
- *       visible gap in an outline; a span past the edge is a node drawn over its neighbour.</li>
- *   <li>Every shape is symmetric top to bottom. The first rounded rectangle here measured its corner
- *       depth from the top edge only, which rounded the top two corners and left the bottom two
- *       square — obvious in a picture, invisible in a test that does not ask.</li>
- *   <li>No row is wider than the one nearer the middle, because {@code maxInset} checks only the two
- *       edge rows of a candidate square and would be wrong on a shape that bulged.</li>
- *   <li>A point is inside exactly when it is in the span for its row, asserted by walking every pixel —
+ *   <li>Every span is non-empty, inside the square, sorted and disjoint, at <b>every</b> size. A
+ *       zero-width row is a visible gap in an outline; a span past the edge is a node drawn over its
+ *       neighbour; two overlapping spans are one piece of material drawn twice.</li>
+ *   <li>A point is inside exactly when it is in a span for its row, asserted by walking every pixel —
  *       which is the whole reason the hit test and the drawing cannot disagree.</li>
+ *   <li>The icon's square is the <b>largest</b> one that fits, checked by walking every row it covers —
+ *       and one pixel less must not fit, which is what stops a search returning a comfortable zero.</li>
  * </ul>
+ *
+ * <p>The properties this file used to assert — top-to-bottom symmetry, and every row at least as wide
+ * as the one nearer the edge — were true of the four shapes that existed and are false of the ones
+ * added since. A heart is not symmetric about its middle, a pentagon's widest row is a third of the way
+ * down, and a gear is wider at a tooth than at the gap below it. Those were never what the callers
+ * relied on; they were what the old, cheaper icon search relied on, and that search is gone. What each
+ * shape actually looks like is asserted per shape, below, where it can be stated rather than assumed.
  *
  * <p>So the sweep runs <b>every shape at every size from 1 to 80</b> plus some large odd ones. The
  * awkward cases are the small ones and the odd ones: at 12 pixels a circle's top row computes to
@@ -44,7 +49,8 @@ class ShapeTest {
 
     /** Every built-in, so one cannot be forgotten in a sweep by not being listed. */
     private static final List<Shape> ALL = List.of(
-            Shapes.ROUNDED, Shapes.CIRCLE, Shapes.HEXAGON, Shapes.TOME, Shapes.RECT);
+            Shapes.ROUNDED, Shapes.RECT, Shapes.CIRCLE, Shapes.DIAMOND, Shapes.HEXAGON,
+            Shapes.OCTAGON, Shapes.PENTAGON, Shapes.GEAR, Shapes.HEART, Shapes.TOME);
 
     private static List<Integer> sizes() {
         List<Integer> out = new ArrayList<>();
@@ -53,6 +59,52 @@ class ShapeTest {
         }
         out.addAll(List.of(97, 128, 199, 512));
         return out;
+    }
+
+    /** The first span of a row, for the shapes whose rows have exactly one. */
+    private static int[] first(Shape shape, int row, int size) {
+        int[] spans = shape.spans(row, size);
+        assertNotNull(spans, shape + " " + size + " row " + row + " covers nothing");
+        return new int[] {spans[0], spans[1]};
+    }
+
+    /** How many columns a row covers, across all its spans. */
+    private static int width(Shape shape, int row, int size) {
+        int[] spans = shape.spans(row, size);
+        if (spans == null) {
+            return 0;
+        }
+        int total = 0;
+        for (int i = 0; i < spans.length; i += 2) {
+            total += spans[i + 1] - spans[i];
+        }
+        return total;
+    }
+
+    /** Whether any span of a row covers the whole interval {@code [from, to)}. */
+    private static boolean covers(int[] spans, int from, int to) {
+        if (spans == null) {
+            return false;
+        }
+        for (int i = 0; i < spans.length; i += 2) {
+            if (spans[i] <= from && spans[i + 1] >= to) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** How many columns differ between two shapes on one row. */
+    private static int difference(Shape a, Shape b, int row, int size) {
+        int[] left = a.spans(row, size);
+        int[] right = b.spans(row, size);
+        int differing = 0;
+        for (int col = 0; col < size; col++) {
+            if (covers(left, col, col + 1) != covers(right, col, col + 1)) {
+                differing++;
+            }
+        }
+        return differing;
     }
 
     // ------------------------------------------------------------------
@@ -64,87 +116,95 @@ class ShapeTest {
     class Invariants {
 
         @Test
-        @DisplayName("no span is ever empty or outside the square")
-        void spansAreNeverEmptyOrOutOfBounds() {
+        @DisplayName("no span is ever empty, outside the square, out of order or overlapping")
+        void spansAreWellFormed() {
+            // A row inside the square may have no material at all -- a gear's teeth are sub-pixel at
+            // four pixels, and a shape need not touch its bounding square's edges. What it may not do is
+            // return a span that is empty, out of bounds, out of order or overlapping: those are the
+            // four properties every caller reads as read.
             for (Shape shape : ALL) {
                 for (int size : sizes()) {
                     for (int row = 0; row < size; row++) {
-                        int[] span = shape.span(row, size);
-                        assertNotNull(span, shape + " returned null for row " + row + " of " + size);
-                        assertEquals(2, span.length);
-                        assertTrue(span[0] >= 0, shape + " " + size + " row " + row + ": from < 0");
-                        assertTrue(span[0] < span[1],
-                                shape + " " + size + " row " + row + ": empty span " + span[0] + ".." + span[1]);
-                        assertTrue(span[1] <= size,
-                                shape + " " + size + " row " + row + ": to " + span[1] + " past the edge");
+                        int[] spans = shape.spans(row, size);
+                        if (spans == null) {
+                            continue;
+                        }
+                        assertEquals(0, spans.length % 2, shape + " " + size + " row " + row
+                                + ": an odd number of endpoints is not a list of spans");
+                        int previousEnd = -1;
+                        for (int i = 0; i < spans.length; i += 2) {
+                            int from = spans[i];
+                            int to = spans[i + 1];
+                            assertTrue(from >= 0, shape + " " + size + " row " + row + ": from < 0");
+                            assertTrue(from < to,
+                                    shape + " " + size + " row " + row + ": empty span " + from + ".." + to);
+                            assertTrue(to <= size,
+                                    shape + " " + size + " row " + row + ": to " + to + " past the edge");
+                            assertTrue(from > previousEnd, shape + " " + size + " row " + row
+                                    + ": spans " + previousEnd + " and " + from
+                                    + " are out of order or overlapping");
+                            previousEnd = to;
+                        }
                     }
                 }
             }
         }
 
         @Test
-        @DisplayName("a row outside the shape has no span")
-        void rowsOutsideHaveNoSpan() {
+        @DisplayName("every shape that fills its square has material on every row of it")
+        void shapesThatFillTheirSquareDoSoOnEveryRow() {
+            // The safety net the old sweep had, kept and now true of every shape: a row that suddenly
+            // came back empty would be a hole in a silhouette, which is a rendering fault rather than a
+            // small shape. It is still not an interface property -- see the well-formedness test -- but
+            // every built-in has material on every row of its square, including the sub-pixel cases,
+            // which {@code spans} widens to a pixel.
+            //
+            // The two sampled shapes are not in this sweep at all, and that is not a concession: a
+            // gear has <b>gaps</b> between its teeth, so a row through a gap above the root circle has
+            // no material on it by design, and a predicate asked about pixel centres misses a feature
+            // thinner than the distance between two of them. What holds them to account instead is the
+            // icon-fit sweep below (a shape with no material anywhere fits no square), the gear's own
+            // teeth-and-gaps test, and the heart's notch test.
+            for (Shape shape : ALL) {
+                if (shape == Shapes.GEAR || shape == Shapes.HEART) {
+                    continue;
+                }
+                for (int size : sizes()) {
+                    for (int row = 0; row < size; row++) {
+                        assertNotNull(shape.spans(row, size),
+                                shape + " " + size + " has no material on row " + row);
+                    }
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("a row outside the shape has no spans")
+        void rowsOutsideHaveNoSpans() {
             // Different from an empty span, and the difference is load-bearing: a caller walking rows
             // past the bottom needs to know it has finished. A clamped span would draw the last row
             // twice.
             for (Shape shape : ALL) {
-                assertNull(shape.span(-1, 20), shape + " had a span above itself");
-                assertNull(shape.span(20, 20), shape + " had a span at its bottom edge");
-                assertNull(shape.span(0, 0), shape + " had a span in a zero-size square");
-                assertNull(shape.span(0, -5), shape + " had a span in a negative square");
+                assertNull(shape.spans(-1, 20), shape + " had a span above itself");
+                assertNull(shape.spans(20, 20), shape + " had a span at its bottom edge");
+                assertNull(shape.spans(0, 0), shape + " had a span in a zero-size square");
+                assertNull(shape.spans(0, -5), shape + " had a span in a negative square");
             }
         }
 
         @Test
-        @DisplayName("every shape is symmetric top to bottom")
-        void shapesAreVerticallySymmetric() {
-            for (Shape shape : ALL) {
-                for (int size : sizes()) {
-                    for (int row = 0; row < size; row++) {
-                        int[] top = shape.span(row, size);
-                        int[] bottom = shape.span(size - 1 - row, size);
-                        assertEquals(top[0], bottom[0],
-                                shape + " " + size + ": row " + row + " and its mirror disagree on from");
-                        assertEquals(top[1], bottom[1],
-                                shape + " " + size + ": row " + row + " and its mirror disagree on to");
-                    }
-                }
-            }
-        }
-
-        @Test
-        @DisplayName("no row is wider than the one nearer the middle")
-        void widthNarrowsTowardTheEdges() {
-            // Monotonicity, which maxInset's search depends on: it checks only the two edge rows of a
-            // candidate square because every row between them is at least as wide. If that stopped
-            // being true the icon would overflow on a bulge -- and the code would look correct, because
-            // the assumption is documented rather than asserted.
-            for (Shape shape : ALL) {
-                for (int size : sizes()) {
-                    for (int row = 1; row <= size / 2; row++) {
-                        int[] outer = shape.span(row - 1, size);
-                        int[] inner = shape.span(row, size);
-                        assertTrue(inner[0] <= outer[0] && inner[1] >= outer[1],
-                                shape + " " + size + ": row " + row + " is narrower than row " + (row - 1));
-                    }
-                }
-            }
-        }
-
-        @Test
-        @DisplayName("a point is inside exactly when it is in the span for its row, over every pixel")
-        void containsAgreesWithSpan() {
+        @DisplayName("a point is inside exactly when it is in a span for its row, over every pixel")
+        void containsAgreesWithSpans() {
             // The property that makes the hit test trustworthy, asserted directly rather than assumed:
-            // whatever span says to fill, contains says is clickable. A separate inequality would agree
+            // whatever spans say to fill, contains says is clickable. A separate inequality would agree
             // almost everywhere and differ by a pixel at the edges, which shows up as a node that
             // refuses a click on its own border.
             for (Shape shape : ALL) {
                 for (int size : List.of(12, 26, 33, 48, 64)) {
                     for (int row = 0; row < size; row++) {
-                        int[] span = shape.span(row, size);
+                        int[] spans = shape.spans(row, size);
                         for (int col = 0; col < size; col++) {
-                            boolean inSpan = col >= span[0] && col < span[1];
+                            boolean inSpan = covers(spans, col, col + 1);
                             assertEquals(inSpan, shape.containsLocal(col + 0.5, row + 0.5, size),
                                     shape + " " + size + " at " + col + "," + row);
                         }
@@ -182,7 +242,7 @@ class ShapeTest {
         void rectIsARectangle() {
             for (int size : sizes()) {
                 for (int row = 0; row < size; row++) {
-                    int[] span = Shapes.RECT.span(row, size);
+                    int[] span = first(Shapes.RECT, row, size);
                     assertEquals(0, span[0]);
                     assertEquals(size, span[1]);
                 }
@@ -193,14 +253,14 @@ class ShapeTest {
         @DisplayName("ROUNDED is full width through its middle and cut at both corners")
         void roundedHasCutCorners() {
             int size = 48;
-            int[] middle = Shapes.ROUNDED.span(size / 2, size);
+            int[] middle = first(Shapes.ROUNDED, size / 2, size);
             assertEquals(0, middle[0], "the middle row should reach the left edge");
             assertEquals(size, middle[1], "the middle row should reach the right edge");
 
-            int[] top = Shapes.ROUNDED.span(0, size);
+            int[] top = first(Shapes.ROUNDED, 0, size);
             assertEquals(12, top[0], "a quarter-radius corner at 48 pixels should cut in by 12");
             assertEquals(top[0], size - top[1], "the two corners should match");
-            assertEquals(0, Shapes.ROUNDED.span(12, size)[0], "the cut should be gone by the radius");
+            assertEquals(0, first(Shapes.ROUNDED, 12, size)[0], "the cut should be gone by the radius");
         }
 
         @Test
@@ -214,7 +274,7 @@ class ShapeTest {
             assertEquals(5, (int) Math.round(18 * 0.25), "and the float form gives 5");
 
             // The shape must agree with the integer form.
-            assertEquals(4, Shapes.roundedProportional(4).span(0, 18)[0],
+            assertEquals(4, first(Shapes.roundedProportional(4), 0, 18)[0],
                     "the proportional radius used the float form, changing every existing node");
         }
 
@@ -224,8 +284,8 @@ class ShapeTest {
             // The reason both forms exist. A panel 400 pixels wide should have the same corner as one
             // 120 wide; a node should not. Neither is the default for the other.
             for (int size : List.of(40, 80, 200)) {
-                assertEquals(6, Shapes.rounded(6).span(0, size)[0],
-                        "a fixed 6-pixel radius cut by " + Shapes.rounded(6).span(0, size)[0]
+                assertEquals(6, first(Shapes.rounded(6), 0, size)[0],
+                        "a fixed 6-pixel radius cut by " + first(Shapes.rounded(6), 0, size)[0]
                                 + " at size " + size);
             }
         }
@@ -243,8 +303,8 @@ class ShapeTest {
         @DisplayName("CIRCLE is widest through the middle and narrowest at the top")
         void circleIsRound() {
             int size = 48;
-            int[] middle = Shapes.CIRCLE.span(size / 2, size);
-            int[] top = Shapes.CIRCLE.span(0, size);
+            int[] middle = first(Shapes.CIRCLE, size / 2, size);
+            int[] top = first(Shapes.CIRCLE, 0, size);
 
             assertTrue(middle[1] - middle[0] > size * 0.9, "the middle should be nearly full width");
             assertTrue(top[1] - top[0] < size * 0.4, "the top row should be a narrow cap");
@@ -273,13 +333,139 @@ class ShapeTest {
             // rather than merely that the shape narrows. An arc starts slow and accelerates; this does
             // not.
             int size = 48;
-            assertEquals(0, Shapes.HEXAGON.span(size / 2, size)[0], "the middle should reach the edge");
+            assertEquals(0, first(Shapes.HEXAGON, size / 2, size)[0], "the middle should reach the edge");
 
-            int a = Shapes.HEXAGON.span(0, size)[0];
-            int b = Shapes.HEXAGON.span(1, size)[0];
-            int c = Shapes.HEXAGON.span(2, size)[0];
+            int a = first(Shapes.HEXAGON, 0, size)[0];
+            int b = first(Shapes.HEXAGON, 1, size)[0];
+            int c = first(Shapes.HEXAGON, 2, size)[0];
             assertEquals(b - c, a - b, "the taper should be linear");
             assertTrue(a > c, "the taper should be narrowing towards the edge");
+        }
+
+        @Test
+        @DisplayName("DIAMOND is a point at each end and full width through the middle")
+        void diamondIsPointed() {
+            int size = 48;
+            assertTrue(width(Shapes.DIAMOND, 0, size) <= 2, "the top should be a point");
+            assertTrue(width(Shapes.DIAMOND, size - 1, size) <= 2, "and so should the bottom");
+            int[] middle = first(Shapes.DIAMOND, size / 2, size);
+            assertEquals(0, middle[0], "the middle should reach the left edge");
+            assertEquals(size, middle[1], "the middle should reach the right edge");
+
+            // Symmetric top to bottom, and asserted as such because the taper is measured from the
+            // nearer edge -- a one-sided taper would be a wedge.
+            for (int row = 0; row < size; row++) {
+                int[] top = Shapes.DIAMOND.spans(row, size);
+                int[] bottom = Shapes.DIAMOND.spans(size - 1 - row, size);
+                assertEquals(top[0], bottom[0], "row " + row + " and its mirror disagree on from");
+                assertEquals(top[1], bottom[1], "row " + row + " and its mirror disagree on to");
+            }
+        }
+
+        @Test
+        @DisplayName("OCTAGON cuts its corners in a straight 45-degree line")
+        void octagonChamfersStraight() {
+            int size = 48;
+            int cut = Math.max(1, size / 3);
+            assertEquals(cut, first(Shapes.OCTAGON, 0, size)[0], "the top should be cut by a third");
+            assertEquals(0, first(Shapes.OCTAGON, cut, size)[0], "the chamfer should be gone by the cut");
+            for (int row = 1; row <= cut; row++) {
+                int previous = first(Shapes.OCTAGON, row - 1, size)[0];
+                int current = first(Shapes.OCTAGON, row, size)[0];
+                assertEquals(1, previous - current, "row " + row + " should step in by exactly one");
+            }
+        }
+
+        @Test
+        @DisplayName("OCTAGON is visibly different from ROUNDED, not a second name for it")
+        void octagonIsDistinctFromRounded() {
+            // Two shapes that differ by a pixel are two shapes an author cannot tell apart, and one is
+            // then pointless. The chamfer is a third of the size against the rounded rectangle's
+            // quarter, and a line against an arc, so the corners differ by a clear margin.
+            int size = 48;
+            int octagonCut = first(Shapes.OCTAGON, 0, size)[0];
+            int roundedCut = first(Shapes.ROUNDED, 0, size)[0];
+            assertTrue(octagonCut >= roundedCut + 3,
+                    "OCTAGON's corner cut " + octagonCut + " is too close to ROUNDED's " + roundedCut);
+        }
+
+        @Test
+        @DisplayName("PENTAGON is a point up with a flat base, and deliberately asymmetric")
+        void pentagonPointsUp() {
+            int size = 48;
+            assertTrue(width(Shapes.PENTAGON, 0, size) <= 2, "the top should be a point");
+            assertEquals(size, width(Shapes.PENTAGON, (int) Math.round(size * 0.30), size),
+                    "the shoulders should be full width");
+            assertTrue(width(Shapes.PENTAGON, size - 1, size) > size * 0.55,
+                    "the base should be flat and wide, not a second point");
+            assertTrue(width(Shapes.PENTAGON, size - 1, size) < size * 0.75,
+                    "the base should be narrower than the shoulders");
+            // The asymmetry is the read: a pentagon with a flat top would be a different shape.
+            assertTrue(width(Shapes.PENTAGON, 0, size) < width(Shapes.PENTAGON, size - 1, size),
+                    "the point should be at the top and the flat base at the bottom");
+        }
+
+        @Test
+        @DisplayName("GEAR has teeth standing off its hub, so its outline is not monotone")
+        void gearHasTeeth() {
+            // The property that forced maxInset to be rewritten: a row through a tooth is wider than
+            // the row nearer the middle, so a search that only checked the edges of a candidate square
+            // would put the icon through the outline.
+            int size = 48;
+            boolean narrowsInward = false;
+            for (int row = 0; row < size / 2; row++) {
+                if (width(Shapes.GEAR, row, size) > width(Shapes.GEAR, row + 1, size)) {
+                    narrowsInward = true;
+                    break;
+                }
+            }
+            assertTrue(narrowsInward, "no row is wider than the one below it, so there are no teeth");
+
+            // And the gaps between the teeth: the widest row is a tooth reaching the edge, and the row
+            // between two teeth is much narrower. Found by measuring rather than by naming a row -- the
+            // gap is between the top tooth and its neighbours, and where that falls depends on the
+            // tooth count, which depends on the size.
+            int widest = 0;
+            for (int row = 0; row < size; row++) {
+                widest = Math.max(widest, width(Shapes.GEAR, row, size));
+            }
+            // Within a pixel of the edge rather than exactly on it: the tip circle touches the square
+            // at four points, and a pixel centre never lands on one -- the outermost pixel whose centre
+            // is inside the tip circle is half a pixel in. A sampled shape's boundary is where the curve
+            // is, not where the box is.
+            assertTrue(widest >= size - 2,
+                    "a tooth at the compass points should reach the edge, and the widest row is "
+                            + widest + " of " + size);
+
+            int narrowest = size;
+            for (int row = size / 6; row <= size / 3; row++) {
+                narrowest = Math.min(narrowest, width(Shapes.GEAR, row, size));
+            }
+            assertTrue(narrowest <= widest - 8,
+                    "the widest row is " + widest + " and the narrowest in the upper third is "
+                            + narrowest + ", which is not a visible gap between two teeth");
+        }
+
+        @Test
+        @DisplayName("HEART has a notch: two spans on its top rows, one below them")
+        void heartHasANotch() {
+            // The shape that made rows plural. If the two lobes ever merge all the way up, the heart
+            // is a shield -- which is a different shape and would need a different name.
+            int size = 48;
+            boolean twoSpans = false;
+            for (int row = 0; row < size / 4; row++) {
+                int[] spans = Shapes.HEART.spans(row, size);
+                if (spans.length == 4) {
+                    twoSpans = true;
+                    break;
+                }
+            }
+            assertTrue(twoSpans, "no row of the heart has two lobes, so there is no notch");
+            assertEquals(2, Shapes.HEART.spans(size / 4, size).length,
+                    "below the notch a row should be one piece of material");
+            assertTrue(width(Shapes.HEART, size - 1, size) <= 4, "the heart should come to a point");
+            assertTrue(width(Shapes.HEART, size / 2, size) > size * 0.5,
+                    "the heart's body should be wide");
         }
 
         @Test
@@ -291,11 +477,11 @@ class ShapeTest {
             // plausible and looked like a broken shape.
             int size = 48;
             for (int row = 0; row < size; row++) {
-                assertEquals(0, Shapes.TOME.span(row, size)[0],
+                assertEquals(0, first(Shapes.TOME, row, size)[0],
                         "row " + row + ": the spine should be a straight edge at x=0");
             }
-            assertEquals(size, Shapes.TOME.span(size / 2, size)[1], "the middle should reach the right");
-            assertTrue(Shapes.TOME.span(0, size)[1] < size, "the top should be cut on the right");
+            assertEquals(size, first(Shapes.TOME, size / 2, size)[1], "the middle should reach the right");
+            assertTrue(first(Shapes.TOME, 0, size)[1] < size, "the top should be cut on the right");
         }
 
         @Test
@@ -305,10 +491,152 @@ class ShapeTest {
             // then pointless. A third-of-the-size fore-edge against a quarter means the corners differ
             // by a clear margin.
             int size = 48;
-            int tomeCut = size - Shapes.TOME.span(0, size)[1];
-            int roundedCut = Shapes.ROUNDED.span(0, size)[0];
+            int tomeCut = size - first(Shapes.TOME, 0, size)[1];
+            int roundedCut = first(Shapes.ROUNDED, 0, size)[0];
             assertTrue(tomeCut > roundedCut + 3,
                     "TOME's corner cut " + tomeCut + " is too close to ROUNDED's " + roundedCut);
+        }
+
+        @Test
+        @DisplayName("no two shapes are within three pixels of each other anywhere")
+        void everyShapeIsDistinct() {
+            // A picker of near-duplicates is a picker an author cannot choose from: two names that
+            // draw the same picture are one shape with two names. Three pixels on some row, measured as
+            // the columns covered by exactly one of the two, because equal widths in different places
+            // are still two different shapes.
+            int size = 48;
+            for (int a = 0; a < ALL.size(); a++) {
+                for (int b = a + 1; b < ALL.size(); b++) {
+                    int worst = 0;
+                    for (int row = 0; row < size; row++) {
+                        worst = Math.max(worst, difference(ALL.get(a), ALL.get(b), row, size));
+                    }
+                    assertTrue(worst >= 3, ALL.get(a) + " and " + ALL.get(b)
+                            + " differ by only " + worst + " pixels, so they are one shape");
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Rotation
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("rotation")
+    class Rotation {
+
+        /** A few angles, including one that is not a multiple of anything. */
+        private static final List<Double> ANGLES = List.of(30.0, 90.0, 137.0, 180.0, 270.0);
+
+        @Test
+        @DisplayName("zero and 360 degrees are the shape itself, not a copy of it")
+        void aFullTurnIsTheShapeItself() {
+            // Not an optimisation: a rotation of nothing must not pay for a sampled table, and the
+            // identity is the one rotation a caller can be sure of.
+            for (Shape shape : ALL) {
+                assertSame(shape, Shapes.rotated(shape, 0), shape + " was copied by a zero turn");
+                assertSame(shape, Shapes.rotated(shape, 360), shape + " was copied by a full turn");
+                assertSame(shape, Shapes.rotated(shape, -360), shape + " was copied by a negative turn");
+            }
+        }
+
+        @Test
+        @DisplayName("a quarter turn of a rectangle is the same rectangle")
+        void aQuarterTurnOfARectangleIsItself() {
+            // The strongest available check that the turn is a turn and not a shear or a flip: a
+            // rectangle has fourfold symmetry, so its spans must come back unchanged, row for row.
+            for (int size : List.of(16, 26, 33, 48, 64)) {
+                Shape turned = Shapes.rotated(Shapes.RECT, 90);
+                for (int row = 0; row < size; row++) {
+                    int[] base = Shapes.RECT.spans(row, size);
+                    int[] there = turned.spans(row, size);
+                    assertNotNull(there, "the turned rectangle lost row " + row + " of " + size);
+                    assertTrue(Math.abs(base[0] - there[0]) <= 1 && Math.abs(base[1] - there[1]) <= 1,
+                            "a quarter turn moved the rectangle's row " + row + " of " + size
+                                    + " from " + base[0] + ".." + base[1] + " to "
+                                    + there[0] + ".." + there[1]);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("a circle is unchanged by any angle")
+        void aCircleIsUnchangedByAnyAngle() {
+            // A circle is the shape with no orientation at all, so every angle must agree with zero --
+            // which is the check that the sampling is not losing material as the curve turns.
+            for (double angle : ANGLES) {
+                Shape turned = Shapes.rotated(Shapes.CIRCLE, angle);
+                for (int size : List.of(24, 48)) {
+                    int widest = 0;
+                    int widestThere = 0;
+                    for (int row = 0; row < size; row++) {
+                        widest = Math.max(widest, width(Shapes.CIRCLE, row, size));
+                        widestThere = Math.max(widestThere, width(turned, row, size));
+                    }
+                    assertTrue(Math.abs(widest - widestThere) <= 2,
+                            "a circle turned " + angle + " degrees measures " + widestThere
+                                    + " where it measured " + widest + " at " + size);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("every turned shape still answers every invariant the callers rely on")
+        void aTurnedShapeIsStillAShape() {
+            // The sweeps again, over turned shapes: a row's spans well formed and in order, a point
+            // inside exactly when it is in a span for its row, and an icon square that fits and is the
+            // largest that does. A rotation that quietly produced overlapping runs would draw a node
+            // twice and hit-test it once.
+            for (Shape base : ALL) {
+                for (double angle : ANGLES) {
+                    Shape shape = Shapes.rotated(base, angle);
+                    for (int size : List.of(12, 26, 33, 48, 64, 97)) {
+                        for (int row = 0; row < size; row++) {
+                            int[] spans = shape.spans(row, size);
+                            if (spans == null) {
+                                continue;
+                            }
+                            int previousEnd = -1;
+                            for (int i = 0; i < spans.length; i += 2) {
+                                assertTrue(spans[i] >= 0 && spans[i] < spans[i + 1]
+                                                && spans[i + 1] <= size && spans[i] > previousEnd,
+                                        base + " turned " + angle + " at " + size + " row " + row
+                                                + " has a malformed span " + spans[i] + ".." + spans[i + 1]);
+                                previousEnd = spans[i + 1];
+                            }
+                            for (int col = 0; col < size; col++) {
+                                assertEquals(covers(spans, col, col + 1),
+                                        shape.containsLocal(col + 0.5, row + 0.5, size),
+                                        base + " turned " + angle + " at " + size + " " + col + "," + row
+                                                + ": the hit test and the drawing disagree");
+                            }
+                        }
+                        int inset = shape.maxInset(size);
+                        for (int row = inset; row <= size - 1 - inset; row++) {
+                            assertTrue(covers(shape.spans(row, size), inset, size - inset),
+                                    base + " turned " + angle + " at " + size
+                                            + ": the icon square does not fit");
+                        }
+                    }
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("turning a gear moves its teeth, and turning it back is the gear again")
+        void turningAGearMovesItsTeeth() {
+            // A rotation that did nothing would pass every invariant above -- a shape is still a shape
+            // if it never moved. This is the one that says the pixels changed.
+            int size = 48;
+            Shape gear = Shapes.GEAR;
+            Shape turned = Shapes.rotated(gear, 15);
+            int different = 0;
+            for (int row = 0; row < size; row++) {
+                different += difference(gear, turned, row, size);
+            }
+            assertTrue(different > size, "a fifteen-degree turn moved " + different + " pixel(s) of a"
+                    + " forty-eight pixel gear, which is not a turn");
         }
     }
 
@@ -327,7 +655,13 @@ class ShapeTest {
             assertSame(Shapes.CIRCLE, Shapes.byName("circle", Shapes.RECT));
             assertSame(Shapes.HEXAGON, Shapes.byName("hexagon", Shapes.RECT));
             assertSame(Shapes.TOME, Shapes.byName("tome", Shapes.RECT));
+            assertSame(Shapes.DIAMOND, Shapes.byName("diamond", Shapes.RECT));
+            assertSame(Shapes.OCTAGON, Shapes.byName("octagon", Shapes.RECT));
+            assertSame(Shapes.PENTAGON, Shapes.byName("pentagon", Shapes.RECT));
+            assertSame(Shapes.GEAR, Shapes.byName("gear", Shapes.RECT));
+            assertSame(Shapes.HEART, Shapes.byName("heart", Shapes.RECT));
             assertSame(Shapes.RECT, Shapes.byName("rectangle", Shapes.CIRCLE));
+            assertSame(Shapes.RECT, Shapes.byName("square", Shapes.CIRCLE));
         }
 
         @Test
@@ -338,6 +672,7 @@ class ShapeTest {
             assertSame(Shapes.CIRCLE, Shapes.byName("Circle", Shapes.RECT));
             assertSame(Shapes.HEXAGON, Shapes.byName("HEXAGON", Shapes.RECT));
             assertSame(Shapes.TOME, Shapes.byName("ToMe", Shapes.RECT));
+            assertSame(Shapes.HEART, Shapes.byName("Heart", Shapes.RECT));
         }
 
         @Test
@@ -368,10 +703,10 @@ class ShapeTest {
                 for (int size : List.of(12, 20, 26, 33, 48, 64, 128)) {
                     int inset = shape.maxInset(size);
                     for (int row = inset; row <= size - 1 - inset; row++) {
-                        int[] span = shape.span(row, size);
-                        assertTrue(span[0] <= inset && span[1] >= size - inset,
+                        int[] spans = shape.spans(row, size);
+                        assertTrue(covers(spans, inset, size - inset),
                                 shape + " " + size + " inset " + inset + ": row " + row
-                                        + " span " + span[0] + ".." + span[1] + " does not cover it");
+                                        + " does not cover it");
                     }
                 }
             }
@@ -392,8 +727,7 @@ class ShapeTest {
                     int smaller = inset - 1;
                     boolean fits = true;
                     for (int row = smaller; row <= size - 1 - smaller; row++) {
-                        int[] span = shape.span(row, size);
-                        if (span[0] > smaller || span[1] < size - smaller) {
+                        if (!covers(shape.spans(row, size), smaller, size - smaller)) {
                             fits = false;
                             break;
                         }
@@ -484,10 +818,9 @@ class ShapeTest {
                 for (int size : List.of(12, 20, 26, 33, 48, 64, 128)) {
                     int[] box = shape.iconBox(0, 0, size);
                     for (int row = box[1]; row < box[1] + box[2]; row++) {
-                        int[] span = shape.span(row, size);
-                        assertTrue(span[0] <= box[0] && span[1] >= box[0] + box[2],
-                                shape + " " + size + ": row " + row + " span " + span[0] + ".." + span[1]
-                                        + " does not cover the icon box at " + box[0] + " width " + box[2]);
+                        assertTrue(covers(shape.spans(row, size), box[0], box[0] + box[2]),
+                                shape + " " + size + ": row " + row + " does not cover the icon box at "
+                                        + box[0] + " width " + box[2]);
                     }
                 }
             }

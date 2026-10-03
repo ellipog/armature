@@ -814,20 +814,20 @@ public final class ArmatureTheme {
     }
 
     /**
-     * The horizontal extent of a shape on one row, as {@code {from, to}}.
+     * The horizontal extent of a shape on one row, as flattened {@code {from, to, …}} pairs.
      *
      * <p>The functional interface shapes are built from. It is this rather than the full {@code Shape}
-     * type so a caller can supply the lookup as a method reference — {@code entry.shape()::span} — which
+     * type so a caller can supply the lookup as a method reference — {@code entry.shape()::spans} — which
      * is what every call site does and what keeps a shape from having to be boxed or wrapped to draw one.
      */
     @FunctionalInterface
-    public interface RowSpans {
-        /** {@code null} for a row outside the shape. */
-        int[] span(int row, int size);
+    public interface Spans {
+        /** {@code null} for a row outside the shape, or for a row with no material. */
+        int[] spans(int row, int size);
     }
 
     /**
-     * Fills a whole shape row by row, merging rows that share a span.
+     * Fills a whole shape row by row, merging rows that share a span, and filling every interval.
      *
      * <h2>Why merging matters rather than being an optimisation</h2>
      *
@@ -836,32 +836,41 @@ public final class ArmatureTheme {
      * redraws every frame. Merging brings a rectangle down to one call and a rounded rectangle to
      * about nine, which is the difference between a shape being affordable and being a decoration
      * nobody enables.
+     *
+     * <h2>Several intervals per row</h2>
+     *
+     * <p>A row's spans are sorted and disjoint — {@link dev.ellipog.armature.client.ui.shape.Shape#spans}
+     * guarantees both — so each pair is one fill, and two rows merge when their <i>whole</i> lists are
+     * equal. Comparing only the first pair would merge a heart's two-lobed row with a one-lobed row
+     * beneath it and fill the notch, which is the kind of bug a picture shows and a number does not.
      */
     public static void fillShape(GuiRenderer renderer, int x, int y, int size, int colour,
-                                 RowSpans spans) {
+                                 Spans spans) {
         if (size <= 0) {
             return;
         }
 
         int row = 0;
         while (row < size) {
-            int[] span = spans.span(row, size);
+            int[] span = spans.spans(row, size);
             if (span == null) {
                 row++;
                 continue;
             }
 
-            // Extend while the span is unchanged, so a rectangle is one call.
+            // Extend while the spans are unchanged, so a rectangle is one call.
             int end = row + 1;
             while (end < size) {
-                int[] next = spans.span(end, size);
-                if (next == null || next[0] != span[0] || next[1] != span[1]) {
+                int[] next = spans.spans(end, size);
+                if (!java.util.Arrays.equals(next, span)) {
                     break;
                 }
                 end++;
             }
 
-            renderer.fill(x + span[0], y + row, x + span[1], y + end, colour);
+            for (int i = 0; i < span.length; i += 2) {
+                renderer.fill(x + span[i], y + row, x + span[i + 1], y + end, colour);
+            }
             row = end;
         }
     }
@@ -874,7 +883,7 @@ public final class ArmatureTheme {
      * and a node loses the state colour that tells you whether it can be started.
      */
     public static void shapePanel(GuiRenderer renderer, int x, int y, int size, int fill, int border,
-                                  RowSpans spans) {
+                                  Spans spans) {
         fillShape(renderer, x, y, size, border, spans);
         if (size > 2) {
             // Inset by one, and drawn at `size - 2` -- because a shape is a function of (row, size), so

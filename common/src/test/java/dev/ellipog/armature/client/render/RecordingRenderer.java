@@ -82,6 +82,8 @@ public final class RecordingRenderer implements GuiRenderer {
                 case CLIP -> "clip(" + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case UNCLIP -> "unclip";
                 case FLUSH -> "flush";
+                case BATCH -> "batch";
+                case END_BATCH -> "endBatch";
             };
         }
 
@@ -91,7 +93,7 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /** What a recorded call was. */
-    public enum Op { FILL, TEXT, STYLED_TEXT, ICON, FACE, BLUR, CLIP, UNCLIP, FLUSH }
+    public enum Op { FILL, TEXT, STYLED_TEXT, ICON, FACE, BLUR, CLIP, UNCLIP, FLUSH, BATCH, END_BATCH }
 
     private final List<Call> calls = new ArrayList<>();
     private final int charWidth;
@@ -101,6 +103,7 @@ public final class RecordingRenderer implements GuiRenderer {
     private int openClips;
     private int deepestClip;
     private int clippedAfterStop;
+    private int batches;
 
     private RecordingRenderer(int charWidth, int lineHeight, boolean iconsDraw) {
         this.charWidth = charWidth;
@@ -161,6 +164,26 @@ public final class RecordingRenderer implements GuiRenderer {
     @Override
     public void flush() {
         calls.add(new Call(Op.FLUSH, 0, 0, 0, 0, 0, ""));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Recorded as an opening and a closing marker around whatever the supplier draws, so a test can assert
+     * both halves: that a region was batched, and that its drawing happened <i>inside</i> the markers rather
+     * than after them. The supplier runs for real — a recorder that skipped it would record an empty region
+     * and could not answer "is this region one batch" about anything.
+     */
+    @Override
+    public <T> T batched(java.util.function.Supplier<T> draw) {
+        calls.add(new Call(Op.BATCH, 0, 0, 0, 0, 0, ""));
+        batches++;
+        try {
+            return draw.get();
+        }
+        finally {
+            calls.add(new Call(Op.END_BATCH, 0, 0, 0, 0, 0, ""));
+        }
     }
 
     @Override
@@ -346,6 +369,17 @@ public final class RecordingRenderer implements GuiRenderer {
         return clippedAfterStop;
     }
 
+    /**
+     * How many batched regions were opened.
+     *
+     * <p>The count a canvas test asserts on: "everything on the canvas is drawn in one batch" is
+     * {@code batches() == 1}, and the number is also what makes a regression — a batch quietly dropped from
+     * the draw path — a failing assertion rather than a frame-rate report from a player.
+     */
+    public int batches() {
+        return batches;
+    }
+
     /** How deep the clip nesting went, so a test can tell nesting from replacing. */
     public int deepestClip() {
         return deepestClip;
@@ -373,6 +407,7 @@ public final class RecordingRenderer implements GuiRenderer {
         openClips = 0;
         deepestClip = 0;
         clippedAfterStop = 0;
+        batches = 0;
     }
 
     @Override

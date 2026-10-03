@@ -181,12 +181,12 @@ public final class ArmatureTextField extends AbstractWidget {
 
         switch (keyCode) {
             case 257, 335 -> {          // Enter, and the keypad's
-                submit();
+                // The blur is the commit: `setFocused` submits, so calling `submit` here as well sent
+                // the same edit twice -- two ops, two status lines, two undo steps for one Enter.
                 setFocused(false);
                 return true;
             }
             case 256 -> {               // Escape: the same -- the edit is over, the card is not
-                submit();
                 setFocused(false);
                 return true;
             }
@@ -293,9 +293,13 @@ public final class ArmatureTextField extends AbstractWidget {
                 && Math.abs(mouseX - lastClickX) <= 3;
         lastClickMillis = now;
         lastClickX = mouseX;
+        // The caret is worked out **before** the field takes the keyboard, and that order is the fix:
+        // `caretFor` reads the same `textOffset` the drawing used, and focusing changes that offset --
+        // a field at rest shows its value from the start, a focused one scrolls to its caret -- so a
+        // caret computed after `setFocused` would land nowhere near the character that was clicked.
+        int caret = caretFor(mouseX);
         setFocused(true);
-        // The caret goes where the click landed: the model owns the arithmetic, and this hands it an index.
-        model.caretTo(caretFor(mouseX));
+        model.caretTo(caret);
         if (twice) {
             // A second click in the same place marks the word under it. Which characters count as a word is
             // the model's rule, and it is asserted there without a client.
@@ -326,15 +330,33 @@ public final class ArmatureTextField extends AbstractWidget {
         return model.caretForWidth(local, minecraft.font::width);
     }
 
-    /** How far the text is scrolled left, so the caret stays inside the box. */
+    /**
+     * How far the text is scrolled left, so the caret stays inside the box.
+     *
+     * <h2>Nothing is scrolled while the field is at rest</h2>
+     *
+     * <p>A field is filled with its value through {@code setValue}, which parks the caret at the end --
+     * the useful place to continue from, when the field is the one being typed into. Reading the caret
+     * unconditionally then made every <i>unfocused</i> field draw the tail of its value and hide the
+     * beginning: a chapter subtitle "Five quests, no tricks" showed as "s quests, no tricks", and the
+     * first click landed through an offset nobody could see. That is a rendering fault rather than a
+     * scrolled view, and the fix is the focus check below: the caret decides the view only while the
+     * field has the keyboard. At rest the value starts at its own left edge, where a reader looks first.
+     *
+     * <p>{@link #caretFor} reads this method too, so the click-to-caret mapping follows whatever is
+     * actually drawn -- one derivation for the view and the press. How far is {@code TextField}'s
+     * {@code scrollOffset}, which is asserted without a client; who may scroll is this method's, and
+     * the answer is the focused field alone.
+     */
     private int textOffset() {
+        if (!isFocused()) {
+            return 0;
+        }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.font == null) {
             return 0;
         }
-        int caret = minecraft.font.width(model.value().substring(0, Math.min(model.caret(), model.length())));
-        int room = getWidth() - PAD * 2;
-        return Math.max(0, caret - room);
+        return model.scrollOffset(getWidth() - PAD * 2, minecraft.font::width);
     }
 
     // ------------------------------------------------------------------

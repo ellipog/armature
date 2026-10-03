@@ -7,7 +7,7 @@ package dev.ellipog.armature.client.ui.shape;
  *
  * <p>Everything here derives from the horizontal extent of the shape on one row of its bounding
  * square. The renderer walks the rows and fills each span; the hit test asks whether the pointer is
- * inside the span for its row; the icon fit asks which square fits inside every row it covers. So
+ * inside a span for its row; the icon fit asks which square fits inside every row it covers. So
  * <b>a click lands on exactly the pixels that were drawn, and the icon sits inside them</b>, by
  * construction rather than by three pieces of arithmetic agreeing.
  *
@@ -16,68 +16,131 @@ package dev.ellipog.armature.client.ui.shape;
  * bug rather than as a geometry bug — and it is the reason this is a type rather than three helper
  * methods on an enum.
  *
- * <h2>Two abstract methods, not one, and that is on purpose</h2>
+ * <h2>A row can have more than one span, and the default method is why that is safe</h2>
  *
- * <p>An implementation says where the span <b>starts and ends</b> on a row; {@link #span} does the
- * bounds check and the clamping. That split exists because the clamping is a contract every shape has
- * to honour and no shape should have to remember:
+ * <p>An implementation says what a row covers — {@link #spansOf}, flattened {@code {from, to, …}}
+ * pairs, its honest arithmetic — and {@link #spans} does the clamping, the dropping, the ordering and
+ * the merging. That split exists because those four are a contract every shape has to honour and no
+ * shape should have to remember:
  *
  * <ul>
- *   <li>A row outside the square has <b>no</b> span rather than an empty one, because a caller walking
- *       rows past the bottom needs to know it has finished. A clamped span would draw the last row
- *       twice.</li>
- *   <li>A span is <b>never empty</b>, because a zero-width row is a visible hole in an outline. At 12
- *       pixels a circle's top row computes to nothing, and the clamp to one pixel is what makes a
+ *   <li>A row outside the square has <b>no</b> spans rather than an empty list, because a caller
+ *       walking rows past the bottom needs to know it has finished. A clamped row would draw the
+ *       last one twice.</li>
+ *   <li>Every span is <b>non-empty</b>, because a zero-width row is a visible hole in an outline. At
+ *       12 pixels a circle's top row computes to nothing, and the clamp to one pixel is what makes a
  *       small circle a small circle rather than a circle with a notch.</li>
- *   <li>A span never leaves the square, because a renderer given {@code from > to} draws a rectangle
- *       the other way round rather than drawing nothing.</li>
+ *   <li>No span leaves the square, because a renderer given {@code from > to} draws a rectangle the
+ *       other way round rather than drawing nothing.</li>
+ *   <li>Spans come out <b>sorted and disjoint</b>. A row with two overlapping intervals would draw
+ *       the overlap twice — invisible for an opaque fill, a wrong alpha for a wash — and a hit test
+ *       that walked them would be answering a question about pixels that are not there. Merging them
+ *       here is what lets every caller assume one interval per piece of material.</li>
  * </ul>
  *
- * <p>So an implementation cannot get those three wrong, and a caller can rely on them. That is worth
- * two method names.
- *
- * <h2>Why the ends and not a whole span</h2>
- *
- * <p>Because the shape's own arithmetic is about its two edges — a corner cuts in from the left and
- * from the right by the same amount, a taper narrows symmetrically — and asking an implementation to
- * return an array would be asking it to do the clamping itself, or to be trusted not to.
+ * <p>More than one span per row is not a curiosity: a heart's top is two lobes with a notch between
+ * them, and a gear's teeth stand off its hub. Those shapes are why this is a list rather than a pair.
  *
  * <h2>What is deliberately not on this interface</h2>
  *
  * <p>Nothing about textures, colours, borders or drawing. A shape answers geometry and nothing else,
  * which is what makes the whole family testable without a client — the invariant sweeps in
  * {@code ShapeTest} run every shape at every size from 1 to 80, and that is only possible because a
- * shape is a pair of integers per row.
+ * shape is a list of integers per row.
  */
+@FunctionalInterface
 public interface Shape {
 
     /**
-     * The left edge of this shape's span on {@code row}, in local coordinates.
+     * What this shape covers on {@code row}, as flattened {@code {from, to, …}} pairs, or {@code null}.
      *
-     * <p>May be out of range: {@link #span} clamps it. Implementations should return their honest
-     * arithmetic rather than pre-clamping, so the clamp happens once.
+     * <p>May be out of range or empty: {@link #spans} clamps, drops what is outside the square, and
+     * widens what is inside it to a pixel. Implementations should return their honest arithmetic rather
+     * than pre-clamping, so the clamp happens once.
      */
-    int startOf(int row, int size);
-
-    /** The right edge of this shape's span on {@code row}, <b>exclusive</b>. Clamped by {@link #span}. */
-    int endOf(int row, int size);
+    int[] spansOf(int row, int size);
 
     /**
-     * The horizontal extent of this shape on one row of a {@code size}-pixel square.
+     * The horizontal extents of this shape on one row of a {@code size}-pixel square.
      *
      * @param row 0 to {@code size - 1}, measured from the <b>top</b>
-     * @return {@code {from, to}} in local coordinates — {@code from} inclusive, {@code to} exclusive —
-     *     or {@code null} when the row is outside the shape. Never empty, and never outside the square:
-     *     see the class note for why both of those are the interface's job rather than the
-     *     implementation's.
+     * @return {@code {from, to, from, to, …}} in local coordinates — each {@code from} inclusive and
+     *     {@code to} exclusive — or {@code null} when the row is outside the shape or covers nothing.
+     *     Never empty, never out of the square, always sorted and never overlapping: see the class
+     *     note for why those are the interface's job rather than the implementation's.
      */
-    default int[] span(int row, int size) {
+    default int[] spans(int row, int size) {
         if (size <= 0 || row < 0 || row >= size) {
             return null;
         }
-        int from = Math.max(0, Math.min(startOf(row, size), size - 1));
-        int to = Math.max(from + 1, Math.min(endOf(row, size), size));
-        return new int[] {from, to};
+        int[] raw = spansOf(row, size);
+        if (raw == null || raw.length < 2) {
+            return null;
+        }
+        int count = raw.length / 2;
+        // Clamp, drop what is outside, and sort by `from` as it goes in. Insertion sort because a row
+        // has a handful of spans at most and the arrays are small enough that anything cleverer would
+        // be more code than arithmetic.
+        int[] from = new int[count];
+        int[] to = new int[count];
+        int kept = 0;
+        for (int i = 0; i < count; i++) {
+            int f = raw[i * 2];
+            int t = raw[i * 2 + 1];
+            if (t < f) {
+                // An inverted pair is an empty interval where `from` says, not material running
+                // backwards: a shape whose radius rounds its two edges past each other at one pixel
+                // says "nothing here", not "everything here".
+                t = f;
+            }
+            if (t < 0 || f > size) {
+                // Strictly beyond the square. Dropped rather than clamped to a pixel at the edge: a
+                // stray pixel is material the shape never claimed, and inventing it is how a shape
+                // grows a speck the hit test then agrees with. Material that merely <i>touches</i> the
+                // edge is not beyond it, and is kept below.
+                continue;
+            }
+            f = Math.max(0, Math.min(f, size - 1));
+            t = Math.max(f, Math.min(t, size));
+            if (t <= f) {
+                // Inside the square but narrower than a pixel: a circle's top row at twelve pixels, a
+                // gear tooth's first row. Widened rather than dropped, because the row does cut the
+                // shape -- and a shape that loses its own cap is a shape with a notch in it.
+                t = Math.min(size, f + 1);
+            }
+            int at = kept;
+            while (at > 0 && from[at - 1] > f) {
+                from[at] = from[at - 1];
+                to[at] = to[at - 1];
+                at--;
+            }
+            from[at] = f;
+            to[at] = t;
+            kept++;
+        }
+        if (kept == 0) {
+            return null;
+        }
+        // Merge what overlaps or touches. Touching intervals merge too, because [0,5) and [5,10) are
+        // one piece of material with an invisible seam -- and a seam is a second fill call, and a
+        // second place for a border to be drawn twice.
+        int out = 0;
+        for (int i = 1; i < kept; i++) {
+            if (from[i] <= to[out]) {
+                to[out] = Math.max(to[out], to[i]);
+            }
+            else {
+                out++;
+                from[out] = from[i];
+                to[out] = to[i];
+            }
+        }
+        int[] result = new int[(out + 1) * 2];
+        for (int i = 0; i <= out; i++) {
+            result[i * 2] = from[i];
+            result[i * 2 + 1] = to[i];
+        }
+        return result;
     }
 
     /**
@@ -104,8 +167,16 @@ public interface Shape {
         if (localX < 0 || localY < 0) {
             return false;
         }
-        int[] span = span((int) Math.floor(localY), size);
-        return span != null && localX >= span[0] && localX < span[1];
+        int[] spans = spans((int) Math.floor(localY), size);
+        if (spans == null) {
+            return false;
+        }
+        for (int i = 0; i < spans.length; i += 2) {
+            if (localX >= spans[i] && localX < spans[i + 1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The same test, given a screen point and the shape's corner. */
@@ -123,38 +194,57 @@ public interface Shape {
      * pixels a circle wants 7 and a rounded rectangle wants 4 — and 7 for a circle is exactly the
      * inscribed square, {@code size/√2}, which is the arithmetic arriving at the answer a pencil would.
      *
-     * <h2>Which rows have to be checked, and which way the search runs</h2>
+     * <h2>What the search may and may not assume</h2>
      *
-     * <p>Only the top and bottom rows of the candidate square: every shape here is widest at its
-     * vertical middle and narrows monotonically towards either end, so the narrowest row a square
-     * covers is always one of its two edges. {@code ShapeTest} asserts that monotonicity rather than
-     * assuming it, because this method depends on it.
+     * <p>Nothing about the shape's outline. The search this replaced checked only the top and bottom
+     * rows of a candidate square, which is correct exactly when every row between them is at least as
+     * wide — a property the old shapes had and the new ones do not. A gear is wider at a tooth than at
+     * the gap nearer its middle, and a heart is narrow at the notch above its widest row; on either,
+     * the two-row check would return an inset whose square pokes out of the outline.
      *
-     * <p>The search runs <b>upwards from zero and returns the first inset that fits</b>, because a
-     * smaller required span is easier to satisfy — so the predicate turns true once and stays true, and
-     * the first success is the largest square. Returning on the first <i>failure</i> instead gives zero
-     * for a circle, which draws a full-size icon hanging well outside the outline. Getting the direction
-     * of a monotone search backwards is the whole bug, and it is why {@code ShapeTest} asserts both that
-     * the answer fits <i>and</i> that one pixel less does not.
+     * <p>So the answer is derived instead of guessed. A square of inset {@code i} covers rows
+     * {@code [i, size - 1 - i]}, and each of those rows must cover the whole interval
+     * {@code [i, size - 1 - i]} in at least one span — which one span can do when
+     * {@code from <= i} and {@code to >= size - i}, i.e. when {@code i >= max(from, size - to)}. So a
+     * row's <b>need</b> is the smallest inset it can host, {@code min over spans of max(from, size-to)},
+     * and the answer is the smallest {@code i} whose whole window needs no more than {@code i}. One
+     * pass outward from the middle computes the running maximum of every deeper window, so the whole
+     * search is a single walk of the rows.
+     *
+     * <p>The answer is asserted in both directions rather than one: {@code ShapeTest} checks that the
+     * square at that inset fits <i>and</i> that one pixel less does not. "It fits" alone would pass for
+     * a search that returned zero — a full-size icon hanging well outside the outline.
      */
     default int maxInset(int size) {
         if (size <= 2) {
             return 0;
         }
-        for (int inset = 0; inset < size / 2; inset++) {
-            if (rowCovers(inset, size, inset) && rowCovers(size - 1 - inset, size, inset)) {
-                return inset;
+        int deepest = (size - 1) / 2;
+        int needed = 0;
+        int answer = Math.max(0, size / 2 - 1);
+        for (int inset = deepest; inset >= 0; inset--) {
+            needed = Math.max(needed, need(inset, size));
+            needed = Math.max(needed, need(size - 1 - inset, size));
+            if (needed <= inset) {
+                answer = inset;
             }
         }
-        // Unreachable for every shape in Shapes: a single centre pixel always fits. Returned rather than
-        // thrown so a malformed size cannot crash a screen mid-frame.
-        return Math.max(0, size / 2 - 1);
+        return answer;
     }
 
-    /** Whether {@code row}'s span contains every column from {@code inset} to {@code size - inset - 1}. */
-    default boolean rowCovers(int row, int size, int inset) {
-        int[] span = span(row, size);
-        return span != null && span[0] <= inset && span[1] >= size - inset;
+    /** The smallest inset whose centred square this row can host; see {@link #maxInset}. */
+    default int need(int row, int size) {
+        int[] spans = spans(row, size);
+        if (spans == null) {
+            // A row with no material cannot host a square at all. Only reachable through an inset that
+            // the loop has already rejected, so a value no inset can satisfy is the honest answer.
+            return Integer.MAX_VALUE;
+        }
+        int best = Integer.MAX_VALUE;
+        for (int i = 0; i < spans.length; i += 2) {
+            best = Math.min(best, Math.max(spans[i], size - spans[i + 1]));
+        }
+        return best;
     }
 
     /**

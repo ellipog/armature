@@ -88,6 +88,26 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         graphics.flush();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code GuiGraphics.drawManaged} is the whole of the implementation: it flushes, marks the context
+     * managed so every fill and label inside skips its own flush, runs the supplier, and flushes once at the
+     * end. It is deprecated in this version, and used deliberately — it is the only switch that suppresses the
+     * per-call flush, and the alternative is the behaviour the seam's {@link #batched} exists to fix.
+     *
+     * <p>The supplier's value is captured through an array because {@code drawManaged} takes a
+     * {@code Runnable}: the context's signature cannot return what the caller drew, and this wrapper can.
+     */
+    @Override
+    public <T> T batched(java.util.function.Supplier<T> draw) {
+        Object[] result = new Object[1];
+        graphics.drawManaged(() -> result[0] = draw.get());
+        @SuppressWarnings("unchecked")
+        T typed = (T) result[0];
+        return typed;
+    }
+
     // ------------------------------------------------------------------
     // Text
     // ------------------------------------------------------------------

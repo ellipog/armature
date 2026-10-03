@@ -39,7 +39,7 @@ class InspectLayoutTest {
                 InspectRow.heading("placement", "Placement"),
                 InspectRow.field("x", "X", "0"),
                 InspectRow.field("y", "Y", "0"),
-                InspectRow.stepper("size", "Node size", "32"),
+                InspectRow.field("size", "Node size", "32"),
                 InspectRow.toggle("showTitle", "Show title"),
                 InspectRow.warning("raw", "Unknown type"),
                 InspectRow.raw("raw:json", "addon:custom", "{\"custom\":true}"),
@@ -179,5 +179,60 @@ class InspectLayoutTest {
         for (Slot slot : layout.slots()) {
             assertTrue(slot.y() >= 0, () -> "a row left the column: " + slot);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // The stacked composition
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("stacked rows put the label above a full-width control band")
+    void stackedRowsGiveTheControlTheWholeWidth() {
+        // The mode exists for the narrow panel: a side-by-side row spends 96 pixels on a control strip
+        // and truncates the label beside it, which is what "Default Prereq..." was. Stacked rows are the
+        // answer, and the property that makes them one is that the control owns the row's whole width.
+        for (int width : List.of(288, 200, 180, 120, 60)) {
+            List<InspectRow> rows = rows();
+            Layout layout = InspectLayout.build(rows, width, MEASURE, InspectLayout.Mode.STACKED);
+
+            for (InspectRow row : rows) {
+                if (row.kind() != InspectRow.Kind.FIELD && row.kind() != InspectRow.Kind.TOGGLE
+                        && row.kind() != InspectRow.Kind.RAW) {
+                    continue;
+                }
+                Slot slot = layout.slot(row.key());
+                assertNotNull(slot, () -> "no slot for " + row.key());
+                assertEquals(InspectLayout.STACKED_ROW_HEIGHT, slot.height(),
+                        () -> "a stacked labelled row is its two bands tall: " + row.key() + " at " + width);
+
+                Slot label = InspectLayout.labelBand(slot);
+                Slot control = InspectLayout.controlBand(slot);
+                assertEquals(InspectLayout.STACKED_LABEL_HEIGHT, label.height(), "the label band");
+                assertEquals(InspectLayout.STACKED_CONTROL_HEIGHT, control.height(), "the control band");
+                assertEquals(label.bottom(), control.y(), "the bands meet rather than overlap");
+                assertEquals(slot.x(), control.x(),
+                        () -> "the control starts at the row's left edge: " + row.key());
+                assertEquals(slot.width(), control.width(),
+                        () -> "and owns the whole width -- there is no strip in this mode: " + row.key());
+                assertTrue(control.bottom() <= slot.bottom(),
+                        () -> "the control band stayed inside its row: " + row.key());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("stacked bands clamp into a squat row rather than hanging out of it")
+    void stackedBandsClamp() {
+        // The same rule every part in this codebase learned: a degenerate container yields zero-sized
+        // parts *inside* it, never ink outside it. A row four pixels tall has two bands that can both
+        // exist and fit, or the drawing lands on the row below.
+        Slot squat = new Slot("x", 10, 20, 100, 4);
+        Slot label = InspectLayout.labelBand(squat);
+        Slot control = InspectLayout.controlBand(squat);
+
+        assertTrue(label.height() <= squat.height(), "the label band never exceeds the row");
+        assertTrue(control.height() >= 0, "and the control band never goes negative");
+        assertTrue(label.y() >= squat.y() && label.bottom() <= squat.bottom(), "the label is inside");
+        assertTrue(control.y() >= squat.y() && control.bottom() <= squat.bottom(), "the control is inside");
     }
 }

@@ -19,13 +19,19 @@ import java.util.Objects;
  *
  * <h2>The kinds, and where the control sits</h2>
  *
- * <p>Three shapes, told apart by where the control is. A {@link Kind#FIELD}, {@link Kind#TOGGLE} or
- * {@link Kind#STEPPER} row is a label with a control in a strip at its right -- the strip is
- * {@link #STRIP_WIDTH} wide and reserved by the layout, so the label can never run under it. A
- * {@link Kind#ACTION} row is itself the control, which is what an "Add" wants. A {@link Kind#VALUE} row
- * is a label with text after it and no control at all. And a {@link Kind#HEADING} or
- * {@link Kind#WARNING} is a section's name -- the warning being the same thing in the voice that says
- * something is wrong, which is what the fallback under an unknown type asks for.
+ * <p>Three shapes, told apart by where the control is. A {@link Kind#FIELD} or {@link Kind#TOGGLE} row
+ * is a label with a control in a strip at its right -- the strip is {@link #STRIP_WIDTH} wide and
+ * reserved by the layout, so the label can never run under it. A {@link Kind#ACTION} row is itself the
+ * control, which is what an "Add" wants. A {@link Kind#VALUE} row is a label with text after it and no
+ * control at all. And a {@link Kind#HEADING} or {@link Kind#WARNING} is a section's name -- the warning
+ * being the same thing in the voice that says something is wrong, which is what the fallback under an
+ * unknown type asks for.
+ *
+ * <p>{@code STEPPER} was a kind here until the quest settings page stopped using rows: it described a
+ * label with a stepped number in its strip, the dock never produced one, and a kind nothing draws is a
+ * kind a reader has to check is unused before changing anything. The settings page's sliders and
+ * steppers are its own, in {@code QuestSettingsLayout}, where the arithmetic that says where an arrow
+ * is lives beside the drawing that reads it.
  */
 public record InspectRow(String key, Kind kind, String label, String value) {
 
@@ -40,8 +46,6 @@ public record InspectRow(String key, Kind kind, String label, String value) {
         VALUE,
         /** A label with a two-state control in the strip. */
         TOGGLE,
-        /** A label with a stepped number in the strip. */
-        STEPPER,
         /** The whole row is one control. */
         ACTION,
         /** A section's name. */
@@ -73,11 +77,6 @@ public record InspectRow(String key, Kind kind, String label, String value) {
     /** A label with a two-state control; the label is the state, the button is the change. */
     public static InspectRow toggle(String key, String label) {
         return new InspectRow(key, Kind.TOGGLE, label, "");
-    }
-
-    /** A label with a stepped number in its strip; {@code value} is the number as shown. */
-    public static InspectRow stepper(String key, String label, String value) {
-        return new InspectRow(key, Kind.STEPPER, label, value == null ? "" : value);
     }
 
     /** A row that is itself one control, labelled. */
@@ -116,7 +115,7 @@ public record InspectRow(String key, Kind kind, String label, String value) {
 
     /** Whether this row's control goes in the strip at its right, which the layout reserves room for. */
     public boolean hasStrip() {
-        return kind == Kind.FIELD || kind == Kind.TOGGLE || kind == Kind.STEPPER || kind == Kind.RAW
+        return kind == Kind.FIELD || kind == Kind.TOGGLE || kind == Kind.RAW
                 || kind == Kind.ENTRY;
     }
 

@@ -186,6 +186,33 @@ public interface GuiRenderer {
     void flush();
 
     /**
+     * Draws everything the supplier draws inside <b>one batch submission</b>, and returns what it returned.
+     *
+     * <h2>Why this exists: the fill count is the draw-call count</h2>
+     *
+     * <p>Both implementations accumulate fills in a buffer, but the context a screen draws into is
+     * <i>unmanaged</i>: every {@code fill} ends with its own flush, which is an {@code endBatch} plus two
+     * render-state changes. That is invisible at a hundred fills and ruinous at thirty thousand, which is
+     * where a canvas of dependency lines lands — a curved line is one fill per screen pixel, and zooming in
+     * multiplies the pixels. Wrapping the drawing in this method turns one submission per fill into one
+     * submission for the region.
+     *
+     * <h2>The rule that comes with it: a batch must not span a scissor change</h2>
+     *
+     * <p>Deferring the flush defers the draw, and a scissor is applied when the batch is submitted rather
+     * than when each fill is queued. A region whose clip opens <i>after</i> fills were queued, or closes
+     * <i>before</i> the batch is flushed, would submit those fills under the wrong scissor — so <b>open the
+     * clip first, batch inside it, and let the batch end before the clip closes</b>. A nested {@code batched}
+     * call is not a nested batch; it flushes at its own end and simply costs what the outer one saved.
+     *
+     * <p>It is also why this is not an optimisation to sprinkle: the call marks a region whose drawing is one
+     * unit, and the clip is what makes that unit well-defined.
+     *
+     * @param draw what to draw; its return value is passed through
+     */
+    <T> T batched(java.util.function.Supplier<T> draw);
+
+    /**
      * Draws one line of text centred on {@code centreX}.
      *
      * <p>A default rather than an abstract method, and deliberately: the centring is

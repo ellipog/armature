@@ -41,6 +41,36 @@ public final class InspectLayout {
     /** Between two ordinary rows. */
     public static final int ROW_GAP = 1;
 
+    /**
+     * How the rows are composed.
+     *
+     * <h2>Why there are two</h2>
+     *
+     * <p>Side by side is the inspector's original shape and the right one for a panel with room: a
+     * label and its control on one line reads as a pair. It stops working when the column is narrow,
+     * which is the normal case for a docked panel in a small window -- the control's strip is a fixed
+     * 96 pixels, so the label is what gets truncated, and "Default Prerequisite Mode" becomes
+     * "Default Prereq...". Stacked gives the label its own line and the control the whole width,
+     * which is a taller row but nothing truncates and long values like an item id fit.
+     *
+     * <p>The mode is the caller's, because which one fits is a property of the panel and not of a row.
+     */
+    public enum Mode {
+        /** Label left, control in the strip at its right. */
+        SIDE_BY_SIDE,
+        /** Label on its own band, control across the whole row beneath it. */
+        STACKED
+    }
+
+    /** A stacked row's label band, and the control band under it. */
+    public static final int STACKED_LABEL_HEIGHT = 11;
+    public static final int STACKED_CONTROL_HEIGHT = 18;
+    public static final int STACKED_ROW_HEIGHT = STACKED_LABEL_HEIGHT + STACKED_CONTROL_HEIGHT;
+
+    /** A stacked row's gaps: two bands need more air between rows than two single lines do. */
+    public static final int STACKED_ROW_GAP = 4;
+    public static final int STACKED_SECTION_GAP = 9;
+
     private InspectLayout() {
     }
 
@@ -52,17 +82,31 @@ public final class InspectLayout {
      * before a row is decided by the row that follows it and not by the one before.
      */
     public static Stack stack(List<InspectRow> rows) {
+        return stack(rows, Mode.SIDE_BY_SIDE);
+    }
+
+    /** The rows as an unbuilt stack, composed the way the caller's panel wants them. */
+    public static Stack stack(List<InspectRow> rows, Mode mode) {
         Objects.requireNonNull(rows, "rows");
+        Objects.requireNonNull(mode, "mode");
         Stack stack = Stack.stack();
         for (int i = 0; i < rows.size(); i++) {
             InspectRow row = rows.get(i);
             if (i > 0) {
-                stack.gap(row.isHeading() ? SECTION_GAP : ROW_GAP);
+                stack.gap(gapFor(row, mode));
             }
             switch (row.kind()) {
                 case HEADING, WARNING -> stack.row(row.key(), HEADING_HEIGHT);
                 case ACTION, VALUE -> stack.row(row.key(), ROW_HEIGHT);
-                case FIELD, TOGGLE, STEPPER, RAW -> stack.row(row.key(), ROW_HEIGHT, stripRoom());
+                case FIELD, TOGGLE, RAW -> {
+                    if (mode == Mode.STACKED) {
+                        // No strip: the control takes the row's own width on its own band.
+                        stack.row(row.key(), STACKED_ROW_HEIGHT);
+                    }
+                    else {
+                        stack.row(row.key(), ROW_HEIGHT, stripRoom());
+                    }
+                }
                 // An entry's name is heading-tall and carries a strip: its controls belong on the line
                 // that says what they act on, not on a row of their own.
                 case ENTRY -> stack.row(row.key(), HEADING_HEIGHT, stripRoom());
@@ -71,10 +115,22 @@ public final class InspectLayout {
         return stack;
     }
 
+    private static int gapFor(InspectRow row, Mode mode) {
+        if (mode == Mode.STACKED) {
+            return row.isHeading() ? STACKED_SECTION_GAP : STACKED_ROW_GAP;
+        }
+        return row.isHeading() ? SECTION_GAP : ROW_GAP;
+    }
+
     /** The rows laid out into a column of the given width. */
     public static Layout build(List<InspectRow> rows, int width, Measure measure) {
+        return build(rows, width, measure, Mode.SIDE_BY_SIDE);
+    }
+
+    /** The same, composed the way the caller's panel wants them. */
+    public static Layout build(List<InspectRow> rows, int width, Measure measure, Mode mode) {
         Objects.requireNonNull(measure, "measure");
-        return stack(rows).build(Math.max(0, width), measure);
+        return stack(rows, mode).build(Math.max(0, width), measure);
     }
 
     /** How wide a row's control strip is, and its inset from the row's right edge. */
@@ -115,6 +171,28 @@ public final class InspectLayout {
 
     /** Between the two halves of a split strip. */
     public static final int HALF_GAP = 2;
+
+    /**
+     * Where a stacked row's control goes: the full-width band under its label.
+     *
+     * <p>The counterpart of {@link #strip} for {@link Mode#STACKED}, and the two are the same kind of
+     * method for the same reason: the drawing and the widget placement both ask here, so a control
+     * cannot be drawn on one band and hit-tested on another. The band is derived from the row rather
+     * than stored, so a row of a different height -- a caller's own metric -- still divides correctly.
+     */
+    public static Slot controlBand(Slot row) {
+        Objects.requireNonNull(row, "row");
+        Slot label = labelBand(row);
+        return new Slot(row.key(), row.x(), label.bottom(), row.width(),
+                Math.max(0, row.height() - label.height()));
+    }
+
+    /** Where a stacked row's label is drawn: the band above its control. */
+    public static Slot labelBand(Slot row) {
+        Objects.requireNonNull(row, "row");
+        return new Slot(row.key(), row.x(), row.y(), row.width(),
+                Math.min(STACKED_LABEL_HEIGHT, Math.max(0, row.height())));
+    }
 
     /**
      * A slot where it will be drawn: the list's own coordinates put through the viewport it is drawn in.
