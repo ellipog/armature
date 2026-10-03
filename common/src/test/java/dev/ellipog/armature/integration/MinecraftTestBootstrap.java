@@ -12,8 +12,8 @@ import net.minecraft.server.Bootstrap;
  * of. This seam's records hold {@code ItemStack}s, though, and even {@code ItemStack.EMPTY} reads a
  * registry key while its class initialises — without the bootstrap every such test dies with
  * {@code Not bootstrapped (called from registry ... minecraft:game_event)} from inside a class
- * initialiser vanilla owns. Tasked's suite solves it the same way, and the two wrong turns are worth
- * repeating: it is {@code net.minecraft.server.Bootstrap} (the client one is not in the merged jar
+ * initialiser vanilla owns. The consumer's suite solves it the same way, and the two wrong turns are
+ * worth repeating: it is {@code net.minecraft.server.Bootstrap} (the client one is not in the merged jar
  * {@code common} compiles against), and {@code tryDetectVersion()} must run first, because
  * {@code bootStrap()} reads the game version.
  *

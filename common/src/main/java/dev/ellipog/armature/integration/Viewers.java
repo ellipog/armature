@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 
 /**
- * Which recipe viewer, if more than one is installed, gets to draw Tasked's pages.
+ * Which recipe viewer, if more than one is installed, gets to draw the quest pages.
  *
  * <h2>One registers, and it is the first one in this list</h2>
  *
