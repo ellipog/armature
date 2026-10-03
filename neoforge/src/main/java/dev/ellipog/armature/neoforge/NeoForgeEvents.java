@@ -61,7 +61,7 @@ public final class NeoForgeEvents {
 
         // Note the ordering difference from Fabric: NeoForge reports a death *before* it is
         // processed, while it can still be cancelled; Fabric reports it after. The event
-        // carries what was killed and by what, which is all a quest engine needs, but
+        // carries what was killed and by what, which is all a progression engine needs, but
         // anything that has to see the world in one particular state cannot rely on it.
         bus.addListener((LivingDeathEvent event) ->
                 ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(event.getEntity(), event.getSource()));

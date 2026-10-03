@@ -7,8 +7,8 @@ package dev.ellipog.armature.api.teams;
  * is an authority comparison rather than a set of pairwise cases. Adding a role later — a
  * read-only guest, say — means adding a constant and nothing else.
  *
- * <p>Deliberately coarse. A permission matrix is the wrong shape for a questing mod: a team here
- * exists so that four friends share quest progress, and the only real question is who may remove
+ * <p>Deliberately coarse. A permission matrix is the wrong shape for a mod like this: a team here
+ * exists so that four friends share saved progress, and the only real question is who may remove
  * somebody else.
  */
 public enum TeamRole {

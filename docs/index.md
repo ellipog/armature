@@ -1,17 +1,15 @@
 # Armature documentation
 
-Armature is the shared library under Tasked: a loader seam, a strict JSON reader, event, network and
-team APIs, and a client UI toolkit — layout, scrolling, text models, shapes, themes, widgets and the
-machinery behind a property editor — all drawn through one game-free renderer [[seam|seam]].
+Armature is a shared library mod: a loader seam, a strict JSON reader, event, network and team APIs,
+and a client UI toolkit — layout, scrolling, text models, shapes, themes, widgets and the machinery
+behind a property editor — all drawn through one game-free renderer [[seam|seam]].
 
-It is a standalone mod. It does not require Tasked; Tasked requires it, and nothing in Armature names
-its first consumer, so a second mod can use the toolkit without inheriting a questing mod's
-assumptions.
+It is a standalone mod, and nothing in it is specific to any one consumer — a mod can use the toolkit
+without inheriting another mod's assumptions.
 
 > [!NOTE]
-> **Armature is at 0.1.0, and the API is real.** Everything these pages describe is built and in use —
-> Tasked's quest book, its editor and its tools panel are what they are built on. 0.x is deliberate:
-> the API may still move, and it freezes at 1.0.0 the moment Tasked v1 ships.
+> **Armature is at 0.2.0, and the API is real.** Everything these pages describe is built and in use.
+> 0.x is deliberate: the API may still move, and it freezes at 1.0.0.
 
 ## What it needs
 

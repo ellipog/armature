@@ -36,7 +36,7 @@ public final class FabricEvents {
 
         // Fabric fires a server tick, not a player tick. Walking the player list once per
         // tick is cheap and is the honest way to offer the same event as NeoForge, where it
-        // is a real hook. The hasListeners check means a server with no quest listeners
+        // is a real hook. The hasListeners check means a server where nothing listens
         // pays nothing at all for it.
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (!ArmatureEvents.PLAYER_TICK.hasListeners()) {

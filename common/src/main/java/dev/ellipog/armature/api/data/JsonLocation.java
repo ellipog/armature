@@ -8,7 +8,7 @@ package dev.ellipog.armature.api.data;
  *
  * @param line   1-based line number
  * @param column 1-based column number
- * @param path   a JSONPath-ish locator, e.g. {@code $.chapterGroups[0].quests[3].title}
+ * @param path   a JSONPath-ish locator, e.g. {@code $.groups[0].items[3].title}
  */
 public record JsonLocation(int line, int column, String path) {
 

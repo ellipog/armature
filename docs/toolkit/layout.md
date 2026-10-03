@@ -10,7 +10,7 @@ went — so a click cannot land on a different row than the one that was drawn.
 ```java
 Layout layout = Stack.stack()
         .heading("Rewards")
-        .paragraph("Claimed automatically when the quest completes.")
+        .paragraph("Claimed automatically when it completes.")
         .divider(6, 6)
         .row("claim-all", 20)
         .build(width, measure);

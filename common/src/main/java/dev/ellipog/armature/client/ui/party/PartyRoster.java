@@ -23,11 +23,11 @@ import java.util.function.Function;
  * <h2>Why this is Armature's and not a consumer's</h2>
  *
  * <p>The rule used elsewhere in this project is that a <i>particular</i> screen's composition belongs
- * to that screen — {@code SidebarLayout} is about chapters and {@code OverlayLayout} is about quests,
- * so both live in the mod that has chapters and quests. This is the case where the same reasoning
+ * to that screen — {@code SidebarLayout} is about chapters and {@code OverlayLayout} is about entries,
+ * so both live in the mod that has chapters and entries. This is the case where the same reasoning
  * points the other way, and it is worth stating because the test is a test rather than a habit.
  *
- * <p>What those two compose is a quest tree and a quest's parts. What this composes is <b>a team</b>:
+ * <p>What those two compose is an entry tree and an entry's parts. What this composes is <b>a team</b>:
  * a member, their role, whether they are you, and whether you may remove them. Every one of those
  * facts is {@link Team}'s and {@link TeamRole}'s, which are Armature's — and any mod with a party can
  * want exactly this list. A roster that composed something Armature does not own — "how many logs has

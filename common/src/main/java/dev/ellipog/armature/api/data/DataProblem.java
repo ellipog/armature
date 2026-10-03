@@ -5,8 +5,8 @@ package dev.ellipog.armature.api.data;
  *
  * <p>{@link Severity#ERROR} means the file will not be loaded. {@link Severity#WARNING} means it
  * loaded, and something about it is worth telling the author — a field that will be ignored, a
- * position that stacks two quests on top of each other. The distinction matters because a
- * warning must never stop a working questline from running.
+ * position that stacks two entries on top of each other. The distinction matters because a
+ * warning must never stop a working data set from loading.
  */
 public record DataProblem(String file, int line, int column, String path, Severity severity, String message)
         implements Comparable<DataProblem> {
@@ -28,7 +28,7 @@ public record DataProblem(String file, int line, int column, String path, Severi
 
     /**
      * One line, in the format a compiler uses and an editor can jump to:
-     * {@code quests/01.json:14:9: error: unknown field "titl" (did you mean "title"?)}
+     * {@code entries/01.json:14:9: error: unknown field "titl" (did you mean "title"?)}
      */
     public String render() {
         return file + ":" + line + ":" + column + ": " + severity.label() + ": " + message;

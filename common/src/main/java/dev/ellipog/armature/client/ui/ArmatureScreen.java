@@ -35,7 +35,7 @@ import java.util.Map;
  * <p>Kept, and not by this class. A rebuild recreates widgets, but the things that make up "my place" —
  * a {@code ScrollView}'s offset, a canvas's pan and zoom — live in the screen's own fields and in the
  * kit's own objects, which a rebuild does not touch; {@code ScrollView.apply} clamps the offset it
- * already holds against the new layout rather than resetting it. So a quest completing under a
+ * already holds against the new layout rather than resetting it. So an entry completing under a
  * scrolled-down reader redraws the row and leaves the column where it was.
  *
  * <p>Worth stating because it is the property that makes an automatic rebuild acceptable at all: a
@@ -74,7 +74,7 @@ public abstract class ArmatureScreen extends Screen {
      * middle of the list -- and it is invisible in the code, because the offending call is on the other
      * side of {@code super.render}.
      *
-     * <p>The quest book found it first and carried its own override for a while, with the whole story in
+     * <p>The book screen found it first and carried its own override for a while, with the whole story in
      * its class comment: that screen was blurred, world and text alike, because it called
      * {@code super.render} last and the blur post-effect processed a framebuffer that already held its
      * text. One screen remembering is one screen; a base class doing it is every screen after it.
@@ -103,7 +103,7 @@ public abstract class ArmatureScreen extends Screen {
      * order every screen wants: a background, then its buttons.
      *
      * <p><b>A screen that must interleave drawing with the widget pass cannot use this</b> and has to
-     * override {@link #render} instead. The quest book is the one that does: its view cluster is drawn
+     * override {@link #render} instead. The book screen is the one that does: its view cluster is drawn
      * at a raised Z, between the content and the widgets, because an item icon writes depth and a fill
      * at Z = 0 loses to it. That screen names the type, and the seam check says why.
      */

@@ -11,13 +11,14 @@ package dev.ellipog.armature.client.ui.kit;
  * it — all read the same number. So a click lands on exactly the pixels that were drawn, which is the
  * property that a separately-written hit test always eventually loses.
  *
- * <p>The alternative is a precomputed pixel mask, which is what FTB Quests does for node shapes. A
- * mask costs a buffer per shape, ties the shape to a pixel grid, and cannot be scaled or re-radiused
- * without rebuilding it. This is a handful of multiplications per row and a radius parameter.
+ * <p>The alternative is a precomputed pixel mask — what precomputed pixel-mask approaches hard-code
+ * their node shapes into. A mask costs a buffer per shape, ties the shape to a pixel grid, and cannot
+ * be scaled or re-radiused without rebuilding it. This is a handful of multiplications per row and a
+ * radius parameter.
  *
  * <h2>Where this came from, and why it moved</h2>
  *
- * <p>This is rounding that lived as a private helper inside a consumer's quest-shape enum,
+ * <p>This is rounding that lived as a private helper inside a consumer's shape enum,
  * generalised in two ways: the radius is a <b>parameter</b> rather than a quarter of the size, and the
  * shape is not an enum member, so anything can use it.
  *

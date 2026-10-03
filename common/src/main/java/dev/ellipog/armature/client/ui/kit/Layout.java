@@ -19,7 +19,7 @@ import java.util.Objects;
  *
  * <h2>Immutable, and cheap to keep</h2>
  *
- * <p>A layout is rebuilt when the input changes -- a different quest, a resized window, a new scroll
+ * <p>A layout is rebuilt when the input changes -- a different entry, a resized window, a new scroll
  * clamp -- and read on every frame in between. Nothing in it mutates, so a screen can hold one and
  * compare it against the next, and a test can assert on a layout it built without the screen's
  * cooperation.

@@ -52,7 +52,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * <p>This class is the <i>shape</i>: the components, the array, the copy operations. The catalogue is
  * fifteen themes and a thousand lines of hex, and a record whose own file is mostly examples is one
  * nobody edits with any confidence. {@code Themes} is also where a derived theme is expressed as a
- * {@link ThemePatch} over a base, which is the same mechanism a quest file uses — so the built-in set
+ * {@link ThemePatch} over a base, which is the same mechanism a data file uses — so the built-in set
  * is itself a demonstration that the override system is expressive enough.
  *
  * @param name           what to call this theme in a log line and a control. The key: what a file says,
@@ -67,9 +67,9 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * @param body           ordinary text
  * @param faint          secondary text: a subtitle, a count, a hint
  * @param heading        a section label like TASKS or REWARDS
- * @param available      a quest a player may start — and the border of its node
- * @param inProgress     a quest they have started — and the border of its node
- * @param complete       a quest they have finished — and the border of its node
+ * @param available      an entry a player may start — and the border of its node
+ * @param inProgress     an entry they have started — and the border of its node
+ * @param complete       an entry they have finished — and the border of its node
  * @param blocked        something they cannot act on yet
  * @param nodeFill       a graph node's interior, behind the icon
  * @param nodeDim        the wash over a locked node

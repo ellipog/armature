@@ -57,7 +57,7 @@ import java.util.Set;
  *
  * <ul>
  *   <li><b>Not fatal</b>, because a theme is the least important thing on the screen. A player whose
- *       appearance file has a typo should get the default appearance and their quests, not a crash on
+ *       appearance file has a typo should get the default appearance and their saved progress, not a crash on
  *       startup — and this runs during client initialisation, where an exception is a launcher-level
  *       failure.</li>
  *   <li><b>Not silent</b>, because the failure mode of a partially-read theme is a palette that is mostly

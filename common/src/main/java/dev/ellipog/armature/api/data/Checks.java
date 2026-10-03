@@ -136,7 +136,7 @@ public final class Checks {
     /**
      * An array that must be present.
      *
-     * <p>An empty array is fine — a chapter with no quests is a legitimate thing to be writing
+     * <p>An empty array is fine — a group with no entries is a legitimate thing to be writing
      * while authoring.
      */
     public static JsonArray array(JsonDocument document, String path, Problems problems) {
@@ -197,7 +197,7 @@ public final class Checks {
     /**
      * A required identifier: lowercase letters, digits and underscores.
      *
-     * <p>Strict on purpose. These ids appear in player progress files and in other quests'
+     * <p>Strict on purpose. These ids appear in player progress files and in other entries'
      * {@code dependsOn}, so an id with a space or a capital in it is a problem that surfaces much
      * later and far from where it was written.
      */
@@ -265,11 +265,11 @@ public final class Checks {
      * <p>This is the single most valuable check in the whole validator, because of how the
      * alternative behaves. Minecraft's codecs <b>silently ignore fields they do not know</b>. So a
      * typo — {@code "titl"} for {@code "title"}, {@code "dependson"} for {@code "dependsOn"} —
-     * produces a quest with a missing title and no dependency, no error, and nothing in any log to
+     * produces an entry with a missing title and no dependency, no error, and nothing in any log to
      * say which field was wrong. The author is left comparing two files character by character.
      *
-     * <p>FTB Quests has exactly this behaviour, and it is responsible for a lot of the frustration
-     * with hand-editing quest files.
+     * <p>A common hand-editing tool has exactly this behaviour, and it is responsible for a lot of
+     * the frustration with hand-editing data files.
      *
      * <p>Where a field is close to one that is allowed, the suggestion is included. That is a
      * twenty-line edit distance calculation, and it turns "unknown field" into the answer.

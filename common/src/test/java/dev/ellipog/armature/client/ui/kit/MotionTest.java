@@ -216,7 +216,7 @@ class MotionTest {
     @DisplayName("a key can be any object, including an index or a record")
     void keysCanBeAnything() {
         // The same rule as Layout's slots: this toolkit has no business deciding how a caller names
-        // its rows. The two real uses in this project are a generated String key and a quest id.
+        // its rows. The two real uses in this project are a generated String key and an entry id.
         Hover hover = new Hover(DURATION);
 
         hover.update(0, 0L);
@@ -277,7 +277,7 @@ class MotionTest {
     @Test
     @DisplayName("clearing forgets both keys at once, so a rebuilt list lights nothing")
     void clearForgetsEverything() {
-        // For a screen closing, or a list rebuilt for a different quest, where the row keys mean
+        // For a screen closing, or a list rebuilt for a different entry, where the row keys mean
         // something else now -- a fade carried over would light up a row nobody is pointing at.
         Hover hover = new Hover(DURATION);
         hover.update("old", 0L);

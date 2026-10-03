@@ -481,8 +481,8 @@ public final class TextField {
      * <p>The same reason {@link #caretForWidth} is: arithmetic on a string and a measuring function,
      * which a test can assert with six pixels a character. The widget's own copy read the caret
      * unconditionally, and because {@link #setValue} parks the caret at the end, every field at rest
-     * drew the tail of its value and hid the beginning — a chapter subtitle "Five quests, no tricks"
-     * showing as "s quests, no tricks". Who is allowed to scroll is the widget's decision (only while
+     * drew the tail of its value and hid the beginning — a chapter subtitle "Five levels, no tricks"
+     * showing as "s levels, no tricks". Who is allowed to scroll is the widget's decision (only while
      * focused); how far is this method's, where it can be checked without a client.
      */
     public int scrollOffset(int room, ToIntFunction<String> widthOf) {

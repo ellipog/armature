@@ -49,7 +49,7 @@ A `DataProblem` is a record — `file`, `line`, `column`, `path`, `severity`, `m
 `render()` is the line every reader of these docs will see in a log:
 
 ```
-quests/getting_started/first_steps/punch_a_tree.json:14:9: error: unknown field "titl" (did you mean "title"?)
+entries/01.json:14:9: error: unknown field "titl" (did you mean "title"?)
 ```
 
 `renderWithPath()` adds the JSON path on a second line, for a caller that has room for it. Problems

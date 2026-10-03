@@ -94,8 +94,8 @@ class ViewportTest {
 
     @Test
     void anUnboundedViewportMayBeDraggedOffIntoEmptySpace() {
-        // Deliberate: a player exploring a large questline should not be stopped at an invisible edge,
-        // and a chapter's bounding box is not a wall.
+        // Deliberate: a player exploring a large graph should not be stopped at an invisible edge,
+        // and a node's bounding box is not a wall.
         Viewport view = canvas();
         view.panBy(-10_000, -10_000);
         assertEquals(-10_000, view.offsetX());
@@ -371,7 +371,7 @@ class ViewportTest {
 
     @Test
     void centringUsesTheBoundingBoxNotTheOrigin() {
-        // A questline authored at negative coordinates is the normal case for an editor that grows in
+        // A graph authored at negative coordinates is the normal case for an editor that grows in
         // every direction. Taking a size and an origin would put it off the edge with the arithmetic
         // still looking correct.
         Viewport view = canvas();

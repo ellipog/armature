@@ -2,14 +2,12 @@
 
 Shared library and UI toolkit for **Fabric** and **NeoForge**, for **Minecraft 1.21.1**.
 
-Armature is a standalone library mod. It is designed to be a hard dependency of
-[Tasked](https://github.com/ellipog/tasked), a questing mod — but it does not require Tasked, and
-it can be installed on its own. Nothing in here names its first consumer.
+Armature is a standalone library mod. Nothing in it is specific to any one consumer, and it can be
+installed on its own.
 
-> **Status: 0.1.0 — the API is real and the toolkit is in use.** The platform layer, the data and
+> **Status: 0.2.0 — the API is real and the toolkit is in use.** The platform layer, the data and
 > validation helpers, the event, network and team APIs, and the first half of the UI toolkit are
-> built. 0.x is deliberate: the API is free to move until Tasked v1 ships, and it freezes at 1.0.0
-> the moment it does.
+> built. 0.x is deliberate: the API is free to move until 1.0.0.
 
 ## What is in it
 
@@ -76,7 +74,7 @@ gradlew build
 ```
 
 Jars land in `fabric/build/libs` and `neoforge/build/libs`. Install the plain jar
-(`armature-fabric-1.21.1-0.1.0.jar`) — the `-sources` and `-javadoc` jars are not mods. The test
+(`armature-fabric-1.21.1-0.2.0.jar`) — the `-sources` and `-javadoc` jars are not mods. The test
 suite is JUnit 5, headless, and part of `gradlew build`; the kit's layout and text models are
 game-free by design, which is what lets them be asserted on without a running client.
 
@@ -107,8 +105,8 @@ likes, and the resulting bug hunt is never worth it.
 If your profiles are named something else, edit these two lines in `gradle.properties`:
 
 ```properties
-testModsDirFabric=C:/Users/Ellio/AppData/Roaming/ModrinthApp/profiles/Tasked Fabric/mods
-testModsDirNeoForge=C:/Users/Ellio/AppData/Roaming/ModrinthApp/profiles/Tasked NeoForge/mods
+testModsDirFabric=<your Modrinth profile folder>/mods
+testModsDirNeoForge=<your Modrinth profile folder>/mods
 ```
 
 ## Layout

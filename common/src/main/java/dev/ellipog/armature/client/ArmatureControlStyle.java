@@ -78,7 +78,7 @@ public final class ArmatureControlStyle {
          *
          * <h2>Why this is not {@link #FLAT}</h2>
          *
-         * <p>Flat was what the quest book's group headings used, and the report that came back was
+         * <p>Flat was what the book screen's group headings used, and the report that came back was
          * immediate and correct: <i>"no like thing to make the categories look like buttons"</i>. Flat
          * draws nothing at all — no fill, no border, no rule — so a heading whose whole row is
          * clickable looked exactly like a word. There was no affordance saying it could be pressed,

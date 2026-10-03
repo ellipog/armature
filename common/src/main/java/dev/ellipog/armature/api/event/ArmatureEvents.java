@@ -12,7 +12,7 @@ import net.minecraft.world.entity.LivingEntity;
 /**
  * The events Armature publishes, and the listeners they take.
  *
- * <p>Eight, chosen because they are the hooks a questing mod actually needs and because
+ * <p>Eight, chosen because they are the hooks a content mod actually needs and because
  * both loaders can supply every one of them from public API — no mixins.
  *
  * <p>All of these fire on the <b>server</b> thread, on both integrated and dedicated
@@ -43,7 +43,7 @@ import net.minecraft.world.entity.LivingEntity;
  *
  * <p>A consequence worth knowing before it bites: <b>do not load persistent data from
  * {@link #SERVER_STARTING}</b> without checking. On Fabric the level is not there yet. Loading
- * from {@link #SERVER_STARTED} instead is well-defined on both, and is what a quest store
+ * from {@link #SERVER_STARTED} instead is well-defined on both, and is what a data store
  * should do.
  */
 public final class ArmatureEvents {
@@ -88,7 +88,7 @@ public final class ArmatureEvents {
      * Once per player, per tick — twenty times a second, per player.
      *
      * <p>This is the single hottest hook in the API. Check a cheap condition first and do
-     * the expensive work rarely; a quest mod that scans every player's inventory here will
+     * the expensive work rarely; a mod that scans every player's inventory here will
      * be blamed for lag it did not cause.
      */
     @FunctionalInterface

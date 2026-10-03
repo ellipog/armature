@@ -47,7 +47,7 @@ import java.util.stream.Collectors;
  * bundled library is older than the current release and its API is not what the docs describe.
  *
  * <p>The failing codec is spelled out rather than thrown because a codec that cannot decode has to
- * say so through a {@code DataResult}. Throwing would surface as a crash while loading a quest file
+ * say so through a {@code DataResult}. Throwing would surface as a crash while loading a data file
  * instead of a message naming the line.
  */
 public final class TypeDispatch {
@@ -56,7 +56,7 @@ public final class TypeDispatch {
     }
 
     /**
-     * @param kind      what is being dispatched, for error messages — "quest task", say
+     * @param kind      what is being dispatched, for error messages — "entry type", say
      * @param typeField the field holding the type id, normally {@code "type"}
      * @param idOf      reads the type id out of a value, for writing it back
      * @param specs     every registered type, read at decode time

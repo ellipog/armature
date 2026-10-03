@@ -4,6 +4,7 @@ import dev.ellipog.armature.client.ArmatureTheme;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
@@ -78,6 +79,7 @@ public final class RecordingRenderer implements GuiRenderer {
                         + x + "," + y + ")";
                 case ICON -> "icon(" + x + "," + y + " " + x2 + "px)";
                 case FACE -> "face(" + text + " at " + x + "," + y + " " + x2 + "px)";
+                case TEXTURE -> "texture(" + text + " at " + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case BLUR -> "blur(yes)";
                 case CLIP -> "clip(" + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case UNCLIP -> "unclip";
@@ -93,7 +95,7 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /** What a recorded call was. */
-    public enum Op { FILL, TEXT, STYLED_TEXT, ICON, FACE, BLUR, CLIP, UNCLIP, FLUSH, BATCH, END_BATCH }
+    public enum Op { FILL, TEXT, STYLED_TEXT, ICON, FACE, TEXTURE, BLUR, CLIP, UNCLIP, FLUSH, BATCH, END_BATCH }
 
     private final List<Call> calls = new ArrayList<>();
     private final int charWidth;
@@ -157,7 +159,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * <p><b>Recorded rather than ignored</b>, and that is the whole value of it being here. A flush is
      * where a caller declares a layering boundary — "everything up to here is behind everything after
      * it" — so a test can assert the boundary exists by finding the marker between two draws. An
-     * implementation that silently did nothing would make {@code QuestBookScreen}'s z-order fix
+     * implementation that silently did nothing would make a screen's z-order fix
      * unassertable, which is exactly the class of defect it was written to fix: an item icon landing on
      * top of a button, ordered by batching rather than by the order the code drew them in.
      */
@@ -225,6 +227,18 @@ public final class RecordingRenderer implements GuiRenderer {
     public boolean icon(ItemStack stack, int boxX, int boxY, int box) {
         calls.add(new Call(Op.ICON, boxX, boxY, box, box, 0, ""));
         return iconsDraw;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Recorded with the texture's path in the text field and the box in the coordinates, so a test
+     * can ask <i>which</i> image was drawn where — the path is the only thing a caller chooses, and a
+     * recording that dropped it could not tell the pinned star from the empty one.
+     */
+    @Override
+    public void texture(ResourceLocation texture, int x, int y, int width, int height) {
+        calls.add(new Call(Op.TEXTURE, x, y, x + width, y + height, 0, texture.toString()));
     }
 
     /**
@@ -302,6 +316,11 @@ public final class RecordingRenderer implements GuiRenderer {
     /** The icons, in order. */
     public List<Call> icons() {
         return calls.stream().filter(call -> call.op() == Op.ICON).toList();
+    }
+
+    /** The textures, in order, each carrying its resource path. */
+    public List<Call> textures() {
+        return calls.stream().filter(call -> call.op() == Op.TEXTURE).toList();
     }
 
     /** The clips, in order. */

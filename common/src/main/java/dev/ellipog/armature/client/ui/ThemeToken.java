@@ -16,7 +16,7 @@ import java.util.Map;
  * <ul>
  *   <li><b>A theme file</b> — {@code "panel": "#24242E"} is a key in JSON. There is no field to point
  *       at, so a mistyped key was previously a colour that silently never applied.</li>
- *   <li><b>A chapter or quest overriding one colour</b> — the same, but arriving from a quest file on a
+ *   <li><b>A group or entry overriding one colour</b> — the same, but arriving from a data file on a
  *       server that has no idea what a {@code Theme} is.</li>
  *   <li><b>The editor</b> — a screen listing every value has to be built from a list, not from thirty
  *       hand-written widgets, or the thirty-first value is one nobody can edit.</li>
@@ -68,7 +68,7 @@ public record ThemeToken(String id, String label, Group group) {
         /** Everything text is drawn in. */
         TEXT("Text"),
 
-        /** The four quest states, which are also the progression borders on a graph node. */
+        /** The four progression states, which are also the progression borders on a graph node. */
         STATE("Progression"),
 
         /** The graph itself: nodes, their outlines, and the lines between them. */
@@ -127,7 +127,7 @@ public record ThemeToken(String id, String label, Group group) {
      * <p>Each of these is drawn twice: once as the colour of a state's label, and once as the
      * <b>border of a graph node</b> in that state. That second use is what makes them the progression
      * borders, and it is why they are worth a group label that says so — an author looking for "the
-     * border on a finished quest" would otherwise have to work out that it is the same value as the
+     * border on a finished node" would otherwise have to work out that it is the same value as the
      * word "complete" in a list.
      */
     private static final List<ThemeToken> STATES = List.of(

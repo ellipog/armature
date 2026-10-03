@@ -6,7 +6,6 @@ import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.client.ArmatureClient;
 import dev.ellipog.armature.api.client.KeyMappingBackend;
 import dev.ellipog.armature.client.ArmatureScreens;
-import dev.ellipog.armature.integration.Integrations;
 
 import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.ResourceLocation;
@@ -40,10 +39,6 @@ public final class ArmatureNeoForgeClient {
         // Game bus: ticking a running client is not a startup concern.
         NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post event) -> {
             backend.poll();
-            // The integration seam's tick, for the same reason as Fabric's: the quest content
-            // notices its tree moving here, and EMI is asked for its reload. Without this call the
-            // seam is inert -- no snapshot, and every viewer sees nothing.
-            Integrations.tick();
         });
 
         // Installing forwards everything declared during mod construction into the queue

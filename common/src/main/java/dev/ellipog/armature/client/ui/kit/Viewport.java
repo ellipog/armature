@@ -26,7 +26,7 @@ package dev.ellipog.armature.client.ui.kit;
  *
  * <p>Clamping is <b>opt-in</b>, by calling {@link #setContentSize}. Until then the offset is whatever
  * the caller set, and a canvas may be dragged off into empty space, which is what a graph canvas wants:
- * a player exploring a large questline should not be stopped at an invisible edge, and a chapter's
+ * a player exploring a large graph should not be stopped at an invisible edge, and a node's
  * bounding box is not a wall. A scrolling list instead says how tall its content is and gets a
  * clamp, which is the behaviour a scrollbar needs to exist at all.
  *
@@ -301,7 +301,7 @@ public final class Viewport {
     /**
      * Where a content x lands on screen.
      *
-     * <p>A float in, because content coordinates are floats — they come out of a quest file and are
+     * <p>A float in, because content coordinates are floats — they come out of a data file and are
      * scaled by the zoom — and rounding one on the way in would move a node by a pixel at some zooms and
      * not others, for no reason other than the parameter's type. The rounding happens once, on the way
      * out, which is where the pixel grid actually is.
@@ -402,7 +402,7 @@ public final class Viewport {
     /**
      * Places content so its centre sits at the centre of the view.
      *
-     * <p>Given a bounding box rather than a size and an origin, because a questline authored at
+     * <p>Given a bounding box rather than a size and an origin, because a graph authored at
      * negative coordinates is the normal case for an editor that grows in every direction — and taking
      * a size and an origin would put such content off the edge with the offset arithmetic still looking
      * correct. No clamping: this is the call that defines where a canvas starts, so applying a clamp it

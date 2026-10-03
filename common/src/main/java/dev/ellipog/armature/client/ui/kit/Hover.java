@@ -61,7 +61,7 @@ import java.util.Objects;
  *
  * <p>The same rule as {@link Layout}'s slots, and for the same reason: this toolkit has no business
  * deciding how a caller names its rows. A row keyed by its index works, so does one keyed by a record,
- * so does one keyed by a quest id — and the two places this is used in practice do one of each.
+ * so does one keyed by an entry id — and the two places this is used in practice do one of each.
  */
 public final class Hover {
 
@@ -166,7 +166,7 @@ public final class Hover {
     /**
      * Forgets everything, at rest.
      *
-     * <p>For a screen closing, or a list being rebuilt for a different quest — where the row keys mean
+     * <p>For a screen closing, or a list being rebuilt for a different entry — where the row keys mean
      * something else now, so a fade carried over would light up a row nobody is pointing at. Cheap
      * enough to call unconditionally.
      */

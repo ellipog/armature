@@ -258,7 +258,7 @@ class LookTest {
     void clearingThePackThemeIsDistinctFromNotSettingIt() {
         // The sticky-state bug this is written against: a pack's look persisting onto the next server
         // is an appearance nobody chose, with nothing on screen saying where it came from.
-        // `ClientQuestCache.clear` calls this with null on disconnect, and null has to *clear*.
+        // The client cache's clear calls this with null on disconnect, and null has to *clear*.
         look.setServerDefault("neon");
         assertEquals("neon", look.main().name());
 

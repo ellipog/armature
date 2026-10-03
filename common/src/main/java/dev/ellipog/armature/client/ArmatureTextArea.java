@@ -29,7 +29,7 @@ import java.util.function.Consumer;
  * <p>A multi-line box cannot commit on Enter -- Enter is the whole point of it. So the commit is the
  * blur, as with the field, and <b>Escape ends the edit</b> by submitting and blurring rather than
  * bubbling up: the screen's Escape closes the card, and an author pressing it while writing a
- * description means "stop writing", not "close the quest". A second Escape closes the card.
+ * description means "stop writing", not "close the entry". A second Escape closes the card.
  *
  * <h2>The wrap is measured, then cached</h2>
  *
@@ -40,7 +40,7 @@ import java.util.function.Consumer;
  * <h2>The advance is the caller's, and the border does not answer to focus</h2>
  *
  * <p>{@link #advance} sets the line pitch and the paragraph gap, because a caller can be standing in for
- * text it did not draw: the quest editor's description replaces prose the overlay laid out at a pitch of
+ * text it did not draw: the editor's description replaces prose the overlay laid out at a pitch of
  * its own, and a line drawn at the font's height inside that block moves the moment the box is clicked.
  * {@link TextArea#lineTop} carries the arithmetic; this class only adds pixels.
  *
@@ -248,7 +248,7 @@ public final class ArmatureTextArea extends AbstractWidget {
     /**
      * Where the caret is, measured from the widget's own top: the y its line begins at.
      *
-     * <p>For a caller that scrolls the text into view -- the quest editor's card follows the caret rather
+     * <p>For a caller that scrolls the text into view -- the editor's card follows the caret rather
      * than this box, because the box is as tall as the whole text and following *it* means the view never
      * settles. The value moved with the caret, and moves no other way, so a caller that scrolls only when
      * the caret has moved never fights the mouse wheel.

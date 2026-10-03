@@ -144,7 +144,13 @@ public interface Shape {
     }
 
     /**
-     * How much of an icon fits, as a fraction of the largest square that does.
+     * How much of the node an icon is asked to fill, before the outline has its say.
+     *
+     * <p>A fraction of the <b>node</b>, not of the largest square this shape happens to hold. The two
+     * readings agree on a square and disagree on everything else: at 48 pixels and three-quarters the
+     * request is a 36-pixel item whatever the frame, and a frame that cannot hold one that big draws
+     * the largest it can instead. Asking per shape is what made a circle's item look lost in its own
+     * negative space while a square's looked cramped, with one number driving both.
      *
      * <p>The lower bound is not zero, and the reasoning is about perception rather than arithmetic: a
      * scale of 0 draws nothing, and a node whose icon is invisible is indistinguishable from one with
@@ -153,7 +159,13 @@ public interface Shape {
      */
     double MIN_ICON_SCALE = 0.25;
 
-    /** Full size: the icon fills the largest square that fits inside the shape. */
+    /**
+     * The whole node: the request is its full width, capped by what the outline can host.
+     *
+     * <p>On a square that is corner to corner, exactly as it always was; on a circle it is the
+     * inscribed square, which is also what the old per-shape reading gave at 1.0. So this end of the
+     * range means the same thing under both readings, and only the middle of the range moved.
+     */
     double MAX_ICON_SCALE = 1.0;
 
     /**
@@ -182,6 +194,66 @@ public interface Shape {
     /** The same test, given a screen point and the shape's corner. */
     default boolean contains(double px, double py, int x, int y, int size) {
         return containsLocal(px - x, py - y, size);
+    }
+
+    /**
+     * This outline one pixel in — the table a fill, a wash or a stand-in block is drawn from.
+     *
+     * <h2>Derived, not re-sampled</h2>
+     *
+     * <p>The inner layer has to sit inside the outline the panel was drawn from, and it used to be the
+     * same shape function sampled at {@code size - 2}, which nothing related to the panel's table. At
+     * every size where a feature steps — a gear's tooth count at 32 pixels, a rounded rectangle's
+     * integer radius every four — the two disagreed, and the drawing showed it as an outline that stops
+     * closing. This is the panel's own table shifted and shrunk by whole pixels instead, so containment
+     * is a property of the transform rather than a hope. See {@link Outlines}.
+     *
+     * <p>A layer is a table to draw, not a shape to ask about: the icon fit of a fill is a question whose
+     * answer means nothing, and no caller should ask it.
+     *
+     * @return a shape whose {@code spans(row, size)} is this outline's table for a box two pixels
+     *     smaller, inset by one — draw it at {@code (x + 1, y + 1)} in that box
+     */
+    default Shape inner() {
+        return inner(1);
+    }
+
+    /**
+     * The same, {@code by} pixels in, for a layer drawn at {@code (x + by, y + by)} in a box
+     * {@code 2 * by} smaller.
+     *
+     * @param by at least one; anything less is treated as one, since a layer of zero inset is this shape
+     */
+    default Shape inner(int by) {
+        int inset = Math.max(1, by);
+        return Shapes.ofSpans((row, size) ->
+                Outlines.eroded(this::spans, size + inset * 2, inset).spansOf(row, size));
+    }
+
+    /**
+     * This outline one pixel out — the table a hover or selection ring is drawn from.
+     *
+     * <p>A halo that follows the node's own silhouette rather than a second outline sampled one size up:
+     * the same argument as {@link #inner()}, and it is the stronger half of it, because a ring with gaps
+     * in it is what a person notices first.
+     *
+     * @return a shape whose {@code spans(row, size)} is this outline's table for a box two pixels larger,
+     *     outset by one — draw it at {@code (x - 1, y - 1)} in that box
+     */
+    default Shape outer() {
+        return outer(1);
+    }
+
+    /**
+     * The same, {@code by} pixels out, for a ring drawn at {@code (x - by, y - by)} in a box
+     * {@code 2 * by} larger.
+     *
+     * @param by at least one; anything less is treated as one, since a ring of zero outset is this shape
+     */
+    default Shape outer(int by) {
+        int outset = Math.max(1, by);
+        return Shapes.ofSpans((row, size) ->
+                Outlines.dilated(this::spans, Math.max(0, size - outset * 2), outset).spansOf(row, size));
     }
 
     /**
@@ -248,44 +320,139 @@ public interface Shape {
     }
 
     /**
-     * The box an icon fills on a node — the inset applied to <b>both</b> the position and the size.
+     * Where the shape's visual centre of mass sits, in its own local pixels — the item's anchor.
      *
-     * <h2>Why this is one method and not two numbers at the call site</h2>
+     * <h2>Why a box can be centred and still look dropped</h2>
      *
-     * <p>Because the two numbers apart is a bug that shipped. A screen computed the box's size from
+     * <p>A heart's mass is in its lobes and a shield's in its shoulders, so the middle of a vertically
+     * asymmetric shape is not where it looks balanced. Centring by the bounding box puts the item low
+     * on both, which reads as an item that has slid down to the outline's bottom edge. The anchor is
+     * the small correction that puts it where the material is: up by two to four percent of the size,
+     * for the shapes whose mass sits above their box's middle.
+     *
+     * <h2>Local, so it turns with the shape</h2>
+     *
+     * <p>The anchor is a vector in the shape's own frame, so a turned shape's anchor is turned with it:
+     * a heart at 180 degrees carries its item above the outline again rather than below it, because
+     * "the lobes" is a fact about the heart and not about the screen. A shape that says nothing answers
+     * zero, which is every shape whose mass is its middle.
+     *
+     * @return {@code {dx, dy}} in pixels, y growing downwards, so "up" is negative; never null
+     */
+    default int[] iconAnchor(int size) {
+        return new int[] {0, 0};
+    }
+
+    /**
+     * The box an icon fills on a node — the asked-for size, the outline's fit and the anchor in one answer.
+     *
+     * <h2>One method, and why that is not tidiness</h2>
+     *
+     * <p>Because two numbers apart is a bug that shipped. A screen computed the box's size from
      * {@link #maxInset} — 6 for a 48-pixel circle, giving a 36-pixel box — and took its position from a
      * hardcoded constant of 3. So the item was drawn 3 pixels in from the corner at a size that wanted
      * 6: it sat 3 pixels up and left of centre, with its corner through the rounded outline it was
-     * supposed to be inside.
+     * supposed to be inside. That is <b>a value that must be one thing, computed in two places</b>, and
+     * the durable fix is to compute the pair together, here.
      *
-     * <p>That is the same mistake as two controls colliding, and a label and its room: <b>a value that
-     * must be one thing, computed in two places.</b> The durable fix is to compute the pair together,
-     * here. The screen only ever decides whether the box is big enough to be worth drawing an item in.
+     * <h2>The three decisions, in order</h2>
      *
-     * <h2>Centred, and that is not the same as "inset"</h2>
+     * <ol>
+     *   <li><b>The request is a fraction of the node.</b> {@code scale} is clamped, then multiplied by
+     *       {@code size}, so three-quarters is three-quarters of the node on every shape — which is what
+     *       makes one frame comparable with another.</li>
+     *   <li><b>The outline caps it.</b> The answer is the largest square no bigger than the request
+     *       that the outline can host around the anchor. The cap is {@link #maxInset}'s own arithmetic,
+     *       the same spans the drawing and the hit test use, so it cannot disagree with either.</li>
+     *   <li><b>The anchor moves it, and the fit follows.</b> The size is re-derived around the anchored
+     *       position rather than clamped at it: a shape whose mass is high can hold a slightly smaller
+     *       box up there where it cannot hold the full one at its middle. The position is clamped into
+     *       the node last, so a number off the wire cannot draw outside it.</li>
+     * </ol>
      *
-     * <p>At an odd size the subtraction cannot come out even whichever way it rounds, so the leftover
-     * pixel is split by centring explicitly. {@code ShapeTest} asserts the equal margins for every size
-     * rather than for the even ones.
+     * <p>At {@link #MAX_ICON_SCALE} this is the largest square that fits — "corner to corner", unchanged.
+     * At every scale it is at least as large as the old per-shape reading, because that reading
+     * <i>multiplied</i> by the fit while this one only caps by it. A node can gain space from this
+     * change and never lose it; {@code ShapeTest} sweeps that property at every size and scale.
      *
      * @param scale {@link #MIN_ICON_SCALE} to {@link #MAX_ICON_SCALE}; anything outside is clamped
      *     rather than refused, because this is also reached by a number off the wire
-     * @return {@code {x, y, box}} — the icon's corner and its width, all three from one inset
+     * @return {@code {x, y, box}} — the icon's corner and its width, all three from one decision
      */
     default int[] iconBox(int nodeX, int nodeY, int size, double scale) {
         double clamped = Math.min(Math.max(scale, MIN_ICON_SCALE), MAX_ICON_SCALE);
+        int wanted = Math.max(0, (int) Math.round(size * clamped));
+        int largest = Math.max(0, size - maxInset(size) * 2);
 
-        int inset = maxInset(size);
-        int largest = Math.max(0, size - inset * 2);
-        // Round rather than truncate: at 48 pixels and three-quarters the answer is 27 rather than 26,
-        // which is the difference between "three-quarters" and "a bit under it".
-        int box = Math.max(0, (int) Math.round(largest * clamped));
-        int left = (size - box) / 2;
-        return new int[] {nodeX + left, nodeY + left, box};
+        int[] anchor = iconAnchor(size);
+        int box = anchoredBox(Math.min(wanted, largest), size, anchor);
+        if (box == 0 && (anchor[0] != 0 || anchor[1] != 0)) {
+            // The anchor holds nothing at all — a shape with no material where its mass says there
+            // should be. A centred box is the honest fallback; no icon at all is not an answer.
+            anchor = new int[] {0, 0};
+            box = Math.min(wanted, largest);
+        }
+
+        int left = position((size - box) / 2 + anchor[0], size, box);
+        int top = position((size - box) / 2 + anchor[1], size, box);
+        return new int[] {nodeX + left, nodeY + top, box};
     }
 
     /** The same, at full size. */
     default int[] iconBox(int nodeX, int nodeY, int size) {
         return iconBox(nodeX, nodeY, size, MAX_ICON_SCALE);
+    }
+
+    /**
+     * The largest box no bigger than {@code start} that fits around {@code anchor}, or zero.
+     *
+     * <p>With no anchor this is {@code start}, which {@link #maxInset} has already proved fits at the
+     * middle of the node — the common case pays nothing for the anchor's search. With an anchor the
+     * size walks down until the outline holds it, which is bounded in practice by the few percent the
+     * anchor can be.
+     */
+    private int anchoredBox(int start, int size, int[] anchor) {
+        if (start <= 0) {
+            return 0;
+        }
+        if (anchor[0] == 0 && anchor[1] == 0) {
+            return start;
+        }
+        for (int box = start; box > 0; box--) {
+            int left = position((size - box) / 2 + anchor[0], size, box);
+            int top = position((size - box) / 2 + anchor[1], size, box);
+            if (hosts(box, left, top, size)) {
+                return box;
+            }
+        }
+        return 0;
+    }
+
+    /** Whether every row of a box at {@code left}, {@code top} lies within one span. */
+    private boolean hosts(int box, int left, int top, int size) {
+        for (int row = top; row < top + box; row++) {
+            if (!covers(spans(row, size), left, left + box)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Whether one span of {@code spans} covers the whole interval {@code [from, to)}. */
+    private static boolean covers(int[] spans, int from, int to) {
+        if (spans == null) {
+            return false;
+        }
+        for (int i = 0; i < spans.length; i += 2) {
+            if (spans[i] <= from && spans[i + 1] >= to) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A box position clamped into the node, so nothing can draw outside it. */
+    private static int position(int wanted, int size, int box) {
+        return Math.max(0, Math.min(Math.max(0, size - box), wanted));
     }
 }

@@ -338,7 +338,7 @@ public final class ArmatureTextField extends AbstractWidget {
      * <p>A field is filled with its value through {@code setValue}, which parks the caret at the end --
      * the useful place to continue from, when the field is the one being typed into. Reading the caret
      * unconditionally then made every <i>unfocused</i> field draw the tail of its value and hide the
-     * beginning: a chapter subtitle "Five quests, no tricks" showed as "s quests, no tricks", and the
+     * beginning: a chapter subtitle "Five levels, no tricks" showed as "s levels, no tricks", and the
      * first click landed through an offset nobody could see. That is a rendering fault rather than a
      * scrolled view, and the fix is the focus check below: the caret decides the view only while the
      * field has the keyboard. At rest the value starts at its own left edge, where a reader looks first.

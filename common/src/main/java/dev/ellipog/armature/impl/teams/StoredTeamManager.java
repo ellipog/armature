@@ -182,7 +182,7 @@ public final class StoredTeamManager implements MutableTeamManager {
      * Accepts an invitation.
      *
      * <p>If the player is in a team already, they leave it first — which fires
-     * {@link TeamEvents.Reason#LEFT} so that anything they were carrying, like quest progress, knows
+     * {@link TeamEvents.Reason#LEFT} so that anything they were carrying, like saved progress, knows
      * to deal with it. Doing that silently is how a player ends up with progress in two teams.
      */
     @Override

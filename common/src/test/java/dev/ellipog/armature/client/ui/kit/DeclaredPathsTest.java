@@ -60,7 +60,7 @@ class DeclaredPathsTest {
             // Every segment, not just the last. A walker that tested only the final name would descend
             // into `_schema/` and report each file inside it as unlisted content -- which reads as "your
             // install is broken" about a folder the reporter put there.
-            assertTrue(DeclaredPaths.isIgnored(Path.of("_schema", "quest.schema.json")),
+            assertTrue(DeclaredPaths.isIgnored(Path.of("_schema", "entry.schema.json")),
                     "the folder is ignored, so everything in it is");
             assertTrue(DeclaredPaths.isIgnored(Path.of("getting_started", "_snippets", "notes.json")),
                     "and an ignored folder nested inside content is ignored too");
@@ -102,7 +102,7 @@ class DeclaredPathsTest {
         @DisplayName("a name with a separator is refused, and the message says why a name is not a path")
         void aNameWithASeparatorIsRefused() {
             // The rule that makes a reference unable to escape its own folder, and therefore the reason
-            // there is no containment check. Both separators, because a quest file is edited on both
+            // there is no containment check. Both separators, because a data file is edited on both
             // and a check that only knew the platform's would pass on the machine it was written on.
             assertTrue(DeclaredPaths.problemWithName("chapters/first_steps").isPresent());
             assertTrue(DeclaredPaths.problemWithName("chapters\\first_steps").isPresent());

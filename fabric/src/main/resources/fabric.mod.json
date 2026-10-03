@@ -16,15 +16,6 @@
         ],
         "client": [
             "dev.ellipog.armature.fabric.FabricClient"
-        ],
-        "emi": [
-            "dev.ellipog.armature.integration.emi.ArmatureEmiPlugin"
-        ],
-        "jei_mod_plugin": [
-            "dev.ellipog.armature.integration.jei.ArmatureJeiPlugin"
-        ],
-        "rei_client": [
-            "dev.ellipog.armature.integration.rei.ArmatureReiPlugin"
         ]
     },
     "depends": {
@@ -32,10 +23,5 @@
         "fabric-api": "*",
         "minecraft": "${minecraft_version}",
         "java": ">=${java_version}"
-    },
-    "suggests": {
-        "emi": "*",
-        "jei": "*",
-        "roughlyenoughitems": "*"
     }
 }

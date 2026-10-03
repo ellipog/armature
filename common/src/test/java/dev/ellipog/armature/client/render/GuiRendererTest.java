@@ -2,6 +2,8 @@ package dev.ellipog.armature.client.render;
 
 import dev.ellipog.armature.client.ArmatureTheme;
 import dev.ellipog.armature.client.ui.Themes;
+import dev.ellipog.armature.client.ui.shape.Shape;
+import dev.ellipog.armature.client.ui.shape.Shapes;
 import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
@@ -389,7 +391,7 @@ class GuiRendererTest {
         // ends — so an operation that draws through a *different* path is ordered by its own batching
         // rather than by the order the code called it in. An item icon is exactly that operation.
         //
-        // The quest book hit this: nodes are item icons on the canvas, the tool cluster's backing panel
+        // The book screen hit this: nodes are item icons on the canvas, the tool cluster's backing panel
         // is drawn over the canvas afterwards, and the icons floated on top of the buttons. The fix is
         // a flush at that seam, and this is the test that makes the seam's contract checkable — a
         // recorder that silently swallowed the call would leave the fix unassertable, which is exactly
@@ -564,5 +566,104 @@ class GuiRendererTest {
         assertTrue(open < fill && fill < close,
                 "the drawing sits between the markers: open=" + open + " fill=" + fill + " close=" + close);
         assertTrue(r.clipsBalanced(), "and a batch does not disturb the clip accounting");
+    }
+
+    // ------------------------------------------------------------------
+    // The layers, as drawn
+    // ------------------------------------------------------------------
+
+    /** Every built-in, so one cannot be forgotten in the sweep by not being listed. */
+    private static final List<Shape> SHAPES = List.of(
+            Shapes.ROUNDED, Shapes.RECT, Shapes.CIRCLE, Shapes.DIAMOND, Shapes.HEXAGON,
+            Shapes.OCTAGON, Shapes.PENTAGON, Shapes.GEAR, Shapes.HEART, Shapes.TOME);
+
+    /** Whether one row of one shape covers a column, for the silhouette checks below. */
+    private static boolean covers(Shape shape, int row, int size, int col) {
+        int[] spans = shape.spans(row, size);
+        if (spans == null) {
+            return false;
+        }
+        for (int i = 0; i < spans.length; i += 2) {
+            if (col >= spans[i] && col < spans[i + 1]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Test
+    @DisplayName("a node's outline is at least one pixel and its ring is a one-pixel band, at every step size")
+    void aNodesOutlineAndRingHoldTheirWidth() {
+        // Three properties, measured from the recorded fills at the sizes where a shape's features step:
+        //
+        //   1. no boundary pixel of the panel ends up the fill colour -- the outline is at least a pixel
+        //      wide, on a curve and a diagonal as much as on a straight edge;
+        //   2. every pixel of the ring's band (the halo the panel does not cover) is the ring's colour --
+        //      the band is one pixel and unbroken;
+        //   3. nothing at all is drawn outside the halo.
+        //
+        // All three were broken before this round's fix and two of them were broken *by* it: the fill was
+        // inset one row at a time, so on a curve it covered the boundary pixels whose neighbour in the
+        // same row was inside (up to 156 of them on one size), and the ring's inner edge was the halo's
+        // own erosion, a closing that paints over a gear's tooth gaps and a tome's notch -- leaving the
+        // ring broken, at up to 420 pixels.
+        for (Shape shape : SHAPES) {
+            for (int size : List.of(15, 16, 17, 30, 31, 32, 33, 46, 47, 48, 56, 89)) {
+                Shape ring = shape.outer();
+                RecordingRenderer r = RecordingRenderer.create();
+                // The node as it is drawn: the halo, the panel's own outline over it, then the panel.
+                ArmatureTheme.fillShape(r, -1, -1, size + 2, 0xFF333333, ring::spans);
+                ArmatureTheme.fillShape(r, 0, 0, size, 0xFF111111, shape::spans);
+                ArmatureTheme.shapePanel(r, 0, 0, size, 0xFF111111, 0xFF222222, shape::spans);
+
+                // The last fill over each pixel is what the player sees, so that is what is compared.
+                int reach = size + 4;
+                int[][] seen = new int[reach][reach];
+                for (RecordingRenderer.Call fill : r.fills()) {
+                    for (int row = fill.y(); row < fill.y2(); row++) {
+                        for (int col = fill.x(); col < fill.x2(); col++) {
+                            if (row + 2 >= 0 && col + 2 >= 0 && row + 2 < reach && col + 2 < reach) {
+                                seen[row + 2][col + 2] = fill.argb();
+                            }
+                        }
+                    }
+                }
+
+                for (int row = 0; row < size; row++) {
+                    for (int col = 0; col < size; col++) {
+                        if (!covers(shape, row, size, col)) {
+                            continue;
+                        }
+                        int got = seen[row + 2][col + 2];
+                        boolean boundary = !covers(shape, row - 1, size, col)
+                                || !covers(shape, row + 1, size, col)
+                                || !covers(shape, row, size, col - 1)
+                                || !covers(shape, row, size, col + 1);
+                        if (boundary) {
+                            assertTrue(got != 0xFF111111, shape + " " + size + ": the fill covers the"
+                                    + " outline at " + col + "," + row + " -- the line is under a pixel");
+                        }
+                    }
+                }
+                for (int row = -1; row <= size; row++) {
+                    for (int col = -1; col <= size; col++) {
+                        if (!covers(ring, row + 1, size + 2, col + 1) || covers(shape, row, size, col)) {
+                            continue;
+                        }
+                        assertEquals(0xFF333333, seen[row + 2][col + 2], shape + " " + size
+                                + ": the ring's band is not the ring's colour at " + col + "," + row);
+                    }
+                }
+                for (RecordingRenderer.Call fill : r.fills()) {
+                    for (int row = fill.y(); row < fill.y2(); row++) {
+                        for (int col = fill.x(); col < fill.x2(); col++) {
+                            assertTrue(covers(ring, row + 1, size + 2, col + 1), shape + " " + size
+                                    + ": " + fill.argb() + " was drawn outside the outline at " + col
+                                    + "," + row);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

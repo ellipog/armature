@@ -5,7 +5,6 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.ellipog.armature.api.client.ArmatureClient;
 import dev.ellipog.armature.api.client.KeyMappingBackend;
 import dev.ellipog.armature.client.ArmatureScreens;
-import dev.ellipog.armature.integration.Integrations;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -34,10 +33,6 @@ public final class FabricClient implements ClientModInitializer {
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             ArmatureClient.tick();
-            // The integration seam's tick: the quest content notices its tree moving here, and the
-            // one adapter that registers statically (EMI) asks for its reload. Without this call the
-            // seam is inert -- the content never builds a snapshot and every viewer sees nothing.
-            Integrations.tick();
         });
     }
 

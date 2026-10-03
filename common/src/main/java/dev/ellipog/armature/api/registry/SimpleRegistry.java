@@ -17,7 +17,7 @@ import java.util.TreeSet;
  *
  * <p>Not a game registry. Minecraft's {@code Registry} holds things the game knows about —
  * items, blocks, biomes — and the platform layer's {@link Registrar} is how you write to it. This
- * holds things <i>your</i> API knows about: the set of quest task types, or reward types, where
+ * holds things <i>your</i> API knows about: the set of entry types, or variant types, where
  * the point is that another mod can add one.
  *
  * <h2>Why a registry and not an enum</h2>
@@ -41,7 +41,7 @@ public final class SimpleRegistry<T> {
         this.what = what;
     }
 
-    /** @param what what this registry holds, for error messages — "quest task types", say */
+    /** @param what what this registry holds, for error messages — "entry types", say */
     public static <T> SimpleRegistry<T> create(String what) {
         return new SimpleRegistry<>(what);
     }

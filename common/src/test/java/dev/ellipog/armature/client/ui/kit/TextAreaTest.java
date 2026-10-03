@@ -367,7 +367,7 @@ class TextAreaTest {
 
     /**
      * The widget draws at a caller's pitch: a line height of its own and a gap between paragraphs. The
-     * caller that needs it is the quest editor's description, which must draw the text it is editing
+     * caller that needs it is the editor's description, which must draw the text it is editing
      * exactly where the reader draws prose -- {@code OverlayLayout.LINE_HEIGHT} a line and
      * {@code PARAGRAPH_GAP} between paragraphs -- or every line moves the moment the field is clicked.
      *

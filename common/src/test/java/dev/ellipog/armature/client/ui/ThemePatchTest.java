@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Partial overrides: the one mechanism behind a theme file, a chapter, a quest and the editor.
+ * Partial overrides: the one mechanism behind a theme file, a group, an entry and the editor.
  *
  * <h2>The merge order is the whole design, so it is asserted as order</h2>
  *
@@ -29,13 +29,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * these values". Rather than four implementations, there is one — {@link ThemePatch} — and the only
  * thing that decides the outcome when two of them apply is <b>which was merged into which</b>. So the
  * tests about {@link ThemePatch#merge} are testing the feature, not a helper: a child winning is what
- * makes a quest's colours beat its chapter's, which is what makes a chapter's beat the player's theme.
+ * makes an entry's colours beat its group's, which is what makes a group's beat the player's theme.
  *
  * <h2>The two-ways-to-apply boundary is a decision, and it is tested as one</h2>
  *
  * <p>{@code applyTo} takes everything; {@code tint} takes colours only. The difference is not an
- * oversight to be tidied away — a chapter that could change the corner radius of every panel in the
- * book, or the duration of every transition in it, would be a quest file reaching into the screen's
+ * oversight to be tidied away — a group that could change the corner radius of every panel in the
+ * book, or the duration of every transition in it, would be a data file reaching into the screen's
  * construction. And the motion half of that is worse than intrusive: a scoped motion would do nothing,
  * because animation timing is pushed to {@code Motion} once per client. A value that cannot take effect
  * is worse than one that is refused, and this codebase has already shipped a field that was parsed,
@@ -128,7 +128,7 @@ class ThemePatchTest {
     @Test
     @DisplayName("a child wins, and it wins only on what it names")
     void theChildWins() {
-        // The rule that makes three levels compose: main, then chapter, then quest. Each level knows
+        // The rule that makes three levels compose: main, then group, then entry. Each level knows
         // nothing about the others; the order is the whole of the relationship.
         ThemePatch base = ThemePatch.colours(Map.of("panel", 0xFF111111, "canvas", 0xFF222222));
         ThemePatch child = ThemePatch.colours(Map.of("panel", 0xFF333333));
@@ -142,7 +142,7 @@ class ThemePatchTest {
     @Test
     @DisplayName("merging an empty patch changes nothing, in either direction")
     void mergingWithNothingIsSafe() {
-        // Reachable from a chapter with no overrides and from a quest with none, which is most of them.
+        // Reachable from a group with no overrides and from an entry with none, which is most of them.
         ThemePatch base = ThemePatch.colours(Map.of("panel", DARK_PANEL));
 
         assertSame(base, base.merge(ThemePatch.NONE));
@@ -171,19 +171,19 @@ class ThemePatchTest {
     @Test
     @DisplayName("the three levels compose in one direction, and the last one applied wins")
     void threeLevelsCompose() {
-        // The shape the plan calls main -> chapter -> quest, walked as the screen walks it. Six colours
+        // The shape the plan calls main -> group -> entry, walked as the screen walks it. Six colours
         // across three levels, and the expected result is that each name ends up with the value from
-        // the *last* level that mentioned it -- which is what makes a quest able to override its
-        // chapter without restating it.
-        ThemePatch chapter = ThemePatch.colours(Map.of("panel", 0xFF111111, "canvas", 0xFF111111));
-        ThemePatch quest = ThemePatch.colours(Map.of("canvas", 0xFF222222, "available", VIOLET));
+        // the *last* level that mentioned it -- which is what makes an entry able to override its
+        // group without restating it.
+        ThemePatch group = ThemePatch.colours(Map.of("panel", 0xFF111111, "canvas", 0xFF111111));
+        ThemePatch entry = ThemePatch.colours(Map.of("canvas", 0xFF222222, "available", VIOLET));
 
-        ThemePatch combined = chapter.merge(quest);
+        ThemePatch combined = group.merge(entry);
         Theme applied = combined.tint(Themes.MODERN);
 
-        assertEquals(0xFF111111, applied.panel(), "only the chapter named the panel");
-        assertEquals(0xFF222222, applied.canvas(), "both named the canvas, so the quest wins");
-        assertEquals(VIOLET, applied.available(), "only the quest named the state colour");
+        assertEquals(0xFF111111, applied.panel(), "only the group named the panel");
+        assertEquals(0xFF222222, applied.canvas(), "both named the canvas, so the entry wins");
+        assertEquals(VIOLET, applied.available(), "only the entry named the state colour");
         assertEquals(Themes.MODERN.title(), applied.title(), "nobody named the title");
     }
 

@@ -12,6 +12,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.PlayerSkin;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Objects;
@@ -297,6 +298,22 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         return true;
+    }
+
+    // ------------------------------------------------------------------
+    // Textures
+    // ------------------------------------------------------------------
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code blit} with the image's own size named as the texture size, which is the whole of it:
+     * the shorter overload assumes a 256×256 sheet and would sample the wrong region of a 12-pixel
+     * file, so both sizes are written out.
+     */
+    @Override
+    public void texture(ResourceLocation texture, int x, int y, int width, int height) {
+        graphics.blit(texture, x, y, width, height, 0F, 0F, width, height, width, height);
     }
 
     // ------------------------------------------------------------------

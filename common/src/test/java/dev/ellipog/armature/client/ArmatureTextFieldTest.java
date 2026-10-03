@@ -13,8 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * <h2>The report these hold</h2>
  *
  * <p>A field is filled through {@code setValue}, which puts the caret at the end -- so the first version
- * of the drawing scrolled every field to its own tail: a chapter subtitle "Five quests, no tricks"
- * appeared as "s quests, no tricks" and read as a field whose value was corrupt. The view belongs to
+ * of the drawing scrolled every field to its own tail: a chapter subtitle "Five levels, no tricks"
+ * appeared as "s levels, no tricks" and read as a field whose value was corrupt. The view belongs to
  * the caret only while the field is being typed into; at rest the value starts where a reader looks.
  *
  * <p>Only the unfocused half is asserted here, and that is honest rather than lazy: the focused half
@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  */
 class ArmatureTextFieldTest {
 
-    private static final String VALUE = "Five quests, no tricks";
+    private static final String VALUE = "Five levels, no tricks";
 
     @Test
     void anUnfocusedFieldDrawsItsValueFromTheLeftEdge() {

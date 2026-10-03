@@ -56,7 +56,7 @@ class TeamStoreTest {
 
         // The round trip, which is the whole point: a record held only in memory would let the
         // retirement evaporate at the next world save, and the failure would be invisible until a
-        // player's new party inherited a finished questline from an old one.
+        // player's new party inherited finished progress from an old one.
         CompoundTag saved = store.save(new CompoundTag(), null);
         TeamStore reloaded = TeamStore.load(saved, null);
 

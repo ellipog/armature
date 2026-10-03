@@ -3,6 +3,7 @@ package dev.ellipog.armature.client.render;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.UUID;
@@ -20,14 +21,15 @@ import java.util.UUID;
  * unchanged. Without it, it is every draw call in a toolkit and a screen, twice, with no way to tell
  * which were missed.
  *
- * <h2>Six methods, because that is what was actually being used</h2>
+ * <h2>Seven methods, because that is what was actually being used</h2>
  *
  * <p>Not a guess at what a UI toolkit might need. This is the complete set of operations that
- * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and {@code QuestBookScreen}
- * between them called on {@code GuiGraphics}, measured rather than recalled:
+ * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and a screen between them
+ * called on {@code GuiGraphics}, measured rather than recalled:
  * {@code fill}, {@code drawString}, {@code drawCenteredString}, {@code pose} + {@code renderItem},
- * and the scissor pair. Thirty-odd fills, thirty-odd strings, one centred string, two icons and two
- * scissors.
+ * the scissor pair, and one texture {@code blit} added when a pin star became two image files
+ * instead of a fill mask. Thirty-odd fills, thirty-odd strings, one centred string, two icons, two
+ * scissors and one texture.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -45,16 +47,18 @@ import java.util.UUID;
  *
  * <p><b>Styling exists, and it is this seam's own type; {@code Component} still does not cross.</b> This
  * paragraph used to say that no text was styled anywhere, which was true when it was written and is not
- * any more: a quest description is markdown, and emphasis is not emphasis if it is not drawn differently.
+ * any more: an entry description is markdown, and emphasis is not emphasis if it is not drawn differently.
  * The fix is the one the {@code ArmatureButton} note promised for the day a styled string turned up —
  * <b>give the seam a styled-text type rather than put {@code Style} in the caller's hands</b> — so
  * {@link StyledRun} is a plain string and two booleans, {@link #styledText} draws a line of them, and
  * {@link #styledWidth} measures one. A {@code Component} would carry far more than that (events, fonts,
  * colours, hover) and would tie every caller to the game to say "bold".
  *
- * <p><b>No {@code renderItemDecorations}, no gradients, no nine-slice, no atlas.</b> R5's work. This
- * interface is what today's code needs and nothing more, which is what makes it small enough that a
- * second implementation is a real thing to write rather than a project.
+ * <p><b>No {@code renderItemDecorations}, no gradients, no nine-slice, no sprite atlas.</b> R5's
+ * work. {@link #texture} draws a caller's own file by path — a stitched sheet's sprite coordinates
+ * are exactly the guessing this seam exists to avoid. This interface is what today's code needs and
+ * nothing more, which is what makes it small enough that a second implementation is a real thing to
+ * write rather than a project.
  *
  * <h2>Why it is an interface with a test double, rather than an abstraction</h2>
  *
@@ -173,8 +177,8 @@ public interface GuiRenderer {
      * rather than by the order the code called them in.
      *
      * <p>An item icon is exactly that operation: it goes through the item renderer rather than through
-     * {@code fill}, so a queued rectangle drawn <i>after</i> it can land <i>before</i> it. The quest
-     * book hit this — nodes are item icons on the canvas, and the tool cluster's backing panel is
+     * {@code fill}, so a queued rectangle drawn <i>after</i> it can land <i>before</i> it. The book
+     * screen hit this — nodes are item icons on the canvas, and the tool cluster's backing panel is
      * drawn over the canvas afterwards, which left icons floating on top of the buttons they are
      * supposed to be behind.
      *
@@ -265,6 +269,23 @@ public interface GuiRenderer {
      *     must be able to fall back — the same contract as {@link #icon}.
      */
     boolean face(UUID player, int boxX, int boxY, int box);
+
+    // ------------------------------------------------------------------
+    // Textures
+    // ------------------------------------------------------------------
+
+    /**
+     * Draws a texture file at its own pixel size, top-left at {@code x}, {@code y}.
+     *
+     * <p>The box is the image: nothing here scales, tiles or tints. That is deliberate — a scaled
+     * blit is how pixel art turns into a smear, and the two things a caller actually does with a
+     * texture (draw it, and draw it somewhere else) need neither.
+     *
+     * <p>The path is the file's, not a sheet's: {@code mod:textures/gui/star.png} is the whole of
+     * what a caller says. There is no atlas coordinate to get wrong, so a bad path is a texture the
+     * game reports as missing rather than a silent wrong picture.
+     */
+    void texture(ResourceLocation texture, int x, int y, int width, int height);
 
     // ------------------------------------------------------------------
     // Clipping

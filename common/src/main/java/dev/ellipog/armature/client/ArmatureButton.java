@@ -37,7 +37,7 @@ import java.util.function.Consumer;
  *
  * <h2>What it can be</h2>
  *
- * <p>Text, or text with a leading item icon. An icon is what makes a chapter list or a quest action
+ * <p>Text, or text with a leading item icon. An icon is what makes a chapter list or an entry action
  * readable at a glance, and there is no other way to put one in a control. The icon is drawn at a
  * fixed offset and the text is centred in what is left, so a row of buttons with and without icons
  * still lines its labels up.
@@ -50,7 +50,7 @@ import java.util.function.Consumer;
  * change it.
  *
  * <p>{@link #selected(boolean)} marks the current one — the chapter being shown, the tab being read.
- * It is a <b>fill</b>, not the absence of one, and that distinction cost a round: the quest book's
+ * It is a <b>fill</b>, not the absence of one, and that distinction cost a round: the book screen's
  * chapter list used {@link #flat(boolean)} for its selected row, so the current chapter was the only
  * one drawn with no box at all and read as the missing or disabled one. Flat means "this is a label
  * that happens to be clickable"; it does not mean "this one is on".
@@ -231,7 +231,7 @@ public class ArmatureButton extends AbstractWidget {
      * now, and the reason that costs nothing is worth stating rather than assuming: every tooltip in
      * both mods is built from {@code Component.literal}, so none of them carries a style to lose. If
      * one ever does, it will draw unstyled — visibly, not silently, and the fix is to give the seam a
-     * styled-text type rather than to put {@code Style} back into the caller's hands. One did (a quest
+     * styled-text type rather than to put {@code Style} back into the caller's hands. One did (an entry
      * description is markdown), and the fix was made exactly so: {@link GuiRenderer.StyledRun}.
      */
     public ArmatureButton tooltip(List<Component> lines) {
@@ -244,7 +244,7 @@ public class ArmatureButton extends AbstractWidget {
     /**
      * A heading: no fill, a rule underneath, and the brightest label.
      *
-     * <p>The shape a collapsible list needs, and the reason it was added: the quest book's group
+     * <p>The shape a collapsible list needs, and the reason it was added: the book screen's group
      * headings were drawn {@link #flat(boolean)}, which draws nothing at all, so a row whose whole
      * width is clickable looked exactly like a word. See {@link
      * ArmatureControlStyle.Variant#SECTION}.
@@ -424,7 +424,7 @@ public class ArmatureButton extends AbstractWidget {
         int textWidth = width - iconSlot;
 
         // Truncated to the space there actually is, by pixel width rather than by character count. A
-        // control cannot know how long its label will be -- a chapter title comes from the quest file
+        // control cannot know how long its label will be -- a chapter title comes from the data file
         // -- so without this a long label is drawn straight through the control's edge and reads as a
         // rendering fault rather than as a name that is simply too long.
         //
@@ -479,7 +479,7 @@ public class ArmatureButton extends AbstractWidget {
      *
      * <p>So {@code onClick} is a <i>press</i> callback, and overriding it to report a press is what
      * vanilla does — but it means the button cannot show a held state, because the action has already
-     * happened by the time the button looks pressed. For a Submit button in a quest book that is
+     * happened by the time the button looks pressed. For a Submit button in a book screen that is
      * wrong: it should look pressed while the pointer is down and act when it comes up, and letting go
      * somewhere else should cancel.
      *

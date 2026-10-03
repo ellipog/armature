@@ -18,7 +18,7 @@ import java.util.UUID;
  * <p>The tempting alternative is to create parties in the other mod on the player's behalf, and it
  * is wrong for a reason that has nothing to do with capability. A server running a parties mod has
  * that mod's own commands, its own screens and its own idea of what a party is — roles, allies,
- * claims, a name the player chose. Forming one <i>for</i> them from inside a questing mod's command
+ * claims, a name the player chose. Forming one <i>for</i> them from inside a consumer's command
  * produces a party they did not know they had, in a list they did not look at, and the next thing
  * they do is run the parties mod's own command to leave it. The honest shape is: read somebody
  * else's parties, and own the ones you create. A caller that needs to write asks

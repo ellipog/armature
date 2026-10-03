@@ -25,12 +25,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class OutlineTest {
 
-    /** A three-level tree: group → chapter → quest, which is the shape this exists for. */
+    /** A three-level tree: group → chapter → entry, which is the shape this exists for. */
     private static Outline<String> threeLevels() {
         return Outline.<String>of()
                 .add("group", null, true)
                 .add("chapter", "group", true)
-                .add("quest", "chapter", true);
+                .add("entry", "chapter", true);
     }
 
     private static List<String> rows(Outline<String> outline) {
@@ -86,18 +86,18 @@ class OutlineTest {
             // The point of computing depth once, when a node is added, rather than climbing on every
             // frame. This tree is declared child-before-sibling at the third level, which is exactly
             // the order a discovery walk can produce -- and a lazily computed depth would give
-            // "second_quest" the wrong one if it were derived from the previous node's.
+            // "second_node" the wrong one if it were derived from the previous node's.
             Outline<String> outline = Outline.<String>of()
                     .add("group", null, true)
                     .add("chapter", "group", true)
-                    .add("first_quest", "chapter", true)
-                    .add("second_quest", "chapter", true)
+                    .add("first_node", "chapter", true)
+                    .add("second_node", "chapter", true)
                     .add("other_chapter", "group", false);
 
             assertEquals(0, outline.depth("group"));
             assertEquals(1, outline.depth("chapter"));
-            assertEquals(2, outline.depth("first_quest"));
-            assertEquals(2, outline.depth("second_quest"), "the sibling is not deeper than the first");
+            assertEquals(2, outline.depth("first_node"));
+            assertEquals(2, outline.depth("second_node"), "the sibling is not deeper than the first");
             assertEquals(1, outline.depth("other_chapter"), "and a later chapter is not deeper either");
         }
 
@@ -179,12 +179,12 @@ class OutlineTest {
         }
 
         @Test
-        @DisplayName("collapsing a chapter hides its quests and leaves its sibling chapter alone")
+        @DisplayName("collapsing a chapter hides its entries and leaves its sibling chapter alone")
         void collapsingAChapterIsLocal() {
             Outline<String> outline = Outline.<String>of()
                     .add("group", null, true)
                     .add("one", "group", true)
-                    .add("quest", "one", true)
+                    .add("entry", "one", true)
                     .add("two", "group", true)
                     .add("other", "two", true);
             outline.seedFromDefaults();
@@ -214,12 +214,12 @@ class OutlineTest {
             Outline<String> outline = threeLevels();
             outline.seedFromDefaults();
 
-            outline.setExpanded("quest", false);
+            outline.setExpanded("entry", false);
 
             // A leaf draws nothing underneath it either way, so accepting the toggle would invent a
             // state that has no effect and that `isExpanded` would then report as if it mattered.
-            assertFalse(outline.isExpanded("quest"), "a leaf's expanded state is always false");
-            assertFalse(outline.isCollapsible("quest"));
+            assertFalse(outline.isExpanded("entry"), "a leaf's expanded state is always false");
+            assertFalse(outline.isCollapsible("entry"));
             assertTrue(outline.isCollapsible("chapter"));
         }
 
@@ -265,7 +265,7 @@ class OutlineTest {
             // That is the difference between marking a rebuild as needed and not.
             Outline<String> outline = threeLevels();
 
-            assertFalse(outline.toggle("quest"), "a leaf has nothing to show or hide");
+            assertFalse(outline.toggle("entry"), "a leaf has nothing to show or hide");
             assertTrue(outline.toggle("chapter"), "a node with children does");
         }
 
@@ -296,7 +296,7 @@ class OutlineTest {
 
             outline.seedFromDefaults();
 
-            assertEquals(List.of("group", "chapter", "quest"), rows(outline));
+            assertEquals(List.of("group", "chapter", "entry"), rows(outline));
         }
     }
 
@@ -320,10 +320,10 @@ class OutlineTest {
             outline.setExpanded("chapter", false);
             assertEquals(List.of("group"), rows(outline));
 
-            outline.expandAncestors("quest");
+            outline.expandAncestors("entry");
 
-            assertEquals(List.of("group", "chapter", "quest"), rows(outline));
-            assertFalse(outline.isExpanded("quest"), "the node's own children are still hidden");
+            assertEquals(List.of("group", "chapter", "entry"), rows(outline));
+            assertFalse(outline.isExpanded("entry"), "the node's own children are still hidden");
             assertTrue(outline.isExpanded("chapter"), "but its ancestors are open");
         }
 
@@ -369,7 +369,7 @@ class OutlineTest {
 
             assertTrue(outline.parentOf("group").isEmpty());
             assertEquals("group", outline.parentOf("chapter").orElseThrow());
-            assertEquals("chapter", outline.parentOf("quest").orElseThrow());
+            assertEquals("chapter", outline.parentOf("entry").orElseThrow());
         }
 
         @Test
@@ -382,7 +382,7 @@ class OutlineTest {
             // `keys` is for a caller walking the whole tree -- resolving a selection, say -- so it is
             // deliberately not `visibleRows`. Asserting both makes the difference explicit rather than
             // a thing a reader has to notice.
-            assertEquals(List.of("group", "chapter", "quest"), outline.keys());
+            assertEquals(List.of("group", "chapter", "entry"), outline.keys());
             assertEquals(List.of("group"), rows(outline));
         }
 
@@ -391,7 +391,7 @@ class OutlineTest {
         void declaredIsAReadOnlyView() {
             Outline<String> outline = threeLevels();
 
-            assertEquals(List.of("group", "chapter", "quest"), List.copyOf(outline.declared()));
+            assertEquals(List.of("group", "chapter", "entry"), List.copyOf(outline.declared()));
             assertThrows(UnsupportedOperationException.class, () -> outline.declared().remove("group"));
         }
     }

@@ -5,6 +5,8 @@ import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.Themes;
 import dev.ellipog.armature.client.ui.kit.Motion;
 import dev.ellipog.armature.client.ui.kit.RoundedRect;
+import dev.ellipog.armature.client.ui.shape.Outlines;
+import dev.ellipog.armature.client.ui.shape.Shapes;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -32,7 +34,7 @@ import java.util.Objects;
  *       whole screen: the panel, the sidebar, the header, the title, every control, every tooltip.
  *       It is a setting, it persists, and it is the answer everywhere by default.</li>
  *   <li><b>A scoped theme</b> — {@link #scope}. Something a piece of <i>content</i> asks for, while that
- *       content is on screen: the quest graph drawn in the colours of the chapter you are reading. It
+ *       content is on screen: the node graph drawn in the colours of the chapter you are reading. It
  *       does not persist, it does not change a control, and it ends when the scope does.</li>
  * </ul>
  *
@@ -46,10 +48,10 @@ import java.util.Objects;
  *
  * <h2>Scopes nest, and the one that is open wins</h2>
  *
- * <p>A chapter sets the viewport's palette; a single quest inside it may set its own; the detail overlay
+ * <p>A chapter sets the viewport's palette; a single entry inside it may set its own; the detail overlay
  * may set its own again. So this is a stack rather than a field, and {@link #current} is its top. That is
  * also what makes the feature composable rather than a special case: nothing in this class knows what a
- * chapter or a quest is, only that something asked for a palette for the duration of a block of drawing.
+ * group or an entry is, only that something asked for a palette for the duration of a block of drawing.
  *
  * <p>Use it with try-with-resources:
  *
@@ -81,7 +83,7 @@ import java.util.Objects;
  *       depending on what it happened to be drawn over. A panel's corners are its own.</li>
  * </ul>
  *
- * <p>So {@code ThemePatch.tint} is what a chapter or quest goes through, and it cannot set those three.
+ * <p>So {@code ThemePatch.tint} is what a group or entry goes through, and it cannot set those three.
  * The rule lives in the patch rather than here, so that a caller cannot apply a scoped theme that
  * quietly cannot work.
  *
@@ -117,7 +119,7 @@ public final class ArmatureTheme {
      * the shape of a setting, not of a dependency.
      *
      * <p>Where a second palette is genuinely wanted, it is wanted <i>for a region</i> rather than for a
-     * call path, and {@link #scope} is that — a hundred and fifty call sites inside a quest canvas do
+     * call path, and {@link #scope} is that — a hundred and fifty call sites inside a node canvas do
      * not each need to be told which chapter they are drawing.
      */
     public static Theme current() {
@@ -429,7 +431,7 @@ public final class ArmatureTheme {
     }
 
     // ------------------------------------------------------------------
-    // Progression: the state of a quest, and the border of its node
+    // Progression: the state of an entry, and the border of its node
     // ------------------------------------------------------------------
 
     /** Available, not started. */
@@ -453,9 +455,9 @@ public final class ArmatureTheme {
     }
 
     /**
-     * The colour of a quest's state, by name, for a caller holding the name rather than four branches.
+     * The colour of an entry's state, by name, for a caller holding the name rather than four branches.
      *
-     * <p>Exists because {@code QuestState} lives in a consumer mod and this class cannot know it — so the
+     * <p>Exists because the state enum lives in a consumer mod and this class cannot know it — so the
      * mapping from a state's name to its colour is here, at the one place that has both the names and the
      * palette. The alternative was four {@code switch} arms in every consumer, which is the same switch
      * written as many times as there are screens.
@@ -489,7 +491,7 @@ public final class ArmatureTheme {
     }
 
     /**
-     * A node's border when the quest cannot be started.
+     * A node's border when the entry cannot be started.
      *
      * <h2>The four node borders are tokens of their own, and why they still default to the state colours</h2>
      *
@@ -515,17 +517,17 @@ public final class ArmatureTheme {
         return current().nodeEdgeBlocked();
     }
 
-    /** A node's border when the quest can be started. Equals {@link #available} in every shipped theme. */
+    /** A node's border when the entry can be started. Equals {@link #available} in every shipped theme. */
     public static int nodeEdgeAvailable() {
         return current().nodeEdgeAvailable();
     }
 
-    /** A node's border when the quest is started. Equals {@link #inProgress} in every shipped theme. */
+    /** A node's border when the entry is started. Equals {@link #inProgress} in every shipped theme. */
     public static int nodeEdgeInProgress() {
         return current().nodeEdgeInProgress();
     }
 
-    /** A node's border when the quest is finished. Equals {@link #complete} in every shipped theme. */
+    /** A node's border when the entry is finished. Equals {@link #complete} in every shipped theme. */
     public static int nodeEdgeComplete() {
         return current().nodeEdgeComplete();
     }
@@ -568,7 +570,7 @@ public final class ArmatureTheme {
     }
 
     /**
-     * The wash behind a row the pointer is over — a task in a quest's body, a reward, a dependency.
+     * The wash behind a row the pointer is over — a task in an entry's body, a reward, a dependency.
      *
      * <h2>Why this is separate from a control's hover</h2>
      *
@@ -740,7 +742,7 @@ public final class ArmatureTheme {
      *
      * <h2>Why a mask rather than "round all four"</h2>
      *
-     * <p>Because a panel is almost always more than one surface. The quest book is a rounded panel with a
+     * <p>Because a panel is almost always more than one surface. The book screen is a rounded panel with a
      * recessed sidebar down its left edge and a raised header across the top, and both of those touch two
      * of the panel's corners and none of the other two. Rounding all four of the sidebar's corners leaves
      * two notches in the corner of the panel where the sidebar is not; rounding none of them leaves a
@@ -881,15 +883,23 @@ public final class ArmatureTheme {
      * <p>The shape equivalent of {@link #panel}, and the same argument applies: the border is the shape at
      * full size, inset by one on every side for the fill. Reversed, the fill covers the border entirely
      * and a node loses the state colour that tells you whether it can be started.
+     *
+     * <h2>The fill is the border's own table, transformed — not the same function at {@code size - 2}</h2>
+     *
+     * <p>That second sampling is what a node's outline used to break on. Nothing related the table at
+     * {@code size - 2} to the one at {@code size}, so wherever a size-dependent feature stepped — a
+     * gear's tooth count at 32 pixels, a rounded rectangle's integer radius every four, a tome's notch,
+     * the minimum width of a tip — the fill disagreed with the border: it covered the outline at one
+     * size and reached outside it at another, which is a node whose line does not close. The transform
+     * makes the fill a pixel inside the border by construction, at every size, for every shape, and for a
+     * turned node as much as an upright one. See {@link Outlines}.
      */
     public static void shapePanel(GuiRenderer renderer, int x, int y, int size, int fill, int border,
                                   Spans spans) {
         fillShape(renderer, x, y, size, border, spans);
         if (size > 2) {
-            // Inset by one, and drawn at `size - 2` -- because a shape is a function of (row, size), so
-            // the same method reference gives the smaller outline for free rather than needing a second
-            // lookup table.
-            fillShape(renderer, x + 1, y + 1, size - 2, fill, spans);
+            Shapes.SpansOf inner = Outlines.eroded(spans::spans, size, 1);
+            fillShape(renderer, x + 1, y + 1, size - 2, fill, inner::spansOf);
         }
     }
 }

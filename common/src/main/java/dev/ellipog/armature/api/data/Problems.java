@@ -8,7 +8,7 @@ import java.util.List;
  * Everything wrong with a set of data files, collected rather than thrown.
  *
  * <p>Collecting is the point. Stopping at the first error means an author fixes one typo per
- * reload, which on a questline of a hundred quests is an afternoon of reloading. Walking the whole
+ * reload, which on a data set of a hundred entries is an afternoon of reloading. Walking the whole
  * file and reporting every problem at once turns that into one pass.
  *
  * <p>Problems sort by file, then line, then column, so the output order matches the order a reader

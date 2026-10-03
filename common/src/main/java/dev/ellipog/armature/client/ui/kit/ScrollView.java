@@ -80,7 +80,7 @@ import java.util.Objects;
  * <h2>A widget with no slot is hidden, not left alone</h2>
  *
  * <p>Anything in {@link #children} that the current layout has no slot for is hidden during
- * {@link #apply}. That is what stops a control from a previous quest — Submit for a task that no
+ * {@link #apply}. That is what stops a control from a previous entry — Submit for a task that no
  * longer exists — from lingering on screen, invisible-but-clickable, because somebody forgot to remove
  * it. Adding a widget after the last {@code apply} leaves it hidden until the next one, which is the
  * safe direction for the same reason.
@@ -196,7 +196,7 @@ public final class ScrollView {
         return children.size();
     }
 
-    /** Forgets every widget and the layout. For a screen rebuilding itself for a different quest. */
+    /** Forgets every widget and the layout. For a screen rebuilding itself for a different entry. */
     public ScrollView clear() {
         children.clear();
         shapes.clear();
@@ -354,7 +354,7 @@ public final class ScrollView {
         for (Map.Entry<Object, AbstractWidget> entry : children.entrySet()) {
             if (!matched.contains(entry.getKey())) {
                 // Registered but not in this layout. Hidden rather than left as it was: see the class
-                // note on the control from a previous quest.
+                // note on the control from a previous entry.
                 entry.getValue().visible = false;
             }
         }

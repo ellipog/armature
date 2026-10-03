@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>Every theme here is a {@link ThemePatch} over {@code modern} rather than a hand-written full
  * palette, and that is the point rather than a convenience. It means the shipped set is itself proof
  * that the override mechanism is expressive enough for whatever a pack author will want — if fifteen
- * themes of four genuinely different characters can all be written as patches, then a quest file given
+ * themes of four genuinely different characters can all be written as patches, then a data file given
  * the same mechanism is not being offered a lesser version of it. Had the catalogue been full palettes
  * while patches were the "custom" path, the two would have diverged, and the divergence would only ever
  * show up as a file that could not do something a built-in could.

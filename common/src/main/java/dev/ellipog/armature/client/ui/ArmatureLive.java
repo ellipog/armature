@@ -13,7 +13,7 @@ import java.util.function.LongSupplier;
  * <h2>The problem this is the whole of</h2>
  *
  * <p>A screen is built once and its widgets are placed once, while the things it describes — a party's
- * members, a quest's progress, whether a reward is waiting — change underneath it. So each panel grew
+ * members, saved progress, whether a reward is waiting — change underneath it. So each panel grew
  * its own way of noticing: a revision field, a comparison in the frame loop, a rebuild. That is fine
  * for one panel and it is the same code written again for the second, and the third one is the one
  * somebody forgets — which arrives as <i>"I have to close and reopen it for the change to show"</i>,

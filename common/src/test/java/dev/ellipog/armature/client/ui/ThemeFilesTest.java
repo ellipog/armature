@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <h2>Every failure here is a warning and never fatal, and that is worth testing explicitly</h2>
  *
  * <p>This runs during client initialisation, where an exception is a launcher-level failure. A player
- * whose appearance directory has a typo in it should get the default appearance and their quests — so
+ * whose appearance directory has a typo in it should get the default appearance and their saved progress — so
  * every test below that supplies something broken asserts two things: that it was reported, and that
  * the client carries on with what it could read.
  *

@@ -24,8 +24,8 @@ import java.util.Set;
  * <ol>
  *   <li><b>A theme file</b> in {@code config/armature/themes/} — a full theme, but written as a diff
  *       against a built-in so it says only what it changes.</li>
- *   <li><b>A chapter</b> in a quest file, naming a theme and optionally a handful of colours.</li>
- *   <li><b>A single quest</b>, which may do the same on top of its chapter.</li>
+ *   <li><b>A group</b> in a data file, naming a theme and optionally a handful of colours.</li>
+ *   <li><b>A single entry</b>, which may do the same on top of its group.</li>
  *   <li><b>The editor</b>, which is a person changing one colour at a time and expecting the rest to
  *       stay put.</li>
  * </ol>
@@ -42,9 +42,9 @@ import java.util.Set;
  *   <li><b>{@link #applyTo}</b> is how a whole theme is made — a theme file, or one of the derived
  *       built-ins. It takes the name, the radius, the motion and the easing as well as the colours,
  *       because a theme is those things.</li>
- *   <li><b>{@link #tint}</b> is how a region is reskinned — a chapter, a quest. It takes colours only.
- *       A chapter that could change the corner radius of every panel in the book, or the duration of
- *       every transition, would be a quest file reaching into the screen's construction; and the
+ *   <li><b>{@link #tint}</b> is how a region is reskinned — a group, an entry. It takes colours only.
+ *       A group that could change the corner radius of every panel in the book, or the duration of
+ *       every transition, would be a data file reaching into the screen's construction; and the
  *       motion one would silently do nothing anyway, since animation timing is pushed to
  *       {@code Motion} once per client rather than per region. <b>A value that cannot take effect is
  *       worse than one that is refused</b> — this codebase has already shipped a shape field that was
@@ -94,7 +94,7 @@ public record ThemePatch(
      *
      * <ul>
      *   <li>{@code available}, {@code inProgress} and {@code complete} each carry their node border
-     *       along, because there is no reading of "this quest's node is available" in which the ring
+     *       along, because there is no reading of "this node is available" in which the ring
      *       should stay whatever the base theme's available colour was.</li>
      *   <li><b>{@code blocked} does not</b>, and that is a design decision rather than an oversight.
      *       {@code blocked} is the colour of the word "blocked"; {@code nodeEdgeBlocked} is the outline
@@ -121,7 +121,7 @@ public record ThemePatch(
         return new ThemePatch(name, colours, null, null, null);
     }
 
-    /** An unnamed patch of colours, for a chapter or a quest. */
+    /** An unnamed patch of colours, for a group or an entry. */
     public static ThemePatch colours(Map<String, Integer> colours) {
         return new ThemePatch(null, colours, null, null, null);
     }
@@ -213,8 +213,8 @@ public record ThemePatch(
     /**
      * This patch with another applied on top of it.
      *
-     * <p>The order is the whole point: {@code main.merge(chapter)} means the chapter wins, and
-     * {@code chapter.merge(quest)} means the quest wins. That is how the three levels compose without
+     * <p>The order is the whole point: {@code main.merge(group)} means the group wins, and
+     * {@code group.merge(entry)} means the entry wins. That is how the three levels compose without
      * any of them knowing about the others — see {@code Appearance}, which is the only thing that knows
      * the order.
      *

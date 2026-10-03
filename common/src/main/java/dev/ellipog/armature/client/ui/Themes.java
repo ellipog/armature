@@ -18,8 +18,8 @@ import java.util.Map;
  *
  * <h2>Every theme here is a patch, and that is the point rather than a convenience</h2>
  *
- * <p>The sixteen are written as {@link ThemePatch}es over a base, using the same mechanism a quest
- * file uses to reskin a chapter. Two things fall out of that, and the second is the one that matters:
+ * <p>The sixteen are written as {@link ThemePatch}es over a base, using the same mechanism a data
+ * file uses to reskin a group. Two things fall out of that, and the second is the one that matters:
  *
  * <ul>
  *   <li>A derived theme states only what it changes, so it reads as a description of its own character.
@@ -219,7 +219,7 @@ public final class Themes {
     // ------------------------------------------------------------------
 
     /**
-     * Named for the book the quest screen is, rather than the tool it is made of: a dark library.
+     * Named for the book the screen is, rather than the tool it is made of: a dark library.
      *
      * <p>Two values differ from {@link #MODERN} by more than a tint, and both are deliberate:
      *
@@ -999,7 +999,7 @@ public final class Themes {
      * <p>Null rather than a fallback, which is the opposite of {@code Shapes.byName} — and the difference
      * is who is asking. A shape name arrives from a payload, where there is nobody to tell and drawing
      * the default is obviously right. A theme name arrives from a <b>person's setting</b> — a control
-     * someone clicked, or a chapter an author typed into a quest file — and there the honest answer is
+     * someone clicked, or a group an author typed into a data file — and there the honest answer is
      * "no such theme" so the caller can say so and list the ones that exist. A fallback would report
      * success for a typo, and the player would see the appearance they already had while the log said
      * nothing at all.
@@ -1026,7 +1026,7 @@ public final class Themes {
      *
      * <p>The lookup everything outside this class should call. {@code ThemeFiles} owns the catalogue of
      * file-loaded themes, and consulting it here rather than at each call site means "a name resolves the
-     * same way everywhere" — a setting, a chapter, a quest and the editor all get the same answer, which
+     * same way everywhere" — a setting, a group, an entry and the editor all get the same answer, which
      * is the property that stops a theme being selectable from one place and not another.
      */
     public static Theme any(String name) {

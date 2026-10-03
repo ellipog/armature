@@ -26,7 +26,7 @@ import java.util.Objects;
  * <p>{@link #openScreen} opens a screen by id, and {@link #installScreenOpener} is how the
  * client half supplies the thing that actually does it. This indirection is the whole point:
  * an item is a common class, present on a dedicated server, and it must be able to say
- * "open the quest book" without the class it calls naming {@code net.minecraft.client}. So
+ * "open the book screen" without the class it calls naming {@code net.minecraft.client}. So
  * this class mentions no client type at all, and the real registry lives in
  * {@code dev.ellipog.armature.client.ArmatureScreens}, which only a client ever loads.
  *

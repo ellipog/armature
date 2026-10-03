@@ -12,7 +12,7 @@ import java.util.Objects;
  * <p><b>Blocks</b>: {@link Kind#PARAGRAPH} is prose, {@link Kind#HEADING} is a line that began with
  * {@code #}s, {@link Kind#BULLET} is a line that began with {@code - }, {@code * } or {@code + }. Blocks are
  * per <i>line</i>: a line break is a break, exactly as it always was. That is CommonMark's one rule this
- * file does not follow, and the reason is the files: quest descriptions are authored a line per array
+ * file does not follow, and the reason is the files: entry descriptions are authored a line per array
  * element, and joining lines into flowing paragraphs would re-wrap prose that authors hand-wrapped, all of
  * it at once and for no gain.
  *

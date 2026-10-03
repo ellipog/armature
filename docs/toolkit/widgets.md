@@ -63,7 +63,7 @@ Three things come with the base class:
 ## `ArmatureLive`: what a screen watches
 
 The problem this solves is small and universal: a screen is built once, while the things it describes
-— a party's members, a quest's progress, a reward waiting — change underneath it. Each panel that
+— a party's members, saved progress, a reward waiting — change underneath it. Each panel that
 grows its own "has anything changed" check is a panel that can forget one.
 
 So the data registers itself, once, where it lives:
@@ -85,5 +85,5 @@ is a comparison of a few numbers per frame.
 
 > [!TIP]
 > A rebuild does not throw the reader's place away: a `ScrollView`'s offset lives in the kit's own
-> object, and `apply` clamps it against the new layout rather than resetting it. A quest completing
-> under a scrolled-down reader redraws the row and leaves the column where it was.
+> object, and `apply` clamps it against the new layout rather than resetting it. A watched value
+> moving under a scrolled-down reader redraws the row and leaves the column where it was.

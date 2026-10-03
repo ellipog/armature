@@ -403,10 +403,10 @@ class TextFieldTest {
 
     @Test
     void scrollOffsetKeepsTheCaretInsideTheRoomAndNothingMore() {
-        // The report behind this: a chapter subtitle "Five quests, no tricks" was drawn as its own tail,
-        // "s quests, no tricks", because the offset was read from a caret that `setValue` parks at the
+        // The report behind this: a chapter subtitle "Five levels, no tricks" was drawn as its own tail,
+        // "s levels, no tricks", because the offset was read from a caret that `setValue` parks at the
         // end. The widget asks for this only while focused; this is the arithmetic it gets.
-        TextField field = TextField.of(64).setValue("Five quests, no tricks");
+        TextField field = TextField.of(64).setValue("Five levels, no tricks");
 
         assertEquals(0, field.scrollOffset(200, SIX_PX), "a value that fits is not scrolled");
         assertEquals(0, field.home().scrollOffset(88, SIX_PX), "the start is never scrolled");

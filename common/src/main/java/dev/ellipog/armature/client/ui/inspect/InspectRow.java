@@ -10,7 +10,7 @@ import java.util.Objects;
  * <p>A description of a panel's contents, the way a chapter list is a description of its rows: the
  * drawing and the input are the screen's, this is the part a test can hold. It knows nothing about what
  * the values mean -- a caller describes its own object one row at a time, and the same nine kinds have
- * now described colours and quests without either of them teaching this class a field name.
+ * now described colours and entries without either of them teaching this class a field name.
  *
  * <p>Not a widget, and not a value holder: {@link #value} is the text to <i>show</i>. A caller that
  * wants a row edited hands the field's strip to a text field of its own and commits on the field's
@@ -27,11 +27,11 @@ import java.util.Objects;
  * being the same thing in the voice that says something is wrong, which is what the fallback under an
  * unknown type asks for.
  *
- * <p>{@code STEPPER} was a kind here until the quest settings page stopped using rows: it described a
+ * <p>{@code STEPPER} was a kind here until the settings page stopped using rows: it described a
  * label with a stepped number in its strip, the dock never produced one, and a kind nothing draws is a
  * kind a reader has to check is unused before changing anything. The settings page's sliders and
- * steppers are its own, in {@code QuestSettingsLayout}, where the arithmetic that says where an arrow
- * is lives beside the drawing that reads it.
+ * steppers are its own, where the arithmetic that says where an arrow is lives beside the drawing
+ * that reads it.
  */
 public record InspectRow(String key, Kind kind, String label, String value) {
 

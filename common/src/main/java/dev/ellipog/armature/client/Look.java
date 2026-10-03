@@ -33,7 +33,7 @@ import java.util.Map;
  *   <li><b>The main theme</b> — this. How the <i>program</i> looks: the panel, the sidebar, the header,
  *       the title, every control, every tooltip. It is a setting, it persists, and it is what the chrome
  *       is drawn in. {@link #main()} is the answer.</li>
- *   <li><b>A content theme</b> — a chapter or a quest saying how <i>it</i> looks. That does not persist
+ *   <li><b>A content theme</b> — a group or an entry saying how <i>it</i> looks. That does not persist
  *       and is not a setting at all; it is a region drawn in someone else's colours, and it lives in
  *       {@code ArmatureTheme.scope}. This class does not know it exists.</li>
  * </ul>
@@ -565,7 +565,7 @@ public final class Look {
      *
      * <p>Because a library owns things and no choices. This class held a settings file and a theme
      * directory under its own name in the config folder, which meant two mods depending on it shared one
-     * player's one look -- a quest book in one theme and a panel in another was not expressible, and the
+     * player's one look -- a book screen in one theme and a panel in another was not expressible, and the
      * library had quietly become a framework with a settings screen. The paths belong to the mod that
      * draws now, each under its own directory, and this class is handed them.
      *

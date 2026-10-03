@@ -368,15 +368,15 @@ class ThemeTest {
     @Test
     @DisplayName("scopes nest, and the innermost one wins")
     void scopesNest() {
-        // A chapter sets the viewport's palette; a quest inside it may set its own; the detail overlay
+        // A group sets the viewport's palette; an entry inside it may set its own; the detail overlay
         // may set its own again. So this is a stack and not a field, which is what makes the feature
         // compose rather than being a special case at each level.
         ArmatureTheme.setCurrent(Themes.MODERN);
 
-        try (ArmatureTheme.Scope chapter = ArmatureTheme.scope(Themes.NETHER)) {
+        try (ArmatureTheme.Scope group = ArmatureTheme.scope(Themes.NETHER)) {
             assertSame(Themes.NETHER, ArmatureTheme.current());
 
-            try (ArmatureTheme.Scope quest = ArmatureTheme.scope(Themes.END)) {
+            try (ArmatureTheme.Scope entry = ArmatureTheme.scope(Themes.END)) {
                 assertSame(Themes.END, ArmatureTheme.current());
                 assertEquals(2, ArmatureTheme.scopeDepth());
             }

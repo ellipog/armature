@@ -453,8 +453,8 @@ public final class TextArea {
      *
      * <h2>Why the advance is here and not in the widget's loop</h2>
      *
-     * <p>Because the caller that needs a pitch of its own is drawing prose at a reader's -- the quest
-     * editor's description stands in for text the overlay laid out at {@code LINE_HEIGHT} a line with
+     * <p>Because the caller that needs a pitch of its own is drawing prose at a reader's -- the editor's
+     * description stands in for text the overlay laid out at {@code LINE_HEIGHT} a line with
      * {@code PARAGRAPH_GAP} between paragraphs -- and a line drawn one pixel or one gap away from where
      * the reader draws it moves every time the field is clicked. The arithmetic is geometry, so it is
      * asserted without a client, and the widget only adds pixels.
