@@ -15,19 +15,24 @@ import java.util.Optional;
  * <p>The page is a header strip, then a heading and the task rows, then a gap and a heading and the
  * reward rows. The headings exist because a reward row and a task row can look identical — the same
  * item, the same count — and a player who read a reward as something to hand in would be misled by
- * the page itself.
+ * the page itself. Each row's item sits in an 18-pixel slot inset, the same one a container slot
+ * draws, so an icon reads as an item rather than as a picture.
  *
  * <p>The width is the adapter's: EMI's default layout wants 134, JEI and REI are told their own.
  */
 public final class QuestPageLayout {
 
-    public static final int HEADER_HEIGHT = 18;
+    /** The header: the quest's icon and title on one line, its status badge on the next. */
+    public static final int HEADER_HEIGHT = 26;
     /** A section's label strip, drawn only when that section has rows. */
     public static final int HEADING_HEIGHT = 10;
     public static final int ROW_HEIGHT = 18;
-    public static final int ICON = 16;
-    public static final int ICON_X = 2;
-    public static final int TEXT_X = ICON_X + ICON + 4;
+    /** The slot inset around a row's item: vanilla's container-slot size. */
+    public static final int SLOT = 18;
+    /** An item inside its slot, inset by the slot's own edge. */
+    public static final int ITEM = 16;
+    public static final int SLOT_X = 1;
+    public static final int TEXT_X = SLOT_X + SLOT + 4;
     public static final int BAR_HEIGHT = 3;
     /** The bar's top edge, measured from the row's top: under the label, inside the row. */
     public static final int BAR_Y = 13;
@@ -111,9 +116,29 @@ public final class QuestPageLayout {
         return new Box(0, heading.y() + HEADING_HEIGHT + index * ROW_HEIGHT, width, ROW_HEIGHT);
     }
 
-    /** The item's 16-pixel square at the left of a row. */
+    /** The quest's icon in the header. */
+    public Box headerIcon() {
+        return new Box(SLOT_X, 5, ITEM, ITEM);
+    }
+
+    /** The title's line in the header. */
+    public Box headerTitle() {
+        return new Box(TEXT_X, 2, Math.max(1, width - TEXT_X - MARGIN), 9);
+    }
+
+    /** The badge's line in the header, where the status pill goes. */
+    public Box headerBadge() {
+        return new Box(TEXT_X, 13, Math.max(1, width - TEXT_X - MARGIN), 10);
+    }
+
+    /** The slot inset at the left of a row: what the item sits in. */
     public Box icon(Box row) {
-        return new Box(ICON_X, row.y() + 1, ICON, ICON);
+        return new Box(SLOT_X, row.y(), SLOT, SLOT);
+    }
+
+    /** The item itself, inset inside its slot. */
+    public Box item(Box row) {
+        return new Box(SLOT_X + 1, row.y() + 1, ITEM, ITEM);
     }
 
     /** The label's column: everything right of the icon, inset by the margin. */

@@ -26,9 +26,12 @@ import java.util.Optional;
  * {@link QuestContent#liveTask} and {@link QuestContent#liveReward} expect. A page's rows are the
  * item-referencing subset of that list, so a page index is <i>not</i> a source index, and an adapter
  * that asked for live numbers by page position would read the wrong row (or none).
+ *
+ * <p>{@code claimable} is a reward's "ready to collect" — finished quest, conditions met, not yet
+ * claimed. It is false on every task row, which has progress instead.
  */
 public record QuestRow(ItemStack icon, String label, int have, int need, boolean done, boolean locked,
-                       String tagId, int sourceIndex) {
+                       boolean claimable, String tagId, int sourceIndex) {
 
     public QuestRow {
         if (icon == null) {
@@ -43,12 +46,18 @@ public record QuestRow(ItemStack icon, String label, int have, int need, boolean
     }
 
     /**
-     * A row from a source list whose index it does not carry — the blank reads and the two adapters
-     * that build a row by hand.
+     * A row from a source list whose index it does not carry, with nothing to claim — the blank reads
+     * and the two adapters that build a row by hand.
      */
     public QuestRow(ItemStack icon, String label, int have, int need, boolean done, boolean locked,
                     String tagId) {
-        this(icon, label, have, need, done, locked, tagId, 0);
+        this(icon, label, have, need, done, locked, false, tagId, 0);
+    }
+
+    /** The same, keeping a source index and still claiming nothing: snapshot rows. */
+    public QuestRow(ItemStack icon, String label, int have, int need, boolean done, boolean locked,
+                    String tagId, int sourceIndex) {
+        this(icon, label, have, need, done, locked, false, tagId, sourceIndex);
     }
 
     /** True when this row names an item tag rather than a concrete stack. */
@@ -68,6 +77,6 @@ public record QuestRow(ItemStack icon, String label, int have, int need, boolean
 
     /** A copy with the live numbers, for {@link QuestContent}'s live calls to build cheaply. */
     public QuestRow withProgress(int have, boolean done, boolean locked) {
-        return new QuestRow(icon, label, have, need, done, locked, tagId, sourceIndex);
+        return new QuestRow(icon, label, have, need, done, locked, claimable, tagId, sourceIndex);
     }
 }

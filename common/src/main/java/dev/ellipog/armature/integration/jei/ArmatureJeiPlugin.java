@@ -1,10 +1,11 @@
 package dev.ellipog.armature.integration.jei;
 
 import dev.ellipog.armature.Constants;
-import dev.ellipog.armature.client.ArmatureTheme;
 import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
 import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.integration.Integrations;
+import dev.ellipog.armature.integration.PageArt;
+import dev.ellipog.armature.integration.PagePalette;
 import dev.ellipog.armature.integration.QuestContent;
 import dev.ellipog.armature.integration.QuestPage;
 import dev.ellipog.armature.integration.QuestPageLayout;
@@ -212,55 +213,84 @@ public final class ArmatureJeiPlugin implements IModPlugin {
             GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
 
             QuestPageLayout.Box header = layout.header();
-            int textWidth = header.width() - QuestPageLayout.TEXT_X - 2;
-            renderer.text(fit(renderer, page.quest().title(), textWidth),
-                    QuestPageLayout.TEXT_X, header.y() + 1, ArmatureTheme.title());
-            renderer.text(fit(renderer, content.stateText(page.quest().id()), textWidth),
-                    QuestPageLayout.TEXT_X, header.y() + 10, ArmatureTheme.faint());
+            if (header.contains((int) mouseX, (int) mouseY)) {
+                // The whole strip is the click target, and the wash is what says so.
+                renderer.fill(header.x(), header.y(), header.right(), header.bottom(), PagePalette.HOVER);
+            }
+            QuestPageLayout.Box title = layout.headerTitle();
+            renderer.text(PageArt.fit(renderer, page.quest().title(), title.width()),
+                    title.x(), title.y(), PagePalette.TEXT);
+            QuestPageLayout.Box badge = layout.headerBadge();
+            PageArt.pill(renderer,
+                    PageArt.fit(renderer, content.stateText(page.quest().id()), badge.width()),
+                    badge.x(), badge.y(), content.stateColour(page.quest().id()));
 
             if (!page.tasks().isEmpty()) {
                 QuestPageLayout.Box heading = layout.tasksHeading(page);
-                renderer.text(content.tasksLabel().getString(), heading.x() + QuestPageLayout.ICON_X,
-                        heading.y() + 1, ArmatureTheme.heading());
+                renderer.text(content.tasksLabel().getString(), heading.x() + QuestPageLayout.SLOT_X,
+                        heading.y() + 1, PagePalette.MUTED);
             }
             for (int i = 0; i < page.tasks().size(); i++) {
                 drawRow(renderer, layout.taskRow(i),
-                        content.liveTask(page.quest().id(), page.tasks().get(i).sourceIndex()));
+                        content.liveTask(page.quest().id(), page.tasks().get(i).sourceIndex()), true);
             }
             if (!page.rewards().isEmpty()) {
                 QuestPageLayout.Box heading = layout.rewardsHeading(page);
-                renderer.text(content.rewardsLabel().getString(), heading.x() + QuestPageLayout.ICON_X,
-                        heading.y() + 1, ArmatureTheme.heading());
+                renderer.text(content.rewardsLabel().getString(), heading.x() + QuestPageLayout.SLOT_X,
+                        heading.y() + 1, PagePalette.MUTED);
             }
             for (int i = 0; i < page.rewards().size(); i++) {
                 drawRow(renderer, layout.rewardRow(page, i),
-                        content.liveReward(page.quest().id(), page.rewards().get(i).sourceIndex()));
+                        content.liveReward(page.quest().id(), page.rewards().get(i).sourceIndex()),
+                        false);
             }
         }
 
-        private void drawRow(GuiRenderer renderer, QuestPageLayout.Box row, QuestRow live) {
+        private void drawRow(GuiRenderer renderer, QuestPageLayout.Box row, QuestRow live,
+                             boolean task) {
             QuestPageLayout.Box text = layout.text(row);
-            int colour = live.locked() ? ArmatureTheme.blocked()
-                    : live.done() ? ArmatureTheme.complete()
-                    : ArmatureTheme.body();
+            int colour = live.locked() ? PagePalette.LOCKED
+                    : live.done() ? (task ? PagePalette.COMPLETE : PagePalette.MUTED)
+                    : PagePalette.TEXT;
+            if (!task) {
+                drawRewardStatus(renderer, row, text, live, colour);
+                return;
+            }
             String count = live.need() > 0 ? Math.min(live.have(), live.need()) + " / " + live.need() : "";
             int countWidth = count.isEmpty() ? 0 : renderer.textWidth(count) + 4;
-            renderer.text(fit(renderer, live.label(), text.width() - countWidth),
+            renderer.text(PageArt.fit(renderer, live.label(), text.width() - countWidth),
                     text.x(), text.y(), colour);
             if (!count.isEmpty()) {
                 renderer.text(count, text.right() - renderer.textWidth(count), text.y(),
-                        ArmatureTheme.faint());
+                        PagePalette.MUTED);
             }
             if (live.need() > 0) {
                 QuestPageLayout.Box bar = layout.bar(row);
-                renderer.fill(bar.x(), bar.y(), bar.right(), bar.bottom(), ArmatureTheme.recessed());
+                renderer.fill(bar.x(), bar.y(), bar.right(), bar.bottom(), PagePalette.BAR_TRACK);
                 int filled = (int) Math.round(bar.width()
                         * Math.min(1.0, live.have() / (double) live.need()));
                 if (filled > 0) {
                     renderer.fill(bar.x(), bar.y(), bar.x() + filled, bar.bottom(),
-                            live.done() ? ArmatureTheme.complete() : ArmatureTheme.inProgress());
+                            live.done() ? PagePalette.COMPLETE : PagePalette.PROGRESS);
                 }
             }
+        }
+
+        /** A reward's label and status pill, never a bar; see the EMI adapter for the reason. */
+        private void drawRewardStatus(GuiRenderer renderer, QuestPageLayout.Box row,
+                                      QuestPageLayout.Box text, QuestRow live, int colour) {
+            QuestContent.RewardStatus status = PageArt.rewardStatus(live);
+            if (status == null) {
+                renderer.text(PageArt.fit(renderer, live.label(), text.width()),
+                        text.x(), text.y(), colour);
+                return;
+            }
+            String word = content.rewardStatusLabel(status).getString();
+            int width = PageArt.pillWidth(renderer, word);
+            renderer.text(PageArt.fit(renderer, live.label(), text.width() - width - 4),
+                    text.x(), text.y(), colour);
+            PageArt.pill(renderer, word, text.right() - width, row.y() + 4,
+                    PageArt.rewardStatusColour(status));
         }
 
         @Override
@@ -363,17 +393,5 @@ public final class ArmatureJeiPlugin implements IModPlugin {
             }
             return out;
         }
-    }
-
-    /** The same width-aware trim the EMI page uses; ASCII ellipsis for the measured font. */
-    private static String fit(GuiRenderer renderer, String text, int width) {
-        if (width <= 0 || renderer.textWidth(text) <= width) {
-            return width <= 0 ? "" : text;
-        }
-        String cut = text;
-        while (!cut.isEmpty() && renderer.textWidth(cut + "...") > width) {
-            cut = cut.substring(0, cut.length() - 1);
-        }
-        return cut.isEmpty() ? "" : cut + "...";
     }
 }

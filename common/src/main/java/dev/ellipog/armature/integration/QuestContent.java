@@ -55,6 +55,27 @@ public interface QuestContent {
     /** The quest's state, already in the player's language. Client thread only. */
     String stateText(String questId);
 
+    /** The colour that state is drawn in. From the content, because only it knows its own states. */
+    int stateColour(String questId);
+
+    /**
+     * A reward's standing, so an adapter can draw a status instead of a progress bar.
+     *
+     * <p>A reward with a bar reads as a task the player still owes; the two rows carry the same icon
+     * and count, so the page has to say which is which.
+     */
+    enum RewardStatus {
+        /** Finished quest, conditions met, nothing collected yet. */
+        READY,
+        /** A condition or a prerequisite holds it shut. */
+        LOCKED,
+        /** Already collected by this player. */
+        CLAIMED
+    }
+
+    /** The word for a reward status, in the player's language. */
+    Component rewardStatusLabel(RewardStatus status);
+
     /** Open the book on this quest. Client thread only; a no-op for an id that is gone. */
     void openQuest(String questId);
 

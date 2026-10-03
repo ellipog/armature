@@ -1,9 +1,10 @@
 package dev.ellipog.armature.integration.rei;
 
-import dev.ellipog.armature.client.ArmatureTheme;
 import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
 import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.integration.Integrations;
+import dev.ellipog.armature.integration.PageArt;
+import dev.ellipog.armature.integration.PagePalette;
 import dev.ellipog.armature.integration.QuestContent;
 import dev.ellipog.armature.integration.QuestPage;
 import dev.ellipog.armature.integration.QuestPageLayout;
@@ -229,19 +230,23 @@ public final class ArmatureReiPlugin implements REIClientPlugin {
             List<Widget> widgets = new ArrayList<>();
             QuestPage page = display.page();
 
-            QuestPageLayout.Box header = shift(layout.header(), bounds);
+            QuestPageLayout.Box title = shift(layout.headerTitle(), bounds);
             widgets.add(Widgets.createButton(
-                            new Rectangle(header.x(), header.y(), header.width(), header.height()),
+                            new Rectangle(title.x() - 2, title.y() - 1, title.width() + 2, 12),
                             Component.literal(page.quest().title()))
                     .onClick(button -> content.openQuest(page.quest().id()))
                     .tooltipLine(Component.translatable("armature.integration.open")));
+            QuestPageLayout.Box badge = shift(layout.headerBadge(), bounds);
+            widgets.add(Widgets.createLabel(new Point(badge.x(), badge.y()),
+                            Component.literal(content.stateText(page.quest().id())))
+                    .color(content.stateColour(page.quest().id())).leftAligned().noShadow());
 
             if (!page.tasks().isEmpty()) {
                 QuestPageLayout.Box heading = shift(layout.tasksHeading(page), bounds);
                 widgets.add(Widgets.createLabel(
-                                new Point(heading.x() + QuestPageLayout.ICON_X, heading.y() + 1),
+                                new Point(heading.x() + QuestPageLayout.SLOT_X, heading.y() + 1),
                                 content.tasksLabel())
-                        .color(ArmatureTheme.heading()).leftAligned().noShadow());
+                        .color(PagePalette.MUTED).leftAligned().noShadow());
             }
             for (int i = 0; i < page.tasks().size(); i++) {
                 QuestPageLayout.Box row = shift(layout.taskRow(i), bounds);
@@ -252,9 +257,9 @@ public final class ArmatureReiPlugin implements REIClientPlugin {
             if (!page.rewards().isEmpty()) {
                 QuestPageLayout.Box heading = shift(layout.rewardsHeading(page), bounds);
                 widgets.add(Widgets.createLabel(
-                                new Point(heading.x() + QuestPageLayout.ICON_X, heading.y() + 1),
+                                new Point(heading.x() + QuestPageLayout.SLOT_X, heading.y() + 1),
                                 content.rewardsLabel())
-                        .color(ArmatureTheme.heading()).leftAligned().noShadow());
+                        .color(PagePalette.MUTED).leftAligned().noShadow());
             }
             for (int i = 0; i < page.rewards().size(); i++) {
                 QuestPageLayout.Box row = shift(layout.rewardRow(page, i), bounds);
@@ -343,27 +348,55 @@ public final class ArmatureReiPlugin implements REIClientPlugin {
             QuestRow live = task ? content.liveTask(questId, index) : content.liveReward(questId, index);
 
             QuestPageLayout.Box text = layout.text(row);
-            int colour = live.locked() ? ArmatureTheme.blocked()
-                    : live.done() ? ArmatureTheme.complete()
-                    : ArmatureTheme.body();
+            if (task) {
+                drawTaskRow(renderer, live, text);
+            }
+            else {
+                drawRewardRow(renderer, live, text);
+            }
+        }
+
+        private void drawTaskRow(GuiRenderer renderer, QuestRow live, QuestPageLayout.Box text) {
+            int colour = live.locked() ? PagePalette.LOCKED
+                    : live.done() ? PagePalette.COMPLETE
+                    : PagePalette.TEXT;
             String count = live.need() > 0 ? Math.min(live.have(), live.need()) + " / " + live.need() : "";
             int countWidth = count.isEmpty() ? 0 : renderer.textWidth(count) + 4;
-            renderer.text(fit(renderer, live.label(), text.width() - countWidth),
+            renderer.text(PageArt.fit(renderer, live.label(), text.width() - countWidth),
                     text.x(), text.y(), colour);
             if (!count.isEmpty()) {
                 renderer.text(count, text.right() - renderer.textWidth(count), text.y(),
-                        ArmatureTheme.faint());
+                        PagePalette.MUTED);
             }
             if (live.need() > 0) {
                 QuestPageLayout.Box bar = layout.bar(row);
-                renderer.fill(bar.x(), bar.y(), bar.right(), bar.bottom(), ArmatureTheme.recessed());
+                renderer.fill(bar.x(), bar.y(), bar.right(), bar.bottom(), PagePalette.BAR_TRACK);
                 int filled = (int) Math.round(bar.width()
                         * Math.min(1.0, live.have() / (double) live.need()));
                 if (filled > 0) {
                     renderer.fill(bar.x(), bar.y(), bar.x() + filled, bar.bottom(),
-                            live.done() ? ArmatureTheme.complete() : ArmatureTheme.inProgress());
+                            live.done() ? PagePalette.COMPLETE : PagePalette.PROGRESS);
                 }
             }
+        }
+
+        /** A reward's label and status pill, never a bar; see the EMI adapter for the reason. */
+        private void drawRewardRow(GuiRenderer renderer, QuestRow live, QuestPageLayout.Box text) {
+            int colour = live.locked() ? PagePalette.LOCKED
+                    : live.done() ? PagePalette.MUTED
+                    : PagePalette.TEXT;
+            QuestContent.RewardStatus status = PageArt.rewardStatus(live);
+            if (status == null) {
+                renderer.text(PageArt.fit(renderer, live.label(), text.width()),
+                        text.x(), text.y(), colour);
+                return;
+            }
+            String word = content.rewardStatusLabel(status).getString();
+            int width = PageArt.pillWidth(renderer, word);
+            renderer.text(PageArt.fit(renderer, live.label(), text.width() - width - 4),
+                    text.x(), text.y(), colour);
+            PageArt.pill(renderer, word, text.right() - width, row.y() + 4,
+                    PageArt.rewardStatusColour(status));
         }
     }
 
@@ -437,17 +470,5 @@ public final class ArmatureReiPlugin implements REIClientPlugin {
                     ? BuiltInRegistries.ITEM.getKey(stack.getItem())
                     : null;
         }
-    }
-
-    /** The same width-aware trim the other adapters use; ASCII ellipsis for the measured font. */
-    private static String fit(GuiRenderer renderer, String text, int width) {
-        if (width <= 0 || renderer.textWidth(text) <= width) {
-            return width <= 0 ? "" : text;
-        }
-        String cut = text;
-        while (!cut.isEmpty() && renderer.textWidth(cut + "...") > width) {
-            cut = cut.substring(0, cut.length() - 1);
-        }
-        return cut.isEmpty() ? "" : cut + "...";
     }
 }
