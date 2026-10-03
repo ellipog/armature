@@ -19,6 +19,9 @@
         ],
         "emi": [
             "dev.ellipog.armature.integration.emi.ArmatureEmiPlugin"
+        ],
+        "jei_mod_plugin": [
+            "dev.ellipog.armature.integration.jei.ArmatureJeiPlugin"
         ]
     },
     "depends": {
