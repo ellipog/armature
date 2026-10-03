@@ -316,17 +316,11 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             return new dev.emi.emi.api.widget.Bounds(box.x(), box.y(), box.width(), box.height());
         }
 
-        /** The pin's drawn square: the star itself, in the header's top-right corner. */
-        private QuestPageLayout.Box pin() {
-            int size = PageArt.starSize();
-            return new QuestPageLayout.Box(layout.width() - size - 4, 3, size, size);
-        }
-
         @Override
         public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
             GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
             QuestPageLayout.Box box = layout.header();
-            QuestPageLayout.Box pin = pin();
+            QuestPageLayout.Box pin = layout.pin();
             if (box.contains(mouseX, mouseY)) {
                 // The whole strip is the click target, and the wash is what says so -- except over
                 // the pin, which has its own.
@@ -357,14 +351,12 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
                 renderer.fill(pin.x() - 1, pin.y() - 1, pin.right() + 1, pin.bottom() + 1,
                         PagePalette.HOVER);
             }
-            boolean pinned = isPinned();
-            PageArt.star(renderer, pin.x(), pin.y(),
-                    pinned ? PagePalette.PIN_ACTIVE : PagePalette.PIN_IDLE, pinned);
+            PageArt.star(renderer, pin.x(), pin.y(), isPinned(), pin.contains(mouseX, mouseY));
         }
 
         @Override
         public List<ClientTooltipComponent> getTooltip(int mouseX, int mouseY) {
-            Component line = pin().contains(mouseX, mouseY)
+            Component line = layout.pin().contains(mouseX, mouseY)
                     ? Component.translatable(isPinned()
                             ? "armature.integration.unpin" : "armature.integration.pin")
                     : Component.translatable("armature.integration.open");
@@ -376,7 +368,7 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             if (button != 0) {
                 return false;
             }
-            if (pin().contains(mouseX, mouseY)) {
+            if (layout.pin().contains(mouseX, mouseY)) {
                 togglePin();
                 return true;
             }
@@ -403,24 +395,29 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
         }
 
         /**
-         * Pins or unpins the quest, then asks EMI to rebuild its favourites panel.
+         * Pins or unpins the quest, then asks EMI to redraw its favourites panel.
          *
-         * <p>The same pair EMI's own favourite path uses — {@code addFavorite} then
-         * {@code repopulatePanels} — because adding alone leaves the sidebar showing its old list.
-         * Adding is idempotent (EMI early-returns on the same stack and recipe), so the star is the
-         * only way to remove: EMI's own A key only ever adds.
+         * <p><b>The removal passes the {@code EmiFavorite} itself, and that is load-bearing.</b>
+         * EMI's {@code removeFavorite} matches a recipe-bound favourite by identity against the
+         * recipe it reads off the argument, and only an {@code EmiFavorite} carries one -- the inner
+         * stack a caller might reasonably pass compares as recipe-less and matches nothing, silently.
+         * That was this toggle's first version, and the star simply did nothing. It also does not
+         * save, unlike {@code addFavorite}, so the removal is persisted here or a restart restores
+         * the pin. EMI's own A-key path is add-only; the star is the removal.
          */
         private void togglePin() {
-            dev.emi.emi.runtime.EmiFavorite existing = null;
+            List<dev.emi.emi.runtime.EmiFavorite> pinned = new ArrayList<>();
             for (dev.emi.emi.runtime.EmiFavorite favourite : dev.emi.emi.runtime.EmiFavorites.favorites) {
                 if (favourite.getRecipe() != null
                         && recipe.getId().equals(favourite.getRecipe().getId())) {
-                    existing = favourite;
-                    break;
+                    pinned.add(favourite);
                 }
             }
-            if (existing != null) {
-                dev.emi.emi.runtime.EmiFavorites.removeFavorite(existing.getStack());
+            if (!pinned.isEmpty()) {
+                for (dev.emi.emi.runtime.EmiFavorite favourite : pinned) {
+                    dev.emi.emi.runtime.EmiFavorites.removeFavorite(favourite);
+                }
+                dev.emi.emi.runtime.EmiPersistentData.save();
             }
             else if (!recipe.getOutputs().isEmpty()) {
                 dev.emi.emi.runtime.EmiFavorites.addFavorite(recipe.getOutputs().get(0), recipe);

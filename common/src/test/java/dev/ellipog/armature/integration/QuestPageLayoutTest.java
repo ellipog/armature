@@ -170,6 +170,27 @@ class QuestPageLayoutTest {
     }
 
     @Test
+    @DisplayName("the pin owns the header's top-right, and the text columns end before it")
+    void thePinOwnsTheHeadersTopRight() {
+        QuestPageLayout layout = new QuestPageLayout(134);
+
+        QuestPageLayout.Box pin = layout.pin();
+        assertTrue(layout.header().contains(pin.x(), pin.y()),
+                "the pin starts inside the header: " + pin);
+        assertTrue(layout.header().contains(pin.right() - 1, pin.bottom() - 1),
+                "and ends inside it: " + pin);
+        assertEquals(QuestPageLayout.PIN_SIZE, pin.width());
+        assertEquals(pin.width(), pin.height(), "the button is square");
+        assertEquals(PageArt.starSize(), pin.width(),
+                "the layout reserves exactly the star's square, so the drawn star is the click box");
+
+        assertTrue(layout.headerTitle().right() <= pin.x() - QuestPageLayout.PIN_GUTTER,
+                "the title cannot run under the button");
+        assertTrue(layout.headerBadge().right() <= pin.x() - QuestPageLayout.PIN_GUTTER,
+                "and neither can the badge");
+    }
+
+    @Test
     @DisplayName("a page narrower than its own text column is a caller bug and is refused")
     void tooNarrowIsRefused() {
         assertThrows(IllegalArgumentException.class,

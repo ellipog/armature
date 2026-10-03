@@ -93,24 +93,45 @@ class PageArtTest {
     }
 
     @Test
-    @DisplayName("a pinned star is solid and an idle one is the same star's outline")
-    void theStarIsSolidWhenPinnedAndHollowWhenNot() {
+    @DisplayName("both pin states draw one star: the same ring, the hollow one empty inside")
+    void theStarSharesOneRingInBothStates() {
         RecordingRenderer pinned = RecordingRenderer.create();
-        PageArt.star(pinned, 100, 50, PagePalette.PIN_ACTIVE, true);
-        RecordingRenderer idle = RecordingRenderer.create();
-        PageArt.star(idle, 100, 50, PagePalette.PIN_IDLE, false);
+        PageArt.star(pinned, 100, 50, true, false);
+        RecordingRenderer hollow = RecordingRenderer.create();
+        PageArt.star(hollow, 100, 50, false, false);
 
-        assertEquals(11, PageArt.starSize());
-        assertTrue(covers(pinned, 105, 55), "the solid star covers its interior");
-        assertFalse(covers(idle, 105, 55), "the hollow one does not -- that is what hollow means");
-        assertTrue(covers(idle, 105, 50), "but it still draws the shape's edge at the top point");
-        assertTrue(pinned.fills().stream().allMatch(call -> call.argb() == PagePalette.PIN_ACTIVE));
-        assertTrue(idle.fills().stream().allMatch(call -> call.argb() == PagePalette.PIN_IDLE));
+        assertEquals(16, PageArt.starSize());
+        assertEquals(QuestPageLayout.PIN_SIZE, PageArt.starSize(),
+                "the button the layout reserves is this star's size");
+
+        // Every hollow pixel is a filled one, drawn in the hollow colour: one outline, not two.
+        for (int row = 0; row < PageArt.starSize(); row++) {
+            for (int col = 0; col < PageArt.starSize(); col++) {
+                if (hollow.covered(100 + col, 50 + row)) {
+                    assertTrue(pinned.covered(100 + col, 50 + row),
+                            "hollow pixel " + col + "," + row + " is missing from the filled star");
+                    assertEquals(PagePalette.PIN_HOLLOW, colourAt(hollow, 100 + col, 50 + row));
+                }
+            }
+        }
+        // And the filled star has a middle the hollow one leaves to the card.
+        assertTrue(pinned.covered(108, 57), "the filled star covers its interior");
+        assertFalse(hollow.covered(108, 57), "the hollow star is empty there");
+        assertEquals(PagePalette.PIN_OUTLINE, colourAt(pinned, 108, 50),
+                "the top tip is drawn as the ring");
+        assertEquals(PagePalette.PIN_BODY, colourAt(pinned, 108, 57),
+                "and the middle is drawn as the body");
+
+        RecordingRenderer hovered = RecordingRenderer.create();
+        PageArt.star(hovered, 100, 50, false, true);
+        assertTrue(hovered.fills().stream().allMatch(call -> call.argb() == PagePalette.PIN_HOLLOW_HOVER),
+                "hover lightens the ring");
     }
 
-    /** Whether any recorded fill covers a pixel. */
-    private static boolean covers(RecordingRenderer renderer, int px, int py) {
-        return renderer.fills().stream().anyMatch(call -> call.covers(px, py));
+    /** The colour of the fill covering a pixel, or 0 when nothing covers it. */
+    private static int colourAt(RecordingRenderer renderer, int px, int py) {
+        return renderer.fills().stream().filter(call -> call.covers(px, py))
+                .mapToInt(RecordingRenderer.Call::argb).findFirst().orElse(0);
     }
 
     @Test

@@ -38,6 +38,12 @@ public final class QuestPageLayout {
     public static final int BAR_Y = 13;
     /** The space between the last task row and the reward heading, only when both exist. */
     public static final int SECTION_GAP = 4;
+    /** The pin button's square in the header's top-right: the star's size, and its click box. */
+    public static final int PIN_SIZE = 16;
+    /** The pin's margin from the header's top and right edges. */
+    public static final int PIN_MARGIN = 4;
+    /** Clear space between the text column and the pin's column. */
+    public static final int PIN_GUTTER = 3;
     private static final int MARGIN = 2;
 
     /** A rectangle. Deliberately not a toolkit type: this class must stay drawable-API-free. */
@@ -121,14 +127,27 @@ public final class QuestPageLayout {
         return new Box(SLOT_X, 5, ITEM, ITEM);
     }
 
+    /**
+     * The pin button: where the star is drawn and the only place on the header it takes clicks.
+     * The title and the badge end before this column, so nothing ever draws under the button.
+     */
+    public Box pin() {
+        return new Box(width - PIN_SIZE - PIN_MARGIN, PIN_MARGIN, PIN_SIZE, PIN_SIZE);
+    }
+
     /** The title's line in the header. */
     public Box headerTitle() {
-        return new Box(TEXT_X, 2, Math.max(1, width - TEXT_X - MARGIN), 9);
+        return new Box(TEXT_X, 2, textWidth(), 9);
     }
 
     /** The badge's line in the header, where the status pill goes. */
     public Box headerBadge() {
-        return new Box(TEXT_X, 13, Math.max(1, width - TEXT_X - MARGIN), 10);
+        return new Box(TEXT_X, 13, textWidth(), 10);
+    }
+
+    /** The text column's width: up to the pin's gutter, so the button has the right edge alone. */
+    private int textWidth() {
+        return Math.max(1, width - TEXT_X - PIN_SIZE - PIN_MARGIN - PIN_GUTTER);
     }
 
     /** The slot inset at the left of a row: what the item sits in. */

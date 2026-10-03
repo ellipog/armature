@@ -88,56 +88,81 @@ public final class PageArt {
     // ------------------------------------------------------------------
 
     /**
-     * An 11-pixel star, one character a pixel.
+     * The star both pin states draw from: a 16-pixel five-point star, one character a pixel.
      *
-     * <p>Drawn by us rather than taken from a texture: a viewer's own favourite icon is exactly the
-     * kind of internal detail this seam exists to keep in one file, and a guessed atlas coordinate
-     * would be a silent wrong sprite instead of a compile error.
+     * <p><b>One mask, and that is the point.</b> The hollow state is this shape's outline ring and
+     * nothing else, computed from the same characters the filled state fills, so the two states
+     * cannot be two slightly different stars — which is exactly what an earlier draft was, when the
+     * hollow state was traced as a shape of its own. Drawn by us rather than taken from a viewer's
+     * atlas: a guessed sprite coordinate would be a silent wrong picture instead of a compile error,
+     * and no viewer ships a fill/outline pair to borrow anyway.
      */
     private static final String[] STAR = {
-            "     #     ",
-            "    ###    ",
-            "    ###    ",
-            "###########",
-            " ######### ",
-            "  #######  ",
-            "   #####   ",
-            "  ##   ##  ",
-            " ##     ## ",
-            ".#       #.",
-            "#         #",
+            ".......##.......",
+            ".......##.......",
+            "......####......",
+            "......####......",
+            ".....######.....",
+            "..############..",
+            "################",
+            ".##############.",
+            "..############..",
+            "...##########...",
+            "....########....",
+            "...####..####...",
+            "..####....####..",
+            "..###......###..",
+            ".##..........##.",
+            "##............##",
     };
 
-    /** The star's drawn size in pixels. */
+    /** The star's drawn size in pixels -- and so the pin button's, which the layout reserves. */
     public static int starSize() {
         return STAR.length;
     }
 
     /**
-     * Draws the star: solid when pinned, its outline when not.
-     *
-     * <p>"Hollow" is computed from the mask — a pixel is on the outline when one of its four
-     * neighbours is not part of the shape — so the two states are guaranteed to be the same star.
+     * Draws the pin star: filled is a gold body inside a dark ring, hollow is that same ring in
+     * grey with the middle left empty. Hover lightens whichever of the two is showing.
      */
-    public static void star(GuiRenderer renderer, int x, int y, int colour, boolean filled) {
+    public static void star(GuiRenderer renderer, int x, int y, boolean pinned, boolean hovered) {
         for (int row = 0; row < STAR.length; row++) {
             String line = STAR[row];
-            int runStart = -1;
-            for (int col = 0; col <= line.length(); col++) {
-                boolean draw = col < line.length()
-                        && (filled || isOutline(row, col))
-                        && line.charAt(col) == '#';
-                if (draw && runStart < 0) {
-                    runStart = col;
+            int col = 0;
+            while (col < line.length()) {
+                int colour = colourAt(row, col, pinned, hovered);
+                if (colour == 0) {
+                    col++;
+                    continue;
                 }
-                if (!draw && runStart >= 0) {
-                    renderer.fill(x + runStart, y + row, x + col, y + row + 1, colour);
-                    runStart = -1;
+                int end = col + 1;
+                while (end < line.length() && colourAt(row, end, pinned, hovered) == colour) {
+                    end++;
                 }
+                renderer.fill(x + col, y + row, x + end, y + row + 1, colour);
+                col = end;
             }
         }
     }
 
+    /** One pixel's colour, or 0 for nothing at all. The ring is the same pixels in both states. */
+    private static int colourAt(int row, int col, boolean pinned, boolean hovered) {
+        if (STAR[row].charAt(col) != '#') {
+            return 0;
+        }
+        if (isOutline(row, col)) {
+            if (pinned) {
+                return PagePalette.PIN_OUTLINE;
+            }
+            return hovered ? PagePalette.PIN_HOLLOW_HOVER : PagePalette.PIN_HOLLOW;
+        }
+        if (!pinned) {
+            return 0;
+        }
+        return hovered ? PagePalette.PIN_BODY_HOVER : PagePalette.PIN_BODY;
+    }
+
+    /** A shape pixel is on the ring when any of its four neighbours is outside the shape. */
     private static boolean isOutline(int row, int col) {
         return !on(row - 1, col) || !on(row + 1, col) || !on(row, col - 1) || !on(row, col + 1);
     }

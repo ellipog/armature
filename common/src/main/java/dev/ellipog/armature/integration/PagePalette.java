@@ -38,10 +38,16 @@ public final class PagePalette {
     public static final int SLOT_EDGE = 0xFF373737;
     /** A row icon's slot inset: the fill the item sits on. */
     public static final int SLOT_FILL = 0xFF8B8B8B;
-    /** A pinned quest's star. */
-    public static final int PIN_ACTIVE = 0xFFFFB300;
-    /** An unpinned quest's star: an outline, present but not shouting. */
-    public static final int PIN_IDLE = 0xFF9E9E9E;
+    /** A pinned star's ring: dark, so the gold body reads against a light card. */
+    public static final int PIN_OUTLINE = 0xFF5E3E08;
+    /** A pinned star's body. */
+    public static final int PIN_BODY = 0xFFFFC12E;
+    /** A pinned star's body under the cursor. */
+    public static final int PIN_BODY_HOVER = 0xFFFFD75E;
+    /** An unpinned star: the same ring, grey, with the middle left to the card. */
+    public static final int PIN_HOLLOW = 0xFF787878;
+    /** An unpinned star under the cursor. */
+    public static final int PIN_HOLLOW_HOVER = 0xFFA6A6A6;
 
     private PagePalette() {
     }
