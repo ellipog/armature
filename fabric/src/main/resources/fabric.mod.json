@@ -16,6 +16,9 @@
         ],
         "client": [
             "dev.ellipog.armature.fabric.FabricClient"
+        ],
+        "emi": [
+            "dev.ellipog.armature.integration.emi.ArmatureEmiPlugin"
         ]
     },
     "depends": {

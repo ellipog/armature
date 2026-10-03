@@ -1,6 +1,7 @@
 package dev.ellipog.armature.integration;
 
 import dev.ellipog.armature.Constants;
+import dev.ellipog.armature.integration.emi.EmiViewer;
 
 import java.util.List;
 import java.util.Objects;
@@ -51,10 +52,13 @@ public final class Integrations {
     /**
      * The tickers, in the same order as {@link Viewers.Viewer}'s priority.
      *
-     * <p>Empty until an adapter needs one. The entry shape is fixed here so that adding one is a
-     * single list element and never a new mechanism.
+     * <p>EMI is the one viewer with a tick of its own: its registration is static, so when the quest
+     * tree changes after it has registered, something has to ask it to rebuild — see
+     * {@code ArmatureEmiPlugin#tick}. JEI and REI ask for their content at lookup time and have
+     * nothing to keep in step.
      */
-    private static final List<Ticker> TICKERS = List.of();
+    private static final List<Ticker> TICKERS = List.of(
+            new Ticker(Viewers.Viewer.EMI, EmiViewer.MOD_ID, () -> EmiViewer.INSTANCE));
 
     private static volatile QuestContent content;
 
