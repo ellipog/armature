@@ -73,7 +73,7 @@ written — the fallback is not a panel, and does not count.
 ## The party roster
 
 `ui.party` is the other model a panel draws. `PartyRoster.of(team, viewer, names, online)` turns a
-[[armature:teams|Team]] into rows that already know what the viewer may do:
+[[armature:api/teams|Team]] into rows that already know what the viewer may do:
 
 ```java
 PartyRoster roster = PartyRoster.of(team, viewerId, nameLookup, onlineLookup);

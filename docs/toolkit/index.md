@@ -7,7 +7,7 @@ implementation, and no widget in the toolkit names a game class.
 
 That is what makes the toolkit testable at all: the layout engine, the text models and the shapes are
 arithmetic over rectangles and strings, so they are asserted in milliseconds without a client, a font
-or a window. It is also the version seam — the 26.x port swaps the implementation and the toolkit
+or a window. It is also the version [[seam|seam]] — the 26.x port swaps the implementation and the toolkit
 above it does not move.
 
 ```java
@@ -41,7 +41,7 @@ the page about that.
 | `ui.kit` | Layout and scrolling, the text models, and the drawing vocabulary | [[armature:toolkit/layout]], [[armature:toolkit/text]] |
 | `ui.shape` | `Shape`: an outline as spans per row, so drawing and hit-testing agree | [[armature:toolkit/shapes]] |
 | `ui` (themes) | `Theme`, the theme files, `Look`, and the static palette | [[armature:toolkit/themes]] |
-| widgets | `ArmatureButton`, the text-field widgets, `ArmatureScreen`, `ArmatureLive` | [[armature:toolkit/widgets]] |
+| widgets | `ArmatureButton`, the text-field [[widget|widgets]], `ArmatureScreen`, `ArmatureLive` | [[armature:toolkit/widgets]] |
 | `ui.inspect` | The machinery behind a property editor, and `ui.party`'s roster model | [[armature:toolkit/panels]] |
 
 The smaller pieces in `ui.kit`, each written once so a screen does not carry its own copy:

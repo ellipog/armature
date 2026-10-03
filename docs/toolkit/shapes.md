@@ -1,6 +1,7 @@
 # Shapes
 
-A shape is **a list of spans per row** — for each row of a square, where it starts and where it ends:
+A [[shape|shape]] is **a list of spans per row** — for each row of a square, where it starts and where it
+ends:
 
 ```java
 public interface Shape {

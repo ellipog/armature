@@ -2,7 +2,7 @@
 
 The controls the kit ships are ordinary `AbstractWidget`s, so focus, narration, tab order and hover
 all work the way the game already makes them work. What the kit adds is that they draw through the
-renderer seam and take their colours from the palette.
+renderer [[seam|seam]] and take their colours from the palette.
 
 ## Controls
 

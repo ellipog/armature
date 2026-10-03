@@ -1,8 +1,8 @@
 # Themes
 
-Every colour the toolkit draws with comes from one place. A button does not know what a theme is — it
-asks for the body ink and gets whatever the current theme says, which is why `ArmatureTheme` is a
-static class rather than something passed through every call.
+Every colour the toolkit draws with comes from one place. A button does not know what a [[theme|theme]]
+is — it asks for the body ink and gets whatever the current theme says, which is why `ArmatureTheme` is
+a static class rather than something passed through every call.
 
 A `Theme` is a record of colour tokens, plus the corner radius, the motion duration and the easing
 curve. Tokens are read as **fields** by code — a record has fields the compiler knows, so a theme is

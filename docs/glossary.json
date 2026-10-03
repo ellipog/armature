@@ -1,0 +1,27 @@
+{
+  "/*": "Terms Armature owns. The site merges this file with glossary.json at the site root, which holds the shared vocabulary and is read first -- a term defined in both places is a build error rather than a silent winner, because a term more than one mod needs belongs in the shared file. An id must be lowercase letters, digits and hyphens.",
+
+  "terms": [
+    {
+      "id": "seam",
+      "term": "Seam",
+      "definition": "The one boundary where two halves of a system meet so neither has to know the other. Armature has two: the loader seam, which is the platform layer over Fabric and NeoForge, and the renderer seam, which keeps the whole toolkit free of game classes."
+    },
+    {
+      "id": "theme",
+      "term": "Theme",
+      "definition": "The colours, corner radius and motion a drawing reads, in one record. Sixteen are built in, and more can be written as files in config/armature/themes."
+    },
+    {
+      "id": "shape",
+      "term": "Shape",
+      "definition": "An outline described as the span each row covers — which is what makes drawing and hit-testing read one description rather than two that can disagree."
+    },
+    {
+      "id": "widget",
+      "term": "Widget",
+      "definition": "A control the game's own machinery can focus, narrate, tab to and hover. Armature's buttons and text fields are ordinary widgets that draw through the renderer seam.",
+      "see": ["seam"]
+    }
+  ]
+}

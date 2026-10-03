@@ -11,8 +11,9 @@ ArmatureApi.registrar().forMod("mymod").register(BuiltInRegistries.ITEM, id, MyI
 
 ## The loader seam
 
-`ArmaturePlatform` is the handful of questions that genuinely differ between Fabric and NeoForge —
-small on purpose, because each method here is one with no vanilla equivalent:
+This is the loader [[seam|seam]]: `ArmaturePlatform` is the handful of questions that genuinely
+differ between Fabric and NeoForge — small on purpose, because each method here is one with no
+vanilla equivalent:
 
 | Method | Answers |
 |---|---|
