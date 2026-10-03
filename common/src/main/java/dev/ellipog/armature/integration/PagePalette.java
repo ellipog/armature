@@ -38,6 +38,10 @@ public final class PagePalette {
     public static final int SLOT_EDGE = 0xFF373737;
     /** A row icon's slot inset: the fill the item sits on. */
     public static final int SLOT_FILL = 0xFF8B8B8B;
+    /** A pinned quest's star. */
+    public static final int PIN_ACTIVE = 0xFFFFB300;
+    /** An unpinned quest's star: an outline, present but not shouting. */
+    public static final int PIN_IDLE = 0xFF9E9E9E;
 
     private PagePalette() {
     }

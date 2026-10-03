@@ -82,11 +82,12 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             return;
         }
 
+        ItemStack categoryIcon = content.categoryIcon();
         dev.emi.emi.api.recipe.EmiRecipeCategory category = new dev.emi.emi.api.recipe.EmiRecipeCategory(
-                content.categoryId(), dev.emi.emi.api.stack.EmiStack.of(content.categoryIcon()));
+                content.categoryId(), dev.emi.emi.api.stack.EmiStack.of(categoryIcon));
         registry.addCategory(category);
         for (QuestPage page : content.pages()) {
-            registry.addRecipe(new QuestEmiRecipe(category, page));
+            registry.addRecipe(new QuestEmiRecipe(category, page, categoryIcon));
         }
         registeredRevision = content.revision();
     }
@@ -137,7 +138,8 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
         private final List<dev.emi.emi.api.stack.EmiIngredient> inputs;
         private final List<dev.emi.emi.api.stack.EmiStack> outputs;
 
-        QuestEmiRecipe(dev.emi.emi.api.recipe.EmiRecipeCategory category, QuestPage page) {
+        QuestEmiRecipe(dev.emi.emi.api.recipe.EmiRecipeCategory category, QuestPage page,
+                       ItemStack fallbackIcon) {
             this.category = category;
             this.page = page;
 
@@ -151,11 +153,13 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
                     in.add(dev.emi.emi.api.stack.EmiStack.of(row.icon()));
                 }
             }
+            // Never empty: EMI favourites a recipe by its first output, draws the sidebar entry from
+            // it, and refuses an empty stack -- so an empty list is the difference between a quest
+            // that can be pinned and one that cannot. PageArt.outputs supplies the quest's own icon
+            // when no reward is an item.
             List<dev.emi.emi.api.stack.EmiStack> out = new ArrayList<>();
-            for (QuestRow row : page.rewards()) {
-                if (!row.icon().isEmpty()) {
-                    out.add(dev.emi.emi.api.stack.EmiStack.of(row.icon()));
-                }
+            for (ItemStack stack : PageArt.outputs(page, fallbackIcon)) {
+                out.add(dev.emi.emi.api.stack.EmiStack.of(stack));
             }
             this.inputs = List.copyOf(in);
             this.outputs = List.copyOf(out);
@@ -212,7 +216,7 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             if (content == null) {
                 return;
             }
-            widgets.add(new HeaderWidget(content, page, layout));
+            widgets.add(new HeaderWidget(content, page, layout, this));
             if (!page.tasks().isEmpty()) {
                 QuestPageLayout.Box heading = layout.tasksHeading(page);
                 widgets.addText(content.tasksLabel(), heading.x() + QuestPageLayout.SLOT_X,
@@ -233,26 +237,60 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
                 QuestPageLayout.Box box = layout.rewardRow(page, i);
                 widgets.add(new RowWidget(content, page.quest().id(), false,
                         page.rewards().get(i).sourceIndex(), layout, box));
-                addSlot(widgets, page.rewards().get(i), layout, box);
+                dev.emi.emi.api.widget.SlotWidget slot =
+                        addSlot(widgets, page.rewards().get(i), layout, box);
+                if (i == 0 && slot != null) {
+                    // The primary output — the stack the sidebar entry draws — carries the quest's
+                    // own line, read live at hover like every other number on the page.
+                    slot.appendTooltip(() -> ClientTooltipComponent.create(
+                            questLine(content, page).getVisualOrderText()));
+                }
             }
         }
 
-        private static void addSlot(dev.emi.emi.api.widget.WidgetHolder widgets, QuestRow row,
-                                    QuestPageLayout layout, QuestPageLayout.Box box) {
+        /**
+         * The line a quest's primary output carries: its title, its state, and the first task still
+         * outstanding. ASCII only, deliberately — the font's coverage is measured, and a bullet or an
+         * em dash outside it is a box rather than a character.
+         */
+        private static Component questLine(QuestContent content, QuestPage page) {
+            StringBuilder line = new StringBuilder("[Quest] ")
+                    .append(page.quest().title())
+                    .append(" - ")
+                    .append(content.stateText(page.quest().id()));
+            for (QuestRow row : page.tasks()) {
+                QuestRow live = content.liveTask(page.quest().id(), row.sourceIndex());
+                if (!live.done() && live.need() > 0) {
+                    line.append(" (").append(Math.min(live.have(), live.need()))
+                            .append('/').append(live.need()).append(')');
+                    break;
+                }
+            }
+            return Component.literal(line.toString());
+        }
+
+        private static dev.emi.emi.api.widget.SlotWidget addSlot(
+                dev.emi.emi.api.widget.WidgetHolder widgets, QuestRow row,
+                QuestPageLayout layout, QuestPageLayout.Box box) {
             QuestPageLayout.Box icon = layout.icon(box);
             // EMI's own slot texture behind the widget, which is how EMI's crafting cards draw a
             // container slot; without it an item icon sits bare on the card.
             widgets.addTexture(dev.emi.emi.api.render.EmiTexture.SLOT, icon.x(), icon.y());
             if (row.hasTag()) {
-                row.tag().ifPresent(tag -> widgets.addSlot(dev.emi.emi.api.stack.EmiIngredient.of(
-                        TagKey.create(Registries.ITEM, tag)), icon.x(), icon.y()));
+                java.util.Optional<ResourceLocation> tag = row.tag();
+                return tag.isPresent()
+                        ? widgets.addSlot(dev.emi.emi.api.stack.EmiIngredient.of(
+                                TagKey.create(Registries.ITEM, tag.get())), icon.x(), icon.y())
+                        : null;
             }
-            else if (!row.icon().isEmpty()) {
+            if (!row.icon().isEmpty()) {
                 // EMI's own slot: clicking it shows that item's recipes, which is exactly "a task's
                 // or reward's item opens EMI's recipe screen" — nothing custom, and nothing to keep
                 // in step with EMI's behaviour.
-                widgets.addSlot(dev.emi.emi.api.stack.EmiStack.of(row.icon()), icon.x(), icon.y());
+                return widgets.addSlot(dev.emi.emi.api.stack.EmiStack.of(row.icon()),
+                        icon.x(), icon.y());
             }
+            return null;
         }
     }
 
@@ -262,11 +300,14 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
         private final QuestContent content;
         private final QuestPage page;
         private final QuestPageLayout layout;
+        private final QuestEmiRecipe recipe;
 
-        HeaderWidget(QuestContent content, QuestPage page, QuestPageLayout layout) {
+        HeaderWidget(QuestContent content, QuestPage page, QuestPageLayout layout,
+                     QuestEmiRecipe recipe) {
             this.content = content;
             this.page = page;
             this.layout = layout;
+            this.recipe = recipe;
         }
 
         @Override
@@ -275,13 +316,23 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             return new dev.emi.emi.api.widget.Bounds(box.x(), box.y(), box.width(), box.height());
         }
 
+        /** The pin's drawn square: the star itself, in the header's top-right corner. */
+        private QuestPageLayout.Box pin() {
+            int size = PageArt.starSize();
+            return new QuestPageLayout.Box(layout.width() - size - 4, 3, size, size);
+        }
+
         @Override
         public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
             GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
             QuestPageLayout.Box box = layout.header();
+            QuestPageLayout.Box pin = pin();
             if (box.contains(mouseX, mouseY)) {
-                // The whole strip is the click target, and the wash is what says so.
-                renderer.fill(box.x(), box.y(), box.right(), box.bottom(), PagePalette.HOVER);
+                // The whole strip is the click target, and the wash is what says so -- except over
+                // the pin, which has its own.
+                if (!pin.contains(mouseX, mouseY)) {
+                    renderer.fill(box.x(), box.y(), box.right(), box.bottom(), PagePalette.HOVER);
+                }
             }
             QuestPageLayout.Box iconBox = layout.headerIcon();
             ItemStack icon = page.quest().icon();
@@ -301,12 +352,23 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             PageArt.pill(renderer,
                     PageArt.fit(renderer, content.stateText(page.quest().id()), badge.width()),
                     badge.x(), badge.y(), content.stateColour(page.quest().id()));
+
+            if (pin.contains(mouseX, mouseY)) {
+                renderer.fill(pin.x() - 1, pin.y() - 1, pin.right() + 1, pin.bottom() + 1,
+                        PagePalette.HOVER);
+            }
+            boolean pinned = isPinned();
+            PageArt.star(renderer, pin.x(), pin.y(),
+                    pinned ? PagePalette.PIN_ACTIVE : PagePalette.PIN_IDLE, pinned);
         }
 
         @Override
         public List<ClientTooltipComponent> getTooltip(int mouseX, int mouseY) {
-            return List.of(ClientTooltipComponent.create(
-                    Component.translatable("armature.integration.open").getVisualOrderText()));
+            Component line = pin().contains(mouseX, mouseY)
+                    ? Component.translatable(isPinned()
+                            ? "armature.integration.unpin" : "armature.integration.pin")
+                    : Component.translatable("armature.integration.open");
+            return List.of(ClientTooltipComponent.create(line.getVisualOrderText()));
         }
 
         @Override
@@ -314,8 +376,57 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
             if (button != 0) {
                 return false;
             }
+            if (pin().contains(mouseX, mouseY)) {
+                togglePin();
+                return true;
+            }
             content.openQuest(page.quest().id());
             return true;
+        }
+
+        /**
+         * Whether this quest is in EMI's sidebar.
+         *
+         * <p>EMI 1.1.24 has no public favourites API — {@code EmiFavorites} is internal, like the
+         * reload entry point — so the state is read from its public list and matched by this recipe's
+         * id, the same id EMI persists the favourite under. Pinned to the EMI version like every
+         * other call into that package, and one file wide.
+         */
+        private boolean isPinned() {
+            for (dev.emi.emi.runtime.EmiFavorite favourite : dev.emi.emi.runtime.EmiFavorites.favorites) {
+                if (favourite.getRecipe() != null
+                        && recipe.getId().equals(favourite.getRecipe().getId())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Pins or unpins the quest, then asks EMI to rebuild its favourites panel.
+         *
+         * <p>The same pair EMI's own favourite path uses — {@code addFavorite} then
+         * {@code repopulatePanels} — because adding alone leaves the sidebar showing its old list.
+         * Adding is idempotent (EMI early-returns on the same stack and recipe), so the star is the
+         * only way to remove: EMI's own A key only ever adds.
+         */
+        private void togglePin() {
+            dev.emi.emi.runtime.EmiFavorite existing = null;
+            for (dev.emi.emi.runtime.EmiFavorite favourite : dev.emi.emi.runtime.EmiFavorites.favorites) {
+                if (favourite.getRecipe() != null
+                        && recipe.getId().equals(favourite.getRecipe().getId())) {
+                    existing = favourite;
+                    break;
+                }
+            }
+            if (existing != null) {
+                dev.emi.emi.runtime.EmiFavorites.removeFavorite(existing.getStack());
+            }
+            else if (!recipe.getOutputs().isEmpty()) {
+                dev.emi.emi.runtime.EmiFavorites.addFavorite(recipe.getOutputs().get(0), recipe);
+            }
+            dev.emi.emi.screen.EmiScreenManager.repopulatePanels(
+                    dev.emi.emi.config.SidebarType.FAVORITES);
         }
     }
 
