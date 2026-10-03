@@ -2,6 +2,7 @@ package dev.ellipog.armature.integration;
 
 import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.ArmatureApi;
+import dev.ellipog.armature.integration.emi.EmiCompatibility;
 
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -66,10 +67,18 @@ public final class Viewers {
 
     /** The viewer that owns the integration on this client. Empty when none is installed. */
     public static Optional<Viewer> chosen() {
-        return choose(Viewers::loaded);
+        Predicate<String> loaded = Viewers::loaded;
+        return choose(modId -> loaded.test(modId) && !EmiCompatibility.broken(loaded, modId));
     }
 
-    /** Whether this viewer is the one that registered. Every adapter's first line is this. */
+    /**
+     * Whether this viewer is the one that registered. Every adapter's first line is this.
+     *
+     * <p>The answer already accounts for the one compatibility demotion the chain carries: EMI is
+     * skipped while it and JEI are installed and EMI's bridge is missing a method JEI calls, so the
+     * integration lands on the fallback tier rather than on a screen that throws. See
+     * {@link EmiCompatibility}.
+     */
     public static boolean mayInstall(Viewer viewer) {
         return chosen().filter(chosen -> chosen == viewer).isPresent();
     }
