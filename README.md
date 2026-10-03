@@ -28,8 +28,9 @@ it can be installed on its own. Nothing in here names its first consumer.
 ### The client toolkit — `common/src/main/java/dev/ellipog/armature/client/`
 
 - **One renderer seam.** `GuiRenderer` is a game-free drawing interface: fill, text, styled runs,
-  item icons, player faces, blur, and scissored clips. `render/GuiGraphicsRenderer` is its 1.21.1
-  implementation, and the toolkit draws through the interface.
+  item icons, player faces, blur, scissored clips, and a `batched` region — one submission for a
+  stretch of drawing that would otherwise flush per fill on the unmanaged screen path. `render/
+  GuiGraphicsRenderer` is its 1.21.1 implementation, and the toolkit draws through the interface.
 - **`ui.kit`** — layout (`Stack` to `Layout` to `Slot`, with measurement and hit-testing),
   `Viewport` and `ScrollView` for pan, zoom, clamped scrolling and row culling, the text models
   (`TextField`, `TextArea`, selection, undo/redo, wrapping, codepoint-safe movement, and markdown
