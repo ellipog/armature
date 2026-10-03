@@ -218,11 +218,23 @@ public final class ArmatureJeiPlugin implements IModPlugin {
             renderer.text(fit(renderer, content.stateText(page.quest().id()), textWidth),
                     QuestPageLayout.TEXT_X, header.y() + 10, ArmatureTheme.faint());
 
+            if (!page.tasks().isEmpty()) {
+                QuestPageLayout.Box heading = layout.tasksHeading(page);
+                renderer.text(content.tasksLabel().getString(), heading.x() + QuestPageLayout.ICON_X,
+                        heading.y() + 1, ArmatureTheme.heading());
+            }
             for (int i = 0; i < page.tasks().size(); i++) {
-                drawRow(renderer, layout.taskRow(i), content.liveTask(page.quest().id(), i));
+                drawRow(renderer, layout.taskRow(i),
+                        content.liveTask(page.quest().id(), page.tasks().get(i).sourceIndex()));
+            }
+            if (!page.rewards().isEmpty()) {
+                QuestPageLayout.Box heading = layout.rewardsHeading(page);
+                renderer.text(content.rewardsLabel().getString(), heading.x() + QuestPageLayout.ICON_X,
+                        heading.y() + 1, ArmatureTheme.heading());
             }
             for (int i = 0; i < page.rewards().size(); i++) {
-                drawRow(renderer, layout.rewardRow(page, i), content.liveReward(page.quest().id(), i));
+                drawRow(renderer, layout.rewardRow(page, i),
+                        content.liveReward(page.quest().id(), page.rewards().get(i).sourceIndex()));
             }
         }
 

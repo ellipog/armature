@@ -64,6 +64,12 @@ public interface QuestContent {
     /** The viewer category's title, for the viewers that take a component rather than a key. */
     Component categoryTitle();
 
+    /** The heading above a page's task rows. The words are the content's, so they translate there. */
+    Component tasksLabel();
+
+    /** The heading above a page's reward rows, so a reward is never mistaken for a task. */
+    Component rewardsLabel();
+
     /** The viewer category's icon. */
     ItemStack categoryIcon();
 }

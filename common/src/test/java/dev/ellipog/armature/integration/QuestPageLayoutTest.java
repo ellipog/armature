@@ -16,11 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The page's arithmetic: heights, boxes and hit testing, pinned so three adapters cannot disagree.
+ * The page's arithmetic: heights, headings, boxes and hit testing, pinned so three adapters cannot
+ * disagree.
  *
  * <p>This is the only page code a game-free test can see, and that is the reason it is a class: the
- * adapters read boxes from here, so a row that overlaps its neighbour or a bar that falls outside its
- * row fails here rather than in a screenshot.
+ * adapters read boxes from here, so a row that overlaps its neighbour, a heading drawn over its own
+ * rows, or a bar that falls outside its row fails here rather than in a screenshot. The headings are
+ * part of that: they exist so a reward is never read as a task, and they must appear only for a
+ * section that has rows.
  */
 class QuestPageLayoutTest {
 
@@ -51,23 +54,45 @@ class QuestPageLayoutTest {
     }
 
     @Test
-    @DisplayName("height is the header plus the rows, with a gap only between two non-empty sections")
-    void heightIsHeaderPlusRowsAndAGap() {
+    @DisplayName("height is the header, each section's heading and rows, and the gap only between two sections")
+    void heightIsHeaderHeadingsRowsAndAGap() {
         QuestPageLayout layout = new QuestPageLayout(134);
 
         assertEquals(QuestPageLayout.HEADER_HEIGHT, layout.height(page(0, 0)));
-        assertEquals(QuestPageLayout.HEADER_HEIGHT + 2 * QuestPageLayout.ROW_HEIGHT,
-                layout.height(page(2, 0)), "no gap when there is nothing to separate");
-        assertEquals(QuestPageLayout.HEADER_HEIGHT + 2 * QuestPageLayout.ROW_HEIGHT,
-                layout.height(page(0, 2)));
-        assertEquals(QuestPageLayout.HEADER_HEIGHT + 2 * QuestPageLayout.ROW_HEIGHT
-                        + QuestPageLayout.SECTION_GAP + QuestPageLayout.ROW_HEIGHT,
+
+        int oneSection = QuestPageLayout.HEADER_HEIGHT + QuestPageLayout.HEADING_HEIGHT
+                + 2 * QuestPageLayout.ROW_HEIGHT;
+        assertEquals(oneSection, layout.height(page(2, 0)), "no gap when there is nothing to separate");
+        assertEquals(oneSection, layout.height(page(0, 2)),
+                "and a rewards-only page is the same shape as a tasks-only one");
+
+        assertEquals(QuestPageLayout.HEADER_HEIGHT
+                        + QuestPageLayout.HEADING_HEIGHT + 2 * QuestPageLayout.ROW_HEIGHT
+                        + QuestPageLayout.SECTION_GAP
+                        + QuestPageLayout.HEADING_HEIGHT + QuestPageLayout.ROW_HEIGHT,
                 layout.height(page(2, 1)),
                 "the gap appears only when a task section and a reward section both exist");
     }
 
     @Test
-    @DisplayName("hit testing agrees with the boxes for every pixel of a two-section page")
+    @DisplayName("a section's heading exists exactly when that section has rows")
+    void headingsExistOnlyForNonEmptySections() {
+        QuestPageLayout layout = new QuestPageLayout(134);
+
+        assertTrue(layout.tasksHeading(page(0, 1)).empty(), "no task heading without task rows");
+        assertTrue(layout.rewardsHeading(page(1, 0)).empty(), "no reward heading without reward rows");
+
+        QuestPageLayout.Box tasks = layout.tasksHeading(page(2, 1));
+        QuestPageLayout.Box rewards = layout.rewardsHeading(page(2, 1));
+        assertFalse(tasks.empty());
+        assertFalse(rewards.empty());
+        assertEquals(QuestPageLayout.HEADER_HEIGHT, tasks.y(), "the task heading sits under the header");
+        assertEquals(tasks.bottom() + 2 * QuestPageLayout.ROW_HEIGHT + QuestPageLayout.SECTION_GAP,
+                rewards.y(), "the reward heading sits after the tasks and the gap");
+    }
+
+    @Test
+    @DisplayName("hit testing agrees with the boxes, and headings are not rows")
     void hitTestingAgreesWithTheBoxes() {
         QuestPageLayout layout = new QuestPageLayout(134);
         QuestPage page = page(2, 2);
@@ -80,6 +105,11 @@ class QuestPageLayoutTest {
             }
             if (layout.header().contains(0, y)) {
                 assertTrue(hit.isPresent() && hit.get().header(), "header at y=" + y);
+                continue;
+            }
+            if (layout.tasksHeading(page).contains(0, y)
+                    || layout.rewardsHeading(page).contains(0, y)) {
+                assertTrue(hit.isEmpty(), "a heading is not a row, at y=" + y);
                 continue;
             }
             if (hit.isEmpty()) {
@@ -97,8 +127,10 @@ class QuestPageLayoutTest {
         assertTrue(layout.rowAt(page, layout.taskRow(1).y()).get().task(), "the second task row");
         assertTrue(layout.rowAt(page, layout.rewardRow(page, 1).y()).get().index() == 1);
         assertTrue(layout.rowAt(page, layout.header().y()).get().header());
-        int gapY = QuestPageLayout.HEADER_HEIGHT + 2 * QuestPageLayout.ROW_HEIGHT;
-        assertTrue(layout.rowAt(page, gapY).isEmpty(), "the section gap is not a row");
+        assertTrue(layout.rowAt(page, layout.tasksHeading(page).y()).isEmpty(),
+                "the tasks heading opens no row");
+        assertTrue(layout.rowAt(page, layout.rewardsHeading(page).y()).isEmpty(),
+                "and neither does the rewards heading");
     }
 
     @Test
@@ -131,6 +163,10 @@ class QuestPageLayoutTest {
             assertTrue(rows.get(i - 1).bottom() <= rows.get(i).y(),
                     "rows do not overlap: " + rows.get(i - 1) + " then " + rows.get(i));
         }
+        assertTrue(layout.tasksHeading(page).bottom() <= layout.taskRow(0).y(),
+                "the task heading does not overlap its first row");
+        assertTrue(layout.rewardsHeading(page).bottom() <= layout.rewardRow(page, 0).y(),
+                "and the reward heading does not either");
     }
 
     @Test

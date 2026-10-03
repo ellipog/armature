@@ -236,14 +236,30 @@ public final class ArmatureReiPlugin implements REIClientPlugin {
                     .onClick(button -> content.openQuest(page.quest().id()))
                     .tooltipLine(Component.translatable("armature.integration.open")));
 
+            if (!page.tasks().isEmpty()) {
+                QuestPageLayout.Box heading = shift(layout.tasksHeading(page), bounds);
+                widgets.add(Widgets.createLabel(
+                                new Point(heading.x() + QuestPageLayout.ICON_X, heading.y() + 1),
+                                content.tasksLabel())
+                        .color(ArmatureTheme.heading()).leftAligned().noShadow());
+            }
             for (int i = 0; i < page.tasks().size(); i++) {
                 QuestPageLayout.Box row = shift(layout.taskRow(i), bounds);
-                widgets.add(new RowWidget(content, page.quest().id(), true, i, layout, row));
+                widgets.add(new RowWidget(content, page.quest().id(), true,
+                        page.tasks().get(i).sourceIndex(), layout, row));
                 addSlot(widgets, page.tasks().get(i), layout, layout.taskRow(i), bounds);
+            }
+            if (!page.rewards().isEmpty()) {
+                QuestPageLayout.Box heading = shift(layout.rewardsHeading(page), bounds);
+                widgets.add(Widgets.createLabel(
+                                new Point(heading.x() + QuestPageLayout.ICON_X, heading.y() + 1),
+                                content.rewardsLabel())
+                        .color(ArmatureTheme.heading()).leftAligned().noShadow());
             }
             for (int i = 0; i < page.rewards().size(); i++) {
                 QuestPageLayout.Box row = shift(layout.rewardRow(page, i), bounds);
-                widgets.add(new RowWidget(content, page.quest().id(), false, i, layout, row));
+                widgets.add(new RowWidget(content, page.quest().id(), false,
+                        page.rewards().get(i).sourceIndex(), layout, row));
                 addSlot(widgets, page.rewards().get(i), layout, layout.rewardRow(page, i), bounds);
             }
             return widgets;

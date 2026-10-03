@@ -21,9 +21,14 @@ import java.util.Optional;
  * {@code icon} is empty in that case. It stays a string because Armature knows nothing about item
  * registries; an adapter turns it into whatever its viewer calls a tag, once per page build rather
  * than once per frame.
+ *
+ * <p>{@code sourceIndex} is the row's position in the content's own list — the index
+ * {@link QuestContent#liveTask} and {@link QuestContent#liveReward} expect. A page's rows are the
+ * item-referencing subset of that list, so a page index is <i>not</i> a source index, and an adapter
+ * that asked for live numbers by page position would read the wrong row (or none).
  */
 public record QuestRow(ItemStack icon, String label, int have, int need, boolean done, boolean locked,
-                       String tagId) {
+                       String tagId, int sourceIndex) {
 
     public QuestRow {
         if (icon == null) {
@@ -35,6 +40,15 @@ public record QuestRow(ItemStack icon, String label, int have, int need, boolean
         if (tagId == null) {
             tagId = "";
         }
+    }
+
+    /**
+     * A row from a source list whose index it does not carry — the blank reads and the two adapters
+     * that build a row by hand.
+     */
+    public QuestRow(ItemStack icon, String label, int have, int need, boolean done, boolean locked,
+                    String tagId) {
+        this(icon, label, have, need, done, locked, tagId, 0);
     }
 
     /** True when this row names an item tag rather than a concrete stack. */
@@ -54,6 +68,6 @@ public record QuestRow(ItemStack icon, String label, int have, int need, boolean
 
     /** A copy with the live numbers, for {@link QuestContent}'s live calls to build cheaply. */
     public QuestRow withProgress(int have, boolean done, boolean locked) {
-        return new QuestRow(icon, label, have, need, done, locked, tagId);
+        return new QuestRow(icon, label, have, need, done, locked, tagId, sourceIndex);
     }
 }

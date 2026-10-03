@@ -212,14 +212,26 @@ public final class ArmatureEmiPlugin implements dev.emi.emi.api.EmiPlugin, Integ
                 return;
             }
             widgets.add(new HeaderWidget(content, page, layout));
+            if (!page.tasks().isEmpty()) {
+                QuestPageLayout.Box heading = layout.tasksHeading(page);
+                widgets.addText(content.tasksLabel(), heading.x() + QuestPageLayout.ICON_X,
+                        heading.y() + 1, ArmatureTheme.heading(), false);
+            }
             for (int i = 0; i < page.tasks().size(); i++) {
                 QuestPageLayout.Box box = layout.taskRow(i);
-                widgets.add(new RowWidget(content, page.quest().id(), true, i, layout, box));
+                widgets.add(new RowWidget(content, page.quest().id(), true,
+                        page.tasks().get(i).sourceIndex(), layout, box));
                 addSlot(widgets, page.tasks().get(i), layout, box);
+            }
+            if (!page.rewards().isEmpty()) {
+                QuestPageLayout.Box heading = layout.rewardsHeading(page);
+                widgets.addText(content.rewardsLabel(), heading.x() + QuestPageLayout.ICON_X,
+                        heading.y() + 1, ArmatureTheme.heading(), false);
             }
             for (int i = 0; i < page.rewards().size(); i++) {
                 QuestPageLayout.Box box = layout.rewardRow(page, i);
-                widgets.add(new RowWidget(content, page.quest().id(), false, i, layout, box));
+                widgets.add(new RowWidget(content, page.quest().id(), false,
+                        page.rewards().get(i).sourceIndex(), layout, box));
                 addSlot(widgets, page.rewards().get(i), layout, box);
             }
         }

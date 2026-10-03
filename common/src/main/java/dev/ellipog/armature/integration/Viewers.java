@@ -2,7 +2,6 @@ package dev.ellipog.armature.integration;
 
 import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.ArmatureApi;
-import dev.ellipog.armature.integration.emi.EmiCompatibility;
 
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -67,17 +66,18 @@ public final class Viewers {
 
     /** The viewer that owns the integration on this client. Empty when none is installed. */
     public static Optional<Viewer> chosen() {
-        Predicate<String> loaded = Viewers::loaded;
-        return choose(modId -> loaded.test(modId) && !EmiCompatibility.broken(loaded, modId));
+        return choose(Viewers::loaded);
     }
 
     /**
      * Whether this viewer is the one that registered. Every adapter's first line is this.
      *
-     * <p>The answer already accounts for the one compatibility demotion the chain carries: EMI is
-     * skipped while it and JEI are installed and EMI's bridge is missing a method JEI calls, so the
-     * integration lands on the fallback tier rather than on a screen that throws. See
-     * {@link EmiCompatibility}.
+     * <p>A compatibility demotion used to live here — EMI skipped while it and JEI were installed and
+     * EMI's JEI bridge was broken — and it was removed after a live pass showed what it cost: the
+     * bridge break only affects pages EMI borrows from JEI, our page is EMI-native and renders fine,
+     * so the demotion took the quests out of the viewer that worked and parked them in JEI where the
+     * player was not looking. The pair's breakage is recorded in TESTING.md and the plan; do not put
+     * the demotion back without evidence that EMI cannot show *our* page.
      */
     public static boolean mayInstall(Viewer viewer) {
         return chosen().filter(chosen -> chosen == viewer).isPresent();
