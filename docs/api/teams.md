@@ -56,8 +56,8 @@ neither loses nothing.
 
 > [!TIP]
 > Which source answered is not a mystery to guess at: the resolver logs it at boot, and a consumer can
-> print `teams.name()` — Tasked's `/tasked party` does, because "are these the parties I think they
-> are" is the question a server operator actually has.
+> print `teams.name()` — a party command does, because "are these the parties I think they are" is the
+> question a server operator actually has.
 
 ## Events
 

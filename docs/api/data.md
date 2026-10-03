@@ -62,7 +62,7 @@ constants as written, with no second vocabulary to keep in step.
 
 ## Type-tagged objects
 
-A format where one field chooses the rest — a quest's tasks, where `"type": "tasked:item"` decides
+A format where one field chooses the rest — a list of tasks, where `"type": "some_mod:item"` decides
 which fields mean anything — wants the type's fields **flat at the object's own level**, and a good
 error when the type is unknown:
 
@@ -76,4 +76,4 @@ Codec<MyTask> codec = TypeDispatch.codec(
 
 An unknown type fails with the known ones listed. A `MapCodec` per spec is what keeps `count` at the
 task's own level rather than nested under a `task` object, and `TypeSpec` pairs an id with its codec.
-This is the shape Tasked's task and reward types are built with.
+This is the shape a mod's task and reward types are built with.
