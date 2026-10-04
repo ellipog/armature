@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.Themes;
 import dev.ellipog.armature.client.ui.kit.Motion;
@@ -314,6 +315,22 @@ public final class ArmatureTheme {
     /** The canvas a graph or a map sits on — the deepest surface there is. */
     public static int canvas() {
         return current().canvas();
+    }
+
+    /**
+     * What is drawn over the canvas colour: a flat surface, or a procedural pattern.
+     *
+     * <p>An accessor of its own rather than a field read at the call site, for the same reason
+     * {@link #canvas()} is one: a screen asks the theme in force, which may be a chapter's, and
+     * nothing outside this class tracks which scope that is.
+     */
+    public static CanvasBackground background() {
+        return current().background();
+    }
+
+    /** The ink a canvas pattern is drawn in. Unused while the background is flat, which it is by default. */
+    public static int canvasPattern() {
+        return current().canvasPattern();
     }
 
     /** A recessed area inside a panel — a sidebar, a list. */

@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The shipped themes: fifteen of them, in four families, and the look the project already had.
+ * The shipped themes: sixteen of them, in four families, and the look the project already had.
  *
  * <h2>Why the count and the distinctness are asserted rather than assumed</h2>
  *
@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Every theme here is a {@link ThemePatch} over {@code modern} rather than a hand-written full
  * palette, and that is the point rather than a convenience. It means the shipped set is itself proof
- * that the override mechanism is expressive enough for whatever a pack author will want — if fifteen
+ * that the override mechanism is expressive enough for whatever a pack author will want — if sixteen
  * themes of four genuinely different characters can all be written as patches, then a data file given
  * the same mechanism is not being offered a lesser version of it. Had the catalogue been full palettes
  * while patches were the "custom" path, the two would have diverged, and the divergence would only ever
@@ -106,7 +106,7 @@ class ThemesTest {
     @Test
     @DisplayName("modern states every colour, so nothing inherits a zero")
     void modernIsComplete() {
-        // The reference theme is the one theme that states all forty-two values, and the reason is that
+        // The reference theme is the one theme that states all forty-three values, and the reason is that
         // it is the theme every screenshot in the repository was taken with. A theme system that
         // quietly moved one pixel of the palette would make a rendering regression indistinguishable
         // from a colour decision.
@@ -125,23 +125,22 @@ class ThemesTest {
     }
 
     @Test
-    @DisplayName("a shipped theme states only what makes it itself, and inherits the rest")
+    @DisplayName("a shipped theme moves the colours that make it itself, and states every token")
     void shippedThemesArePatches() {
-        // The claim these fifteen are built on, asserted on the theme where it is easiest to see:
-        // `monochrome` is a palette of greys, and it says nothing about the locked-node wash or the row
-        // hover, so both come from the theme underneath it.
+        // This test used to assert the opposite of its last two lines' spirit: `monochrome` said nothing
+        // about the locked-node wash or the row hover, so both came from modern underneath it -- and
+        // that was pinned here as intended. It was not: two of another palette's values in a theme
+        // whose whole point is having no hue is the fault `monochromeIsGrey` was written to catch, and
+        // the reason `Themes.set` now refuses a theme that leaves a token out (see its guard, which
+        // fails the catalogue at class initialisation rather than letting an omission inherit).
         //
-        // Worth testing on the shipped set rather than only on a synthetic patch, because the failure
-        // this guards is the catalogue drifting away from the mechanism: had these been written as full
-        // palettes while patches were the "custom" path, the two would have diverged, and the divergence
-        // would only ever have shown up as a file that could not do something a built-in could.
-        assertEquals(Themes.MODERN.nodeDim(), Themes.MONOCHROME.nodeDim(),
-                "monochrome states nothing about the locked-node wash, so it should inherit modern's");
-        assertEquals(Themes.MODERN.rowHover(), Themes.MONOCHROME.rowHover(),
-                "and the row hover wash, for the same reason");
-
-        // While genuinely moving the colours that make it what it is, so the assertions above are not
-        // passing because nothing was patched at all.
+        // What remains worth asserting is that the catalogue still *moves* the colours that make each
+        // theme itself -- the patch mechanism is what the shipped set is built on, and a "fix" that
+        // stated modern's values everywhere would pass a completeness guard and be no theme at all.
+        assertTrue(Themes.MODERN.nodeDim() != Themes.MONOCHROME.nodeDim(),
+                "monochrome states its own locked-node wash now, not modern's");
+        assertTrue(Themes.MODERN.rowHover() != Themes.MONOCHROME.rowHover(),
+                "and its own row hover wash");
         assertTrue(Themes.MODERN.panel() != Themes.MONOCHROME.panel(),
                 "monochrome should have moved the panel colour, or it is not a patch over modern");
     }
@@ -188,6 +187,28 @@ class ThemesTest {
         assertTrue(Themes.TOME.motion() > 0L);
         assertTrue(Themes.AMETHYST.cornerRadius() > Themes.MODERN.cornerRadius(),
                 "amethyst is the roundest theme, which makes the radius visible at a glance");
+    }
+
+    @Test
+    @DisplayName("three themes carry the surface their name promises, and the rest are flat")
+    void presetsCarryTheirBackgrounds() {
+        // A theme file that names one of these inherits its surface, so these numbers are pinned
+        // rather than left to drift with the model's defaults -- and the pattern is part of what the
+        // theme is: a "tome" with no grain is a palette with a name.
+        CanvasBackground tome = Themes.TOME.background();
+        assertEquals(CanvasBackground.Kind.SPECKLE, tome.kind());
+        assertEquals(4, tome.tuning().density(), "tome's grain is sparse: one cell in four");
+
+        CanvasBackground paper = Themes.PAPER.background();
+        assertEquals(CanvasBackground.Kind.GRID_LINES, paper.kind());
+        assertEquals(1, paper.tuning().size(), "paper's rule is one pixel, or it reads as a table");
+
+        CanvasBackground terminal = Themes.TERMINAL.background();
+        assertEquals(CanvasBackground.Kind.DOTS, terminal.kind());
+        assertEquals(2, terminal.tuning().size(), "terminal's dots are a shadow mask, not dust");
+
+        // And the reference theme is flat: a pattern on every theme would make the default noisy.
+        assertEquals(CanvasBackground.Kind.NONE, Themes.MODERN.background().kind());
     }
 
     @Test

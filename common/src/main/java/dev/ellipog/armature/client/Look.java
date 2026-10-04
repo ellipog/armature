@@ -2,6 +2,7 @@ package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.ArmatureApi;
+import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.ThemeFiles;
 import dev.ellipog.armature.client.ui.ThemePatch;
@@ -98,23 +99,27 @@ public final class Look {
      * @param radius the corner radius the player set, or null for the theme's own. A nullable component
      *     rather than a sentinel, because "no override" and "an override of zero" are different states and
      *     zero is a legitimate choice -- square corners are a look
+     * @param background the canvas background the player set, or null for the theme's own; nullable for
+     *     the same reason as the radius, since a flat canvas is a background a player can mean
      */
     public record Settings(String theme, boolean motion, boolean chosen, Map<String, Integer> custom,
-                           Integer radius) {
+                           Integer radius, double textScale, CanvasBackground background) {
 
         /** The defaults, which are also what a missing or unreadable file produces. */
         public static final Settings DEFAULT =
-                new Settings(Themes.DEFAULT.name(), true, false, Map.of(), null);
+                new Settings(Themes.DEFAULT.name(), true, false, Map.of(), null, TextScale.DEFAULT, null);
 
         /**
-         * The same settings with no radius override.
+         * The same settings with no radius override and default text.
          *
-         * <p>A convenience constructor rather than eight edited call sites: every existing caller is
-         * talking about colours, motion or the theme's name, and none of them has an opinion about the
-         * corners.
+         * <p>A convenience constructor for a <b>new</b> settings object — a test, or a caller that has
+         * no opinion about corners or text. It is deliberately not how the class's own mutators build
+         * the next value: they thread every component they are not changing, because a convenience
+         * constructor that silently reset the text scale on a theme change would be a setting read by
+         * nothing, which this class has fixed twice already.
          */
         public Settings(String theme, boolean motion, boolean chosen, Map<String, Integer> custom) {
-            this(theme, motion, chosen, custom, null);
+            this(theme, motion, chosen, custom, null, TextScale.DEFAULT, null);
         }
 
         public Settings {
@@ -125,15 +130,16 @@ public final class Look {
             if (radius != null) {
                 radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, radius));
             }
+            textScale = TextScale.clamp(textScale);
         }
 
         /** The player's own colour edits and corner radius, as a patch. */
-        public ThemePatch patch() {
-            if (custom.isEmpty() && radius == null) {
-                return ThemePatch.NONE;
-            }
-            return new ThemePatch(null, custom, radius, null, null);
+    public ThemePatch patch() {
+        if (custom.isEmpty() && radius == null && background == null) {
+            return ThemePatch.NONE;
         }
+        return new ThemePatch(null, custom, radius, null, null, background);
+    }
     }
 
     /**
@@ -168,6 +174,19 @@ public final class Look {
     /** The name the pack asked for, or null. For a control that wants to say where a theme came from. */
     public String serverDefault() {
         return serverDefault;
+    }
+
+    /**
+     * Where this look persists, or null when it does not.
+     *
+     * <p>For a settings surface that must not claim to save when it cannot: {@link #load} is handed a
+     * path by the mod that owns the look, and a client whose platform layer was not ready keeps a null
+     * file — every mutator then changes what is drawn and saves nothing, silently. That is the right
+     * behaviour while drawing and the wrong thing to hide from a control offering to remember a choice,
+     * which is what this accessor is for.
+     */
+    public Path file() {
+        return file;
     }
 
     /** Whether the player has chosen for themselves, which is what beats the pack's default. */
@@ -243,6 +262,16 @@ public final class Look {
         return settings.radius() != null;
     }
 
+    /** The canvas background in force: the player's if they set one, else the theme's own. */
+    public CanvasBackground background() {
+        return main().background();
+    }
+
+    /** Whether the player has set a canvas background of their own, rather than taking the theme's. */
+    public boolean backgroundChosen() {
+        return settings.background() != null;
+    }
+
     /**
      * Sets the corner radius, clamped to {@link #MIN_RADIUS}..{@link #MAX_RADIUS}.
      *
@@ -252,7 +281,7 @@ public final class Look {
      */
     public void setRadius(int radius) {
         settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom(),
-                radius);
+                radius, settings.textScale(), settings.background());
         apply();
         save();
     }
@@ -262,13 +291,38 @@ public final class Look {
         if (settings.radius() == null) {
             return;
         }
-        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom());
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom(),
+                null, settings.textScale(), settings.background());
+        apply();
+        save();
+    }
+
+    /**
+     * The player's canvas background, or null to go back to the theme's own.
+     *
+     * <p>A setting of the player's own, like the radius rather than like a colour edit: it persists on
+     * its own, and {@code saveAsTheme} bakes it into a file when the look is worth keeping.
+     */
+    public void setBackground(CanvasBackground background) {
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom(),
+                settings.radius(), settings.textScale(), background);
         apply();
         save();
     }
 
     public boolean motion() {
         return settings.motion();
+    }
+
+    /**
+     * The player's text size, as a factor: 1.0 is the font's own size.
+     *
+     * <p>Read by the renderer seam through {@link TextScale}, which {@link #apply} feeds — the same
+     * shape the motion switch uses, and for the same reason: it is the player's accessibility
+     * preference, and a reskin must not be able to change it.
+     */
+    public double textScale() {
+        return settings.textScale();
     }
 
     // ------------------------------------------------------------------
@@ -296,6 +350,9 @@ public final class Look {
         // `setCurrent` touches the default duration and easing and never `enabled`, so the two write
         // different fields of `Motion` and cannot overwrite one another.
         Motion.setEnabled(settings.motion());
+        // And the text scale, pushed the same way: one place sets it, one class reads it, and the two
+        // cannot drift.
+        TextScale.set(settings.textScale());
 
         ArmatureTheme.setCurrent(main());
     }
@@ -303,13 +360,27 @@ public final class Look {
     /**
      * The player chooses a theme. Their choice, and it outranks anything a pack sends from now on.
      *
+     * <h2>It also clears their own colour edits, corner radius and canvas background</h2>
+     *
+     * <p>And that is the decision a report settled, in the owner's words: *"when i click a theme it must
+     * override everything that was there manually or already"*. The old rule — an edit survives a switch,
+     * because an edit is the player's own work — meant a picked palette left the Controls rows showing the
+     * player's own purples, which reads as the click not working. So a theme choice is now "use this
+     * look": the picked theme's colours and its corner radius are the whole of it. An edit worth keeping
+     * is not lost by this — {@link #saveAsTheme} bakes the edits into a file first, and that file is a
+     * theme like any other.
+     *
+     * <p>The motion switch and the text scale are deliberately untouched: they are accessibility settings
+     * rather than parts of a look, and a reskin must not be able to re-enable animation for somebody who
+     * cannot use it.
+     *
      * @return whether the name matched a theme; false leaves everything alone
      */
     public boolean setTheme(String name) {
         if (Themes.any(name) == null) {
             return false;
         }
-        settings = new Settings(name, settings.motion(), true, settings.custom());
+        settings = new Settings(name, settings.motion(), true, Map.of(), null, settings.textScale(), null);
         apply();
         save();
         return true;
@@ -318,6 +389,22 @@ public final class Look {
     /** Moves the player's choice to the next theme, wrapping. What the sidebar control does. */
     public void cycleTheme() {
         setTheme(nextName(currentName()));
+    }
+
+    /**
+     * Drops the player's choice, so the pack's theme applies again.
+     *
+     * <p>The way back to "follow the pack" once a choice has been made, because {@link #setTheme} always
+     * records one — there is no name a player can pick that means "no opinion". The name stays stored,
+     * since it is what they were looking at and a later choice may return to it; what stops is it
+     * <i>winning</i>, which is the whole of what {@code chosen} means. Their colour edits and radius stay
+     * too: those are edits rather than a theme choice, and clearing them is a different control.
+     */
+    public void clearChoice() {
+        settings = new Settings(settings.theme(), settings.motion(), false, settings.custom(),
+                settings.radius(), settings.textScale(), settings.background());
+        apply();
+        save();
     }
 
     /** The name the main theme is currently taken from — the player's, the pack's, or the default. */
@@ -352,9 +439,23 @@ public final class Look {
         return all.get(0).name();
     }
 
+    /**
+     * Sets the player's text size, clamped to {@link TextScale}'s range.
+     *
+     * <p>A setting of the player's own, like motion: it persists, it applies immediately, and no theme
+     * can override it.
+     */
+    public void setTextScale(double scale) {
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), settings.custom(),
+                settings.radius(), TextScale.clamp(scale), settings.background());
+        apply();
+        save();
+    }
+
     /** Turns animation on or off for this client. The accessibility switch. */
     public void setMotion(boolean on) {
-        settings = new Settings(settings.theme(), on, settings.chosen(), settings.custom());
+        settings = new Settings(settings.theme(), on, settings.chosen(), settings.custom(),
+                settings.radius(), settings.textScale(), settings.background());
         apply();
         save();
     }
@@ -377,7 +478,8 @@ public final class Look {
         }
         Map<String, Integer> edits = new LinkedHashMap<>(settings.custom());
         edits.put(tokenId.toLowerCase(java.util.Locale.ROOT), argb);
-        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), edits);
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), edits,
+                settings.radius(), settings.textScale(), settings.background());
         apply();
         save();
     }
@@ -389,7 +491,8 @@ public final class Look {
         }
         Map<String, Integer> edits = new LinkedHashMap<>(settings.custom());
         edits.remove(tokenId.toLowerCase(java.util.Locale.ROOT));
-        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), edits);
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), edits,
+                settings.radius(), settings.textScale(), settings.background());
         apply();
         save();
     }
@@ -399,7 +502,8 @@ public final class Look {
         if (settings.custom().isEmpty() && settings.radius() == null) {
             return;
         }
-        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), Map.of());
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), Map.of(),
+                settings.radius(), settings.textScale(), settings.background());
         apply();
         save();
     }
@@ -426,7 +530,8 @@ public final class Look {
         for (ThemeToken token : ThemeToken.ALL) {
             every.put(token.id(), colours[token.index()]);
         }
-        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), every);
+        settings = new Settings(settings.theme(), settings.motion(), settings.chosen(), every,
+                settings.radius(), settings.textScale(), resolved.background());
         apply();
         save();
     }
@@ -461,7 +566,8 @@ public final class Look {
         // do the opposite: a player who has just looked at forty colours and pressed save expects the file
         // to be the theme they saw, not a diff they would have to reason about. `basedOn` is kept so the
         // radius, motion and easing still come from somewhere, and so the file says what it started as.
-        ThemePatch patch = new ThemePatch(clean, settings.custom(), settings.radius(), null, null);
+        ThemePatch patch = new ThemePatch(clean, settings.custom(), settings.radius(), null, null,
+                settings.background());
         JsonObject root = patch.toJson();
         root.addProperty("basedOn", settings.theme());
 
@@ -484,8 +590,10 @@ public final class Look {
         // theme it had just written became invisible in the same session it was saved in.
         // And the player is now using it, because saving a theme and not switching to it leaves the
         // player looking at something other than what they just made -- with the only clue being a file.
+        // The edits go with the switch, which is where they belong now: they were just written *into*
+        // the file, so `setTheme`'s clearing leaves the player looking at exactly what they saved
+        // rather than at the same colours applied twice.
         setTheme(clean);
-        clearAllCustom();
         return clean;
     }
 
@@ -572,7 +680,8 @@ public final class Look {
      * <p>{@code .utils/check_library.py} fails the build if this file ever resolves a configuration for
      * itself again, so the rule is mechanical rather than remembered.
      *
-     * @param themesDirectory where {@link #saveAsTheme} writes, or null to refuse to save
+     * @param themesDirectory where {@link #saveAsTheme} writes and where this reads the file themes
+     *                        from, or null to refuse to save and to load none
      */
     public void load(Path path, Path themesDirectory) {
         file = path;
@@ -580,6 +689,17 @@ public final class Look {
         // without it assigned the parameter to itself and the directory stayed null -- which three
         // tests caught by asking where the saved theme went.
         this.themesDirectory = themesDirectory;
+
+        // Read the directory of theme files **before** `apply`, and the order is the whole of why this
+        // line is here: `apply` resolves the player's theme name through `Themes.any`, so a theme the
+        // client has not loaded yet cannot be resolved -- a file theme named in `appearance.json` fell
+        // back to the default and the picker showed no file themes at all. `reload` used to run only at
+        // the end of `saveAsTheme`, which meant a hand-written theme worked in a session that had saved
+        // one and vanished in every session that had not. This is the call a client makes at startup,
+        // so this is where the directory has to be read.
+        if (themesDirectory != null) {
+            ThemeFiles.reload(themesDirectory);
+        }
 
         if (Files.isRegularFile(path)) {
             try {
@@ -651,7 +771,25 @@ public final class Look {
             radius = root.get("radius").getAsInt();
         }
 
-        return new Settings(theme, motion, chosen, custom, radius);
+        // Absent means the font's own size, and a value outside the range is clamped rather than
+        // refused: a hand-edited 9 should draw readable text, not throw while a frame is being built.
+        double textScale = root.has("textScale") && root.get("textScale").isJsonPrimitive()
+                && root.getAsJsonPrimitive("textScale").isNumber()
+                ? root.get("textScale").getAsDouble()
+                : TextScale.DEFAULT;
+
+        // Absent means the theme's own surface. The background's own reader is what names a bad field,
+        // so a hand-edited file gets a line per problem rather than a silently flat canvas.
+        List<String> backgroundProblems = new ArrayList<>();
+        CanvasBackground background =
+                root.has("canvasBackground") && !root.get("canvasBackground").isJsonNull()
+                        ? CanvasBackground.fromJson(root.get("canvasBackground"), backgroundProblems)
+                        : null;
+        for (String problem : backgroundProblems) {
+            Constants.LOG.warn("armature: canvas background in {}: {}", FILE_NAME, problem);
+        }
+
+        return new Settings(theme, motion, chosen, custom, radius, textScale, background);
     }
 
     /** The settings as JSON text. Paired with {@link #read}, and the only writer of that format. */
@@ -668,8 +806,18 @@ public final class Look {
         if (toWrite.radius() != null) {
             root.addProperty("radius", toWrite.radius());
         }
+        // And only when the player changed it, for the same reason: a file that carried a text scale
+        // nobody chose would say the font's own size was somebody's decision.
+        if (toWrite.textScale() != TextScale.DEFAULT) {
+            root.addProperty("textScale", toWrite.textScale());
+        }
+        // And only when the player set one, for the same reason as the radius: a file that carried a
+        // background nobody chose would make the theme's own surface unreachable.
+        if (toWrite.background() != null) {
+            root.add("canvasBackground", toWrite.background().toJson());
+        }
         if (!toWrite.custom().isEmpty()) {
-            root.add("custom", new ThemePatch(null, toWrite.custom(), null, null, null).toJson()
+            root.add("custom", new ThemePatch(null, toWrite.custom(), null, null, null, null).toJson()
                     .getAsJsonObject("colours"));
         }
         return root.toString();

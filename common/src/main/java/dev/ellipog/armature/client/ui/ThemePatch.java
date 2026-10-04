@@ -67,16 +67,18 @@ import java.util.Set;
  * @param motion       a new motion duration in milliseconds, or null to keep the base's. Zero is a
  *                     value — instant — and is not the same as null
  * @param easing       a new curve, or null to keep the base's
+ * @param background   a new canvas background, or null to keep the base's
  */
 public record ThemePatch(
         String name,
         Map<String, Integer> colours,
         Integer cornerRadius,
         Long motion,
-        Easing easing) {
+        Easing easing,
+        CanvasBackground background) {
 
     /** The patch that changes nothing. Applying it returns the base unchanged. */
-    public static final ThemePatch NONE = new ThemePatch(null, Map.of(), null, null, null);
+    public static final ThemePatch NONE = new ThemePatch(null, Map.of(), null, null, null, null);
 
     /**
      * A node's border follows its state colour unless the patch says otherwise.
@@ -118,12 +120,12 @@ public record ThemePatch(
 
     /** A named patch — a theme file, or one of the derived built-ins. */
     public static ThemePatch of(String name, Map<String, Integer> colours) {
-        return new ThemePatch(name, colours, null, null, null);
+        return new ThemePatch(name, colours, null, null, null, null);
     }
 
     /** An unnamed patch of colours, for a group or an entry. */
     public static ThemePatch colours(Map<String, Integer> colours) {
-        return new ThemePatch(null, colours, null, null, null);
+        return new ThemePatch(null, colours, null, null, null, null);
     }
 
     /** One token. What the editor does on a click. */
@@ -133,11 +135,13 @@ public record ThemePatch(
 
     /** Whether this changes anything at all. */
     public boolean isEmpty() {
-        return colours.isEmpty() && cornerRadius == null && motion == null && easing == null;
+        return colours.isEmpty() && cornerRadius == null && motion == null && easing == null
+                && background == null;
     }
 
     /**
-     * The base, with everything this patch carries applied: colours, radius, motion, easing and name.
+     * The base, with everything this patch carries applied: colours, radius, motion, easing,
+     * background and name.
      *
      * <p>For making a theme. See the class note for why {@link #tint} exists beside it.
      *
@@ -169,6 +173,9 @@ public record ThemePatch(
         }
         if (easing != null) {
             result = result.withEasing(easing);
+        }
+        if (background != null) {
+            result = result.withBackground(background);
         }
         return result;
     }
@@ -207,7 +214,8 @@ public record ThemePatch(
         }
         // The three that are not colours are only reachable through `applyTo`; a `tint` keeps the base's
         // radius and motion, which is what "reskin this region" means.
-        return Theme.from(base.name(), values, base.cornerRadius(), base.motion(), base.easing());
+        return Theme.from(base.name(), values, base.cornerRadius(), base.motion(), base.easing(),
+                base.background());
     }
 
     /**
@@ -235,7 +243,8 @@ public record ThemePatch(
                 merged,
                 child.cornerRadius != null ? child.cornerRadius : cornerRadius,
                 child.motion != null ? child.motion : motion,
-                child.easing != null ? child.easing : easing);
+                child.easing != null ? child.easing : easing,
+                child.background != null ? child.background : background);
     }
 
     /**
@@ -309,6 +318,9 @@ public record ThemePatch(
         }
         if (easing != null) {
             root.addProperty("easing", easing.name());
+        }
+        if (background != null) {
+            root.add("canvasBackground", background.toJson());
         }
         return root;
     }
@@ -439,7 +451,14 @@ public record ThemePatch(
             }
         }
 
-        return new ThemePatch(name, colours, radius, motion, easing);
+        // Read through the background's own reader, which is where the pattern names are known and
+        // where a reserved one is told apart from a misspelled one. A null here is "no opinion" and
+        // keeps the base's background -- see `CanvasBackground.fromJson`.
+        CanvasBackground background = root.has("canvasBackground") && !root.get("canvasBackground").isJsonNull()
+                ? CanvasBackground.fromJson(root.get("canvasBackground"), problems)
+                : null;
+
+        return new ThemePatch(name, colours, radius, motion, easing, background);
     }
 
     /** Every token id, with its label and its group — the list a file may set and an editor shows. */

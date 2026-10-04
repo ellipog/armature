@@ -1,5 +1,6 @@
 package dev.ellipog.armature.client;
 
+import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.ThemeFiles;
 import dev.ellipog.armature.client.ui.ThemeToken;
@@ -85,6 +86,44 @@ class LookTest {
         Look.Settings written =
                 new Look.Settings("tome", false, true, Map.of("panel", 0xFF26212E));
         assertEquals(written, Look.read(Look.write(written)));
+    }
+
+    @Test
+    @DisplayName("a chosen canvas background survives the file; absent means the theme's own")
+    void theCanvasBackgroundPersists() {
+        Look.Settings withSurface = new Look.Settings("tome", true, true, Map.of(), null,
+                TextScale.DEFAULT,
+                new CanvasBackground(CanvasBackground.Kind.SPECKLE, CanvasBackground.Space.GRAPH, 18));
+
+        assertEquals(withSurface, Look.read(Look.write(withSurface)),
+                "the surface is part of the look, so it is part of the file");
+        assertNull(Look.read("{}").background(),
+                "an absent background means the theme's own, not a flat override");
+    }
+
+    @Test
+    @DisplayName("setBackground overrides the theme's surface; null and a theme switch go back")
+    void setBackgroundOverridesAndClears(@TempDir Path dir) throws Exception {
+        Look look = new Look();
+        look.load(dir.resolve("appearance.json"), dir);
+
+        look.setTheme("tome");
+        assertFalse(look.background().isNone(), "tome ships a surface of its own");
+
+        look.setBackground(CanvasBackground.NONE);
+        assertTrue(look.background().isNone(), "a player may choose flat over the theme's pattern");
+        assertTrue(look.backgroundChosen());
+
+        look.setBackground(null);
+        assertFalse(look.background().isNone(), "and null goes back to the theme's own surface");
+        assertFalse(look.backgroundChosen());
+
+        look.setBackground(new CanvasBackground(CanvasBackground.Kind.DOTS,
+                CanvasBackground.Space.SCREEN, 32));
+        look.setTheme("modern");
+        assertFalse(look.backgroundChosen(),
+                "a theme switch overrides everything that was there, the surface included");
+        assertTrue(look.background().isNone(), "modern is flat, and nothing override-ish is left behind");
     }
 
     @Test
@@ -284,6 +323,66 @@ class LookTest {
                 "a player who chose the default theme had it taken away by a pack");
     }
 
+    @Test
+    @DisplayName("clearing the choice hands the pack's theme back, and a later choice takes it again")
+    void clearingTheChoiceFollowsThePackAgain() {
+        look.setServerDefault("amethyst");
+        assertTrue(look.setTheme("tome"));
+        assertEquals("tome", look.main().name());
+
+        look.clearChoice();
+
+        assertFalse(look.chosen(), "the choice is dropped");
+        assertEquals("amethyst", look.main().name(), "and the pack's theme applies again");
+
+        assertTrue(look.setTheme("monochrome"), "the player may choose again");
+        assertEquals("monochrome", look.main().name());
+    }
+
+    @Test
+    @DisplayName("clearing the choice keeps the edits and the radius, which are not the choice")
+    void clearingTheChoiceKeepsTheEdits() {
+        look.setServerDefault("amethyst");
+        look.setTheme("tome");
+        look.setCustom("panel", 0xFF26212E);
+        look.setRadius(6);
+
+        look.clearChoice();
+
+        assertEquals(0xFF26212E, look.custom().get("panel"),
+                "an edit is the player's own and outlives the theme choice it sat on");
+        assertEquals(6, look.radius(), "so does the radius they set");
+    }
+
+    @Test
+    @DisplayName("the text scale persists, applies to the renderer, and is clamped")
+    void theTextScalePersistsAndApplies(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("appearance.json");
+        look.load(file, dir.resolve("themes"));
+
+        assertEquals(1.0D, look.textScale(), "the font's own size until somebody says otherwise");
+
+        look.setTextScale(1.25D);
+        assertEquals(1.25D, TextScale.get(), "the renderer seam hears about it, or it does nothing");
+        assertEquals(1.25D, Look.read(Files.readString(file)).textScale(),
+                "and it is in the file, so the next session starts where this one left off");
+
+        look.setTextScale(9.0D);
+        assertEquals(TextScale.MAX, look.textScale(), "a value past the range is clamped, not refused");
+        look.setTextScale(0.1D);
+        assertEquals(TextScale.MIN, look.textScale());
+    }
+
+    @Test
+    @DisplayName("a look that was never loaded reports no file, and one that was reports where")
+    void theFileAccessorTellsTheTruth(@TempDir Path dir) {
+        assertNull(look.file(), "a look with no file saves nothing, and says so");
+
+        look.load(dir.resolve("appearance.json"), dir.resolve("themes"));
+        assertEquals(dir.resolve("appearance.json"), look.file(),
+                "a loaded look names the file its changes go to");
+    }
+
     // ------------------------------------------------------------------
     // The player's own edits, which sit on top of whichever theme won
     // ------------------------------------------------------------------
@@ -301,19 +400,41 @@ class LookTest {
     }
 
     @Test
-    @DisplayName("an edit survives a theme switch, which is the whole reason it is an edit")
-    void editsSurviveASwitch() {
-        // The decision worth stating: a player who has changed the panel colour and then switches
-        // theme keeps the change. The alternative — editing a full theme and saving it — would mean a
-        // theme switch discarded their work, which makes an editor feel like it is fighting you.
+    @DisplayName("a theme switch clears the player's edits, so the picked theme is the whole look")
+    void aThemeSwitchClearsTheEdits() {
+        // The decision this pins, in the owner's words: *"when i click a theme it must override
+        // everything that was there manually or already"*. The rule this replaced — an edit survives a
+        // switch, because an edit is the player's own work — meant picking a palette left the Controls
+        // rows showing the player's own purples, which reads as the click not working. An edit worth
+        // keeping is not lost by this: `saveAsTheme` bakes it into a file first, and the file is a theme
+        // like any other.
         look.setCustom("panel", 0xFF010203);
+        look.setRadius(2);
         assertEquals(0xFF010203, look.main().panel());
+        assertTrue(look.radiusChosen());
 
         look.setTheme("paper");
 
-        assertEquals(0xFF010203, look.main().panel(), "a theme switch discarded the player's edit");
+        assertTrue(look.custom().isEmpty(), "the switch kept the player's colour edits");
+        assertFalse(look.radiusChosen(), "and kept a radius of their own");
+        assertEquals(Themes.PAPER.panel(), look.main().panel(),
+                "the picked theme's own colour should be in force");
         assertEquals(Themes.PAPER.canvas(), look.main().canvas(),
                 "and the rest of the new theme should be in force");
+    }
+
+    @Test
+    @DisplayName("a theme switch keeps the accessibility settings, which are not part of a look")
+    void aThemeSwitchKeepsAccessibility() {
+        // Motion and text size are the two settings a reskin must not touch: one is the switch that
+        // stops animation for somebody who cannot comfortably use it, and the other is how large they
+        // need the text. Neither is a colour, and neither belongs to a palette.
+        look.setMotion(false);
+        look.setTextScale(1.5);
+        look.setTheme("neon");
+
+        assertFalse(look.motion(), "a theme switch turned motion back on");
+        assertEquals(1.5, look.textScale(), "a theme switch changed the player's text size");
     }
 
     @Test
@@ -553,6 +674,29 @@ class LookTest {
         assertTrue(visited.contains("mine"),
                 "a theme loaded from a file is not reachable from the control: " + visited);
         assertEquals(Themes.ALL.size() + 1, visited.size());
+    }
+
+    @Test
+    @DisplayName("loading the settings reads the theme directory, so a hand-written theme resolves at startup")
+    void loadReadsTheThemeDirectory(@TempDir Path dir) throws Exception {
+        // The gap this closes: `ThemeFiles.reload` ran only at the end of `saveAsTheme`, so the
+        // documented way to ship a pack theme -- a file in the theme directory -- was invisible until
+        // something had been saved in that session, and a file theme named in `appearance.json` could
+        // not resolve at all. `load` is the call a client makes at startup, so it is the one that has
+        // to read the directory, and it has to read it *before* `apply` resolves the name.
+        Files.writeString(dir.resolve("mine.json"),
+                "{\"name\": \"mine\", \"basedOn\": \"modern\", \"colours\": {\"panel\": \"#26212E\"}}",
+                StandardCharsets.UTF_8);
+        Path settings = dir.resolve("appearance.json");
+        Files.writeString(settings, "{\"theme\": \"mine\", \"chosen\": true}", StandardCharsets.UTF_8);
+
+        look.load(settings, dir);
+
+        assertNotNull(Themes.any("mine"), "the file theme was not loaded by `load`");
+        assertEquals("mine", look.main().name(),
+                "a theme named in the settings did not resolve, so the directory was read too late");
+        assertEquals(0xFF26212E, look.main().panel(),
+                "and the theme in force is the file's, not the base's");
     }
 
     @Test

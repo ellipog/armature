@@ -74,19 +74,20 @@ class ThemePatchTest {
     }
 
     @Test
-    @DisplayName("applyTo takes the name, radius, motion and curve; tint takes none of them")
+    @DisplayName("applyTo takes name, radius, motion, curve and background; tint takes none of them")
     void applyToAndTintDifferDeliberately() {
         // The boundary. `applyTo` is how a whole theme is made -- a file, or one of the derived
-        // built-ins -- so it takes the four things a theme is. `tint` is how a *region* is reskinned,
+        // built-ins -- so it takes the things a theme is. `tint` is how a *region* is reskinned,
         // and it must not reach the screen's construction.
-        ThemePatch patch = new ThemePatch("elsewhere",
-                Map.of("panel", DARK_PANEL), 0, 0L, Easing.LINEAR);
+        ThemePatch patch = new ThemePatch("elsewhere", Map.of("panel", DARK_PANEL), 0, 0L, Easing.LINEAR,
+                new CanvasBackground(CanvasBackground.Kind.DOTS, CanvasBackground.Space.SCREEN, 32));
 
         Theme asTheme = patch.applyTo(Themes.MODERN);
         assertEquals("elsewhere", asTheme.name());
         assertEquals(0, asTheme.cornerRadius());
         assertEquals(0L, asTheme.motion());
         assertEquals(Easing.LINEAR, asTheme.easing());
+        assertEquals(CanvasBackground.Kind.DOTS, asTheme.background().kind());
         assertEquals(DARK_PANEL, asTheme.panel());
 
         Theme asRegion = patch.tint(Themes.MODERN);
@@ -96,6 +97,8 @@ class ThemePatchTest {
         assertEquals(Themes.MODERN.motion(), asRegion.motion(),
                 "a scoped motion would do nothing anyway, because timing is pushed to Motion once");
         assertEquals(Themes.MODERN.easing(), asRegion.easing());
+        assertEquals(Themes.MODERN.background(), asRegion.background(),
+                "a chapter paints on the canvas; it does not resurface it");
         assertEquals(Themes.MODERN.name(), asRegion.name(),
                 "a tint does not rename the theme it was derived from");
     }
@@ -104,14 +107,14 @@ class ThemePatchTest {
     @DisplayName("a null field means no opinion; a zero is a value")
     void nullAndZeroAreDifferent() {
         // The distinction that a theme's own docs make a fuss about, asserted here because this is
-        // where it can be got wrong. `new ThemePatch(name, colours, null, null, null)` keeps the base's
-        // radius and duration; a patch with `0` and `0L` sets them.
-        ThemePatch keep = new ThemePatch(null, Map.of("panel", DARK_PANEL), null, null, null);
+        // where it can be got wrong. `new ThemePatch(name, colours, null, null, null, null)` keeps the
+        // base's radius, duration and surface; a patch with `0` and `0L` sets them.
+        ThemePatch keep = new ThemePatch(null, Map.of("panel", DARK_PANEL), null, null, null, null);
         Theme kept = keep.applyTo(Themes.MODERN);
         assertEquals(Themes.MODERN.cornerRadius(), kept.cornerRadius());
         assertEquals(Themes.MODERN.motion(), kept.motion());
 
-        ThemePatch zero = new ThemePatch(null, Map.of(), 0, 0L, null);
+        ThemePatch zero = new ThemePatch(null, Map.of(), 0, 0L, null, null);
         Theme squared = zero.applyTo(Themes.MODERN);
         assertEquals(0, squared.cornerRadius(),
                 "a radius of zero means square, and an implementation clamping to a minimum of one"
@@ -154,18 +157,25 @@ class ThemePatchTest {
     @Test
     @DisplayName("merging keeps every non-colour value the child set, and the parent's otherwise")
     void mergeCarriesTheOtherFour() {
-        ThemePatch base = new ThemePatch("base", Map.of("panel", DARK_PANEL), 4, 140L, Easing.QUAD_OUT);
-        ThemePatch child = new ThemePatch(null, Map.of("canvas", 0xFF222222), null, 0L, null);
+        CanvasBackground covered = new CanvasBackground(CanvasBackground.Kind.DOTS,
+                CanvasBackground.Space.GRAPH, 24);
+        CanvasBackground childCover = new CanvasBackground(CanvasBackground.Kind.HATCH,
+                CanvasBackground.Space.SCREEN, 40);
+        ThemePatch base = new ThemePatch("base", Map.of("panel", DARK_PANEL), 4, 140L, Easing.QUAD_OUT,
+                covered);
+        ThemePatch child = new ThemePatch(null, Map.of("canvas", 0xFF222222), null, 0L, null, childCover);
 
         ThemePatch merged = base.merge(child);
         assertEquals("base", merged.name(), "a child with no name does not erase the parent's");
         assertEquals(4, merged.cornerRadius());
         assertEquals(0L, merged.motion(), "the child set a duration of zero, which is a value");
         assertEquals(Easing.QUAD_OUT, merged.easing());
+        assertEquals(childCover, merged.background(), "and the child's surface wins where it has one");
 
-        ThemePatch named = base.merge(new ThemePatch("child", Map.of(), null, null, Easing.LINEAR));
+        ThemePatch named = base.merge(new ThemePatch("child", Map.of(), null, null, Easing.LINEAR, null));
         assertEquals("child", named.name());
         assertEquals(Easing.LINEAR, named.easing());
+        assertEquals(covered, named.background(), "while a child with no opinion keeps the parent's");
     }
 
     @Test
@@ -250,7 +260,8 @@ class ThemePatchTest {
     @DisplayName("a patch survives a round trip through its own format")
     void theFormatRoundTrips() {
         ThemePatch written = new ThemePatch("mine", Map.of("panel", DARK_PANEL, "available", VIOLET),
-                6, 120L, Easing.QUAD_OUT);
+                6, 120L, Easing.QUAD_OUT,
+                new CanvasBackground(CanvasBackground.Kind.SPECKLE, CanvasBackground.Space.GRAPH, 18));
         List<String> problems = new ArrayList<>();
 
         ThemePatch read = ThemePatch.fromJson(written.toJson(), problems);
@@ -261,6 +272,8 @@ class ThemePatchTest {
         assertEquals(written.cornerRadius(), read.cornerRadius());
         assertEquals(written.motion(), read.motion());
         assertEquals(written.easing(), read.easing());
+        assertEquals(written.background(), read.background(),
+                "the canvas background is part of the file, not a field Save forgets");
     }
 
     @Test
@@ -384,7 +397,7 @@ class ThemePatchTest {
         insertionOrdered.put("available", VIOLET);
         insertionOrdered.put("panel", DARK_PANEL);
 
-        String written = new ThemePatch("x", insertionOrdered, null, null, null)
+        String written = new ThemePatch("x", insertionOrdered, null, null, null, null)
                 .toJson().getAsJsonObject("colours").keySet().toString();
 
         assertEquals("[available, panel, title]", written, "keys should be sorted: " + written);

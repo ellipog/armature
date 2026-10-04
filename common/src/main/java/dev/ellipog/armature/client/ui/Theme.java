@@ -31,7 +31,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  *
  * <p>Every derived theme — a patch applied, a radius changed, a name swapped — is built by
  * {@code from(name, allColours(), radius, motion, easing)}. That is deliberate, and it fixed a real
- * bug rather than tidying one: {@code withMotion} and {@code withRadius} each restated all thirty-four
+ * bug rather than tidying one: {@code withMotion} and {@code withRadius} each restated all thirty-three top-level
  * values positionally, so adding a colour meant editing three lists, and forgetting one produced a
  * theme whose colours were silently transposed. One restatement is one place to be wrong.
  *
@@ -50,7 +50,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * <h2>The prebuilt themes live in {@link Themes}, not here</h2>
  *
  * <p>This class is the <i>shape</i>: the components, the array, the copy operations. The catalogue is
- * fifteen themes and a thousand lines of hex, and a record whose own file is mostly examples is one
+ * sixteen themes and a thousand lines of hex, and a record whose own file is mostly examples is one
  * nobody edits with any confidence. {@code Themes} is also where a derived theme is expressed as a
  * {@link ThemePatch} over a base, which is the same mechanism a data file uses — so the built-in set
  * is itself a demonstration that the override system is expressive enough.
@@ -85,6 +85,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * @param lineDone       one whose prerequisite is met
  * @param selectedRing   the ring around the node or row in use
  * @param hoverRing      the ring around the one under the pointer, at full hover
+ * @param canvasPattern  the ink a canvas background pattern is drawn in; unused by a flat canvas
  * @param rowHover       the wash behind a hovered list row
  * @param labelBackdrop  the opaque backdrop behind text drawn over a canvas
  * @param scrollTrack    the groove a scrollbar's thumb runs in
@@ -96,6 +97,8 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  *                       turned into one
  * @param motion         how long transitions last, in milliseconds. Zero disables them.
  * @param easing         the curve transitions use
+ * @param background     what is drawn behind the canvas content, over its colour — see
+ *                       {@link CanvasBackground}
  */
 public record Theme(
         String name,
@@ -128,6 +131,7 @@ public record Theme(
         int lineDone,
         int selectedRing,
         int hoverRing,
+        int canvasPattern,
 
         int rowHover,
         int labelBackdrop,
@@ -143,7 +147,8 @@ public record Theme(
 
         int cornerRadius,
         long motion,
-        Easing easing) {
+        Easing easing,
+        CanvasBackground background) {
 
     /**
      * The ten colours a control is drawn from, as a set rather than ten loose fields.
@@ -152,7 +157,7 @@ public record Theme(
      *
      * <p>Because which of them applies is a decision with <b>precedence rules</b>, and those rules live
      * in {@code ArmatureControlStyle} — disabled beats selected beats held beats hovered, with accent
-     * as a special case. A theme supplies the eleven colours; the style class decides which one a
+     * as a special case. A theme supplies the ten colours; the style class decides which one a
      * control is in and why. Ten top-level components on {@code Theme} would let a caller write the
      * precedence chain itself, which is the exact duplication the style class was extracted to
      * prevent — a preview that had its own copy of these rules and spent a round drawing the selected
@@ -254,7 +259,7 @@ public record Theme(
                 available, inProgress, complete, blocked,
                 nodeFill, nodeDim, nodeDoneWash,
                 nodeEdgeBlocked, nodeEdgeAvailable, nodeEdgeInProgress, nodeEdgeComplete,
-                line, lineDone, selectedRing, hoverRing,
+                line, lineDone, selectedRing, hoverRing, canvasPattern,
                 rowHover, labelBackdrop,
                 scrollTrack, scrollThumb,
                 tooltipFill, tooltipEdge, tooltipText,
@@ -288,7 +293,8 @@ public record Theme(
      *     whole point of this method is that the order is not written down twice and a caller that got
      *     it wrong would otherwise produce a plausibly-coloured theme
      */
-    public static Theme from(String name, int[] colours, int cornerRadius, long motion, Easing easing) {
+    public static Theme from(String name, int[] colours, int cornerRadius, long motion, Easing easing,
+                             CanvasBackground background) {
         if (colours.length != ThemeToken.ALL.size()) {
             throw new IllegalArgumentException("a theme needs " + ThemeToken.ALL.size()
                     + " colours, got " + colours.length);
@@ -308,13 +314,14 @@ public record Theme(
                 colours[14], colours[15], colours[16],
                 colours[17], colours[18], colours[19], colours[20],
                 colours[21], colours[22], colours[23], colours[24],
-                colours[25], colours[26],
-                colours[27], colours[28],
-                colours[29], colours[30], colours[31],
+                colours[25], colours[26], colours[27],
+                colours[28], colours[29],
+                colours[30], colours[31], colours[32],
                 Controls.from(java.util.Arrays.copyOfRange(colours, ThemeToken.CONTROL_START, colours.length)),
                 cornerRadius,
                 motion,
-                easing);
+                easing,
+                background);
     }
 
     // ------------------------------------------------------------------
@@ -356,7 +363,7 @@ public record Theme(
      * frame. The same argument as {@code Slot.moved} returning a new slot.
      */
     public Theme withName(String newName) {
-        return from(newName, allColours(), cornerRadius, motion, easing);
+        return from(newName, allColours(), cornerRadius, motion, easing, background);
     }
 
     /**
@@ -366,22 +373,33 @@ public record Theme(
      * theme's zero and a player's own setting are told apart.
      */
     public Theme withMotion(long millis) {
-        return from(name, allColours(), cornerRadius, millis, easing);
+        return from(name, allColours(), cornerRadius, millis, easing, background);
     }
 
     /** A copy at a different corner radius. Zero means square, and is not turned into one. */
     public Theme withRadius(int radius) {
-        return from(name, allColours(), radius, motion, easing);
+        return from(name, allColours(), radius, motion, easing, background);
     }
 
     /** A copy on a different easing curve. */
     public Theme withEasing(Easing curve) {
-        return from(name, allColours(), cornerRadius, motion, curve);
+        return from(name, allColours(), cornerRadius, motion, curve, background);
+    }
+
+    /**
+     * A copy over a different canvas background.
+     *
+     * <p>The background is a whole component rather than a token because most of it is not a colour:
+     * a pattern name, a space and a spacing travel together, and the one colour they ink with is the
+     * {@code canvasPattern} token beside them.
+     */
+    public Theme withBackground(CanvasBackground newBackground) {
+        return from(name, allColours(), cornerRadius, motion, easing, newBackground);
     }
 
     /** A copy with a whole new set of colours, in {@link ThemeToken#ALL} order. */
     public Theme withColours(int[] colours) {
-        return from(name, colours, cornerRadius, motion, easing);
+        return from(name, colours, cornerRadius, motion, easing, background);
     }
 
     /** A copy with one colour replaced. Unknown ids leave the theme unchanged. */

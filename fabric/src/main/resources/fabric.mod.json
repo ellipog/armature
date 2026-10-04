@@ -7,9 +7,12 @@
     "authors": [
         "${mod_author}"
     ],
-    "contact": {},
+    "contact": {
+        "homepage": "https://ellipog.dev",
+        "sources": "https://github.com/ellipog/armature",
+        "issues": "https://github.com/ellipog/armature/issues"
+    },
     "license": "${license}",
-    "icon": "assets/armature/icon.png",
     "environment": "*",
     "entrypoints": {
         "main": [

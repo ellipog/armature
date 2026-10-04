@@ -23,7 +23,7 @@ import java.util.Map;
  *
  * <ul>
  *   <li>A derived theme states only what it changes, so it reads as a description of its own character.
- *       {@link #AMETHYST} is thirty lines rather than forty-one, and the lines it has are the ones that
+ *       {@link #AMETHYST} is thirty lines rather than forty-three, and the lines it has are the ones that
  *       make it amethyst.</li>
  *   <li><b>The built-in set is itself the proof that the override system is expressive enough.</b> If
  *       sixteen themes of quite different characters can all be expressed as patches, then a pack
@@ -32,16 +32,19 @@ import java.util.Map;
  *       the divergence would only show up as a file that could not do something a built-in could.</li>
  * </ul>
  *
- * <h2>The reference palette is complete; the others are not, and the difference is checked</h2>
+ * <h2>Every built-in states every token, and that is checked</h2>
  *
- * <p>{@link #MODERN} is the theme every screenshot in this repository was taken with, so its forty-one
+ * <p>{@link #MODERN} is the theme every screenshot in this repository was taken with, so its forty-three
  * values are all stated — a theme system that quietly moved one pixel of the palette would make every
  * screenshot before it incomparable with every one after, and would make a rendering regression
  * indistinguishable from a colour decision. A test asserts that its map is complete, so a new token can
  * never silently inherit a zero.
  *
- * <p>Every other theme here, and every theme in a file, inherits whatever it does not mention. That is
- * the intended way to write one.
+ * <p>The other fifteen are stated in full too, and the guard in {@link #set} throws at class
+ * initialisation if one is not — the same completeness as the reference palette, enforced rather than
+ * remembered, because a token that silently inherited {@code modern}'s value is a decision nobody made.
+ * A theme in a file is the opposite by design: it is a diff, and everything it leaves out comes from
+ * the theme it names.
  */
 public final class Themes {
 
@@ -58,7 +61,7 @@ public final class Themes {
      */
     private static Theme seed(String name) {
         return Theme.from(name, new int[ThemeToken.ALL.size()], 4, 140L,
-                dev.ellipog.armature.client.ui.kit.Easing.QUAD_OUT);
+                dev.ellipog.armature.client.ui.kit.Easing.QUAD_OUT, CanvasBackground.NONE);
     }
 
     /**
@@ -72,7 +75,7 @@ public final class Themes {
      * shipped palette that cannot be parsed should not be a warning in a log — it is this project's own
      * data, and the only reason it could be wrong is a typo made in this file.
      */
-    private static Map<String, Integer> set(String... pairs) {
+    private static Map<String, Integer> set(String name, String... pairs) {
         if (pairs.length % 2 != 0) {
             throw new IllegalArgumentException("a colour list needs id/value pairs, got "
                     + pairs.length + " strings");
@@ -81,6 +84,10 @@ public final class Themes {
         for (int i = 0; i < pairs.length; i += 2) {
             String id = pairs[i];
             String hex = pairs[i + 1];
+            if (!ThemeToken.exists(id)) {
+                throw new IllegalArgumentException("'" + id + "' in the shipped theme '" + name
+                        + "' is not a colour token. The ones there are: " + ThemeToken.ids());
+            }
             Integer argb = dev.ellipog.armature.client.ui.kit.Colour.fromHex(hex);
             if (argb == null) {
                 throw new IllegalArgumentException("'" + hex + "' is not a hex colour, in the value for '"
@@ -89,6 +96,21 @@ public final class Themes {
             if (out.put(id, argb) != null) {
                 throw new IllegalArgumentException("'" + id + "' is set twice in one theme");
             }
+        }
+        // Every shipped theme states every token, and this is the guard that keeps it true rather
+        // than a convention: an omitted token silently becomes modern's value, and a token added to
+        // the registry later would be inherited by all sixteen themes with nobody deciding it. So a
+        // theme that leaves one out fails at class initialisation, naming itself and the holes --
+        // the same shape as `Theme.allColours`'s length check, and the loudest way for it to be wrong.
+        List<String> missing = new ArrayList<>();
+        for (ThemeToken token : ThemeToken.ALL) {
+            if (!out.containsKey(token.id())) {
+                missing.add(token.id());
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("the shipped theme '" + name + "' does not state "
+                    + missing + ". A built-in states every token: see the guard's comment.");
         }
         return out;
     }
@@ -100,7 +122,7 @@ public final class Themes {
     /**
      * The appearance this project has shipped with, unchanged.
      *
-     * <p>Every one of the forty-one values is stated, and the colours are byte-identical to the constants
+     * <p>Every one of the forty-three values is stated, and the colours are byte-identical to the constants
      * they came from. That matters more than it looks: this is the theme every screenshot in the
      * repository was taken with, so if it moved, a rendering regression and a palette decision would
      * look the same in a diff.
@@ -110,7 +132,7 @@ public final class Themes {
      * existed in this theme rather than a new invention. A theme system that changed the default
      * appearance on the day it arrived would be indistinguishable from one that broke it.
      */
-    public static final Map<String, Integer> MODERN_COLOURS = set(
+    public static final Map<String, Integer> MODERN_COLOURS = set("modern", 
             // --- surfaces, deepest first ---
             "dim", "#B80A0A0D",
             "canvas", "#FF0A0A0E",
@@ -143,6 +165,7 @@ public final class Themes {
             "lineDone", "#FF5F8A62",
             "selectedRing", "#FFFFFFFF",
             "hoverRing", "#80FFFFFF",
+            "canvasPattern", "#3380808F",
 
             // --- rows and labels ---
             "rowHover", "#22FFFFFF",
@@ -234,7 +257,7 @@ public final class Themes {
      * blue selection chip is two palettes arguing. That is the kind of thing only a second theme finds: a
      * colour that looked fine on its own turns out to have been chosen against the surfaces around it.
      */
-    public static final Theme TOME = ThemePatch.of("tome", set(
+    public static final Theme TOME = ThemePatch.of("tome", set("tome", 
             "dim", "#B2100C08",
             "canvas", "#FF12100C",
             "recessed", "#FF1E1A14",
@@ -260,6 +283,7 @@ public final class Themes {
             "lineDone", "#FF6E8A55",
             "selectedRing", "#FFF4E8D0",
             "hoverRing", "#80F4E8D0",
+            "canvasPattern", "#339A8B6C",
             "rowHover", "#22F4E8D0",
             "labelBackdrop", "#F012100C",
             "scrollTrack", "#FF231E16",
@@ -278,7 +302,12 @@ public final class Themes {
             "edgeSelected", "#FFD9C07A",
             "edgeBright", "#FF6E6552"))
             .applyTo(MODERN)
-            .withRadius(8);
+            .withRadius(8)
+            // The surface the name promises: one-pixel specks, one cell in four -- parchment grain
+            // rather than noise, which is the line a speckle has to walk.
+            .withBackground(new CanvasBackground(CanvasBackground.Kind.SPECKLE,
+                    CanvasBackground.Space.GRAPH, 18,
+                    new CanvasBackground.Tuning(1, 4, false), CanvasBackground.Image.NONE));
 
     /**
      * Vanilla's own greys, tidied — for a player who does not want their game to look restyled.
@@ -293,7 +322,7 @@ public final class Themes {
      * means "instant", not "unset". An earlier round read zero as "no opinion" and used the built-in
      * duration, so this theme silently behaved like {@link #MODERN}.
      */
-    public static final Theme VANILLA_PLUS = ThemePatch.of("vanilla_plus", set(
+    public static final Theme VANILLA_PLUS = ThemePatch.of("vanilla_plus", set("vanilla_plus", 
             "dim", "#B8000000",
             "canvas", "#FF111111",
             "recessed", "#FF1B1B1B",
@@ -319,6 +348,7 @@ public final class Themes {
             "lineDone", "#FF5F8A62",
             "selectedRing", "#FFFFFFFF",
             "hoverRing", "#80FFFFFF",
+            "canvasPattern", "#33909090",
             "rowHover", "#22FFFFFF",
             "labelBackdrop", "#F0000000",
             "scrollTrack", "#FF1B1B1B",
@@ -361,7 +391,7 @@ public final class Themes {
      * {@code rowHover} and {@code nodeDim} — are much more opaque, because a subtle hint about where a
      * click will land is exactly the information this theme exists to make unmissable.
      */
-    public static final Theme HIGH_CONTRAST = ThemePatch.of("high_contrast", set(
+    public static final Theme HIGH_CONTRAST = ThemePatch.of("high_contrast", set("high_contrast", 
             "dim", "#E0000000",
             "canvas", "#FF000000",
             "recessed", "#FF0A0A0A",
@@ -387,7 +417,12 @@ public final class Themes {
             "lineDone", "#FF66FF99",
             "selectedRing", "#FFFFFFFF",
             "hoverRing", "#FFFFFFFF",
+            "canvasPattern", "#33C8C8C8",
             "rowHover", "#55FFFFFF",
+            // Stated rather than inherited, which the guard in `set` now enforces: a label sits on this
+            // theme's pure black, so the backdrop behind it is the same black and nothing of the graph
+            // shows through the words.
+            "labelBackdrop", "#FF000000",
             "scrollTrack", "#FF000000",
             "scrollThumb", "#FFFFFFFF",
             "tooltipFill", "#FF000000",
@@ -428,10 +463,10 @@ public final class Themes {
      * person would think to check — and it found {@code dim} first, then {@code recessed} on the next
      * run, because a fix that addresses the reported token and not the class of token leaves the same
      * bug sitting one slot along. That is the argument for the token registry itself, made by the
-     * registry catching something: a property asserted over all forty-one values cannot be forgotten for
+     * registry catching something: a property asserted over all forty-three values cannot be forgotten for
      * the thirty-fifth, or for the thirty-sixth.
      */
-    public static final Theme MONOCHROME = ThemePatch.of("monochrome", set(
+    public static final Theme MONOCHROME = ThemePatch.of("monochrome", set("monochrome", 
             "dim", "#B8000000",
             "canvas", "#FF101010",
             "recessed", "#FF141414",
@@ -447,6 +482,11 @@ public final class Themes {
             "complete", "#FFFFFFFF",
             "blocked", "#FF5A5A5A",
             "nodeFill", "#FF242424",
+            // The two washes the guard caught: both used to be inherited from modern, which is how the
+            // "no hue anywhere" theme came to carry two of another palette's values. Each is now a
+            // translucent form of one of this theme's own steps -- the locked wash of its darkest
+            // surface, the hover wash of its lightest edge.
+            "nodeDim", "#B0101010",
             "nodeDoneWash", "#33FFFFFF",
             "nodeEdgeBlocked", "#FF3E3E3E",
             "nodeEdgeAvailable", "#FFD2D2D2",
@@ -456,6 +496,8 @@ public final class Themes {
             "lineDone", "#FF9A9A9A",
             "selectedRing", "#FFFFFFFF",
             "hoverRing", "#90FFFFFF",
+            "canvasPattern", "#337A7A7A",
+            "rowHover", "#22E0E0E0",
             "scrollTrack", "#FF181818",
             "scrollThumb", "#FF525252",
             "labelBackdrop", "#F0000000",
@@ -491,7 +533,7 @@ public final class Themes {
      * that with brightness as well as with darkness, and a light theme that dimmed to black would be a
      * light panel on a black void, which reads as a bug.
      */
-    public static final Theme PAPER = ThemePatch.of("paper", set(
+    public static final Theme PAPER = ThemePatch.of("paper", set("paper", 
             "dim", "#B8E4DCCB",
             "canvas", "#FFEDE7DA",
             "recessed", "#FFE2DACA",
@@ -517,6 +559,7 @@ public final class Themes {
             "lineDone", "#FF3E7A46",
             "selectedRing", "#FF1A1611",
             "hoverRing", "#801A1611",
+            "canvasPattern", "#336E6454",
             "rowHover", "#221A1611",
             "labelBackdrop", "#F0F6F1E6",
             "scrollTrack", "#FFE2DACA",
@@ -535,14 +578,19 @@ public final class Themes {
             "edgeSelected", "#FF124068",
             "edgeBright", "#FF6E6454"))
             .applyTo(MODERN)
-            .withRadius(3);
+            .withRadius(3)
+            // A one-pixel rule grid: the printed sheet the palette is, faint enough to stay behind
+            // the text -- a thicker rule reads as a table rather than as paper.
+            .withBackground(new CanvasBackground(CanvasBackground.Kind.GRID_LINES,
+                    CanvasBackground.Space.GRAPH, 24,
+                    new CanvasBackground.Tuning(1, 5, false), CanvasBackground.Image.NONE));
 
     // ------------------------------------------------------------------
     // Minecraft materials
     // ------------------------------------------------------------------
 
     /** Obsidian and crying obsidian: near-black purple, lit from the inside by a violet glow. */
-    public static final Theme OBSIDIAN = ThemePatch.of("obsidian", set(
+    public static final Theme OBSIDIAN = ThemePatch.of("obsidian", set("obsidian", 
             "dim", "#C0080610",
             "canvas", "#FF0B0914",
             "recessed", "#FF141020",
@@ -568,6 +616,7 @@ public final class Themes {
             "lineDone", "#FF8A6ACC",
             "selectedRing", "#FFE6D8FF",
             "hoverRing", "#80E6D8FF",
+            "canvasPattern", "#338477A8",
             "rowHover", "#22D8C8FF",
             "labelBackdrop", "#F00B0914",
             "scrollTrack", "#FF171232",
@@ -589,7 +638,7 @@ public final class Themes {
             .withRadius(2);
 
     /** Amethyst: a pale violet crystal, so the light source is the accent rather than the surface. */
-    public static final Theme AMETHYST = ThemePatch.of("amethyst", set(
+    public static final Theme AMETHYST = ThemePatch.of("amethyst", set("amethyst", 
             "dim", "#B8160F1E",
             "canvas", "#FF160F1E",
             "recessed", "#FF1E1628",
@@ -615,6 +664,7 @@ public final class Themes {
             "lineDone", "#FF7A5FA8",
             "selectedRing", "#FFE6D4FF",
             "hoverRing", "#80E6D4FF",
+            "canvasPattern", "#338C7CA6",
             "rowHover", "#22D9C2FF",
             "labelBackdrop", "#F0160F1E",
             "scrollTrack", "#FF241C33",
@@ -636,7 +686,7 @@ public final class Themes {
             .withRadius(6);
 
     /** Copper: warm metal going green, which is the one palette where a patina is the point. */
-    public static final Theme COPPER = ThemePatch.of("copper", set(
+    public static final Theme COPPER = ThemePatch.of("copper", set("copper", 
             "dim", "#B81A0F08",
             "canvas", "#FF17100A",
             "recessed", "#FF23180F",
@@ -662,6 +712,7 @@ public final class Themes {
             "lineDone", "#FF4E9E86",
             "selectedRing", "#FFFFE0B8",
             "hoverRing", "#80FFE0B8",
+            "canvasPattern", "#339E7B58",
             "rowHover", "#22FFE0B8",
             "labelBackdrop", "#F017100A",
             "scrollTrack", "#FF2A1D12",
@@ -683,7 +734,7 @@ public final class Themes {
             .withRadius(4);
 
     /** Redstone: dark slate and a saturated red glow, so progression reads as current through a wire. */
-    public static final Theme REDSTONE = ThemePatch.of("redstone", set(
+    public static final Theme REDSTONE = ThemePatch.of("redstone", set("redstone", 
             "dim", "#B81A0606",
             "canvas", "#FF180808",
             "recessed", "#FF200C0C",
@@ -709,6 +760,7 @@ public final class Themes {
             "lineDone", "#FFCE5A4A",
             "selectedRing", "#FFFFC8BE",
             "hoverRing", "#80FFC8BE",
+            "canvasPattern", "#339E7270",
             "rowHover", "#22FFC8BE",
             "labelBackdrop", "#F0180808",
             "scrollTrack", "#FF261010",
@@ -734,7 +786,7 @@ public final class Themes {
     // ------------------------------------------------------------------
 
     /** The Nether: blood red, basalt grey and lava orange, with the surfaces as hot as the accents. */
-    public static final Theme NETHER = ThemePatch.of("nether", set(
+    public static final Theme NETHER = ThemePatch.of("nether", set("nether", 
             "dim", "#C01C0404",
             "canvas", "#FF1C0705",
             "recessed", "#FF2A0C08",
@@ -760,6 +812,7 @@ public final class Themes {
             "lineDone", "#FFD06A30",
             "selectedRing", "#FFFFE0B0",
             "hoverRing", "#80FFE0B0",
+            "canvasPattern", "#33A87058",
             "rowHover", "#22FFD0A0",
             "labelBackdrop", "#F01C0705",
             "scrollTrack", "#FF331210",
@@ -781,7 +834,7 @@ public final class Themes {
             .withRadius(4);
 
     /** The End: void purple and a pale chorus green, with surfaces darker than anything else here. */
-    public static final Theme END = ThemePatch.of("end", set(
+    public static final Theme END = ThemePatch.of("end", set("end", 
             "dim", "#C00A0610",
             "canvas", "#FF0A0610",
             "recessed", "#FF120C1C",
@@ -807,6 +860,7 @@ public final class Themes {
             "lineDone", "#FF8A76C8",
             "selectedRing", "#FFE8DCFF",
             "hoverRing", "#80E8DCFF",
+            "canvasPattern", "#338A7EA8",
             "rowHover", "#22E0D4FF",
             "labelBackdrop", "#F00A0610",
             "scrollTrack", "#FF171030",
@@ -828,7 +882,7 @@ public final class Themes {
             .withRadius(8);
 
     /** The deep dark: almost no light, and the accent is the only thing that glows. Sculk cyan. */
-    public static final Theme DEEP_DARK = ThemePatch.of("deep_dark", set(
+    public static final Theme DEEP_DARK = ThemePatch.of("deep_dark", set("deep_dark", 
             "dim", "#D8040608",
             "canvas", "#FF06080A",
             "recessed", "#FF0C1013",
@@ -854,6 +908,7 @@ public final class Themes {
             "lineDone", "#FF3E9E98",
             "selectedRing", "#FFC8FFF8",
             "hoverRing", "#80C8FFF8",
+            "canvasPattern", "#336E888E",
             "rowHover", "#22C8FFF8",
             "labelBackdrop", "#F006080A",
             "scrollTrack", "#FF101619",
@@ -879,7 +934,7 @@ public final class Themes {
     // ------------------------------------------------------------------
 
     /** Terminal: monospace green on black, with the surfaces doing nothing but holding the text up. */
-    public static final Theme TERMINAL = ThemePatch.of("terminal", set(
+    public static final Theme TERMINAL = ThemePatch.of("terminal", set("terminal", 
             "dim", "#E0000000",
             "canvas", "#FF000000",
             "recessed", "#FF040A04",
@@ -905,6 +960,7 @@ public final class Themes {
             "lineDone", "#FF62B062",
             "selectedRing", "#FFB8FFB8",
             "hoverRing", "#80B8FFB8",
+            "canvasPattern", "#334A8A4A",
             "rowHover", "#22B8FFB8",
             "labelBackdrop", "#F0000000",
             "scrollTrack", "#FF061006",
@@ -925,10 +981,15 @@ public final class Themes {
             .applyTo(MODERN)
             .withRadius(0)
             .withMotion(60L)
-            .withEasing(dev.ellipog.armature.client.ui.kit.Easing.LINEAR);
+            .withEasing(dev.ellipog.armature.client.ui.kit.Easing.LINEAR)
+            // Phosphor at two pixels: a CRT's shadow mask, which is what the palette imitates. At
+            // one pixel it is dust, and the screen stops looking like a terminal.
+            .withBackground(new CanvasBackground(CanvasBackground.Kind.DOTS,
+                    CanvasBackground.Space.GRAPH, 22,
+                    new CanvasBackground.Tuning(2, 5, false), CanvasBackground.Image.NONE));
 
     /** Neon: near-black with a hot magenta and cyan, for packs that want nothing Minecraft about it. */
-    public static final Theme NEON = ThemePatch.of("neon", set(
+    public static final Theme NEON = ThemePatch.of("neon", set("neon", 
             "dim", "#C0080410",
             "canvas", "#FF08040F",
             "recessed", "#FF110A1C",
@@ -954,6 +1015,7 @@ public final class Themes {
             "lineDone", "#FF40E0FF",
             "selectedRing", "#FFFF54C8",
             "hoverRing", "#90FF54C8",
+            "canvasPattern", "#338A72A8",
             "rowHover", "#28FF54C8",
             "labelBackdrop", "#F008040F",
             "scrollTrack", "#FF140B26",

@@ -8,8 +8,8 @@ It is a standalone mod, and nothing in it is specific to any one consumer — a 
 without inheriting another mod's assumptions.
 
 > [!NOTE]
-> **Armature is at 0.2.0, and the API is real.** Everything these pages describe is built and in use.
-> 0.x is deliberate: the API may still move, and it freezes at 1.0.0.
+> **Armature is at 1.0.0, and the API is frozen.** Everything these pages describe is built and in use.
+> From here a break in it needs a major, which is what a consumer compiling against it is owed.
 
 ## What it needs
 

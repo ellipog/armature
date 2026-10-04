@@ -5,9 +5,9 @@ Shared library and UI toolkit for **Fabric** and **NeoForge**, for **Minecraft 1
 Armature is a standalone library mod. Nothing in it is specific to any one consumer, and it can be
 installed on its own.
 
-> **Status: 0.2.0 — the API is real and the toolkit is in use.** The platform layer, the data and
-> validation helpers, the event, network and team APIs, and the first half of the UI toolkit are
-> built. 0.x is deliberate: the API is free to move until 1.0.0.
+> **Status: 1.0.0 — the API is real, in use, and frozen.** The platform layer, the data and
+> validation helpers, the event, network and team APIs, and the UI toolkit are built. 1.0.0 is the
+> promise a consumer compiles against: a break from here needs a major.
 
 ## What is in it
 
@@ -74,7 +74,7 @@ gradlew build
 ```
 
 Jars land in `fabric/build/libs` and `neoforge/build/libs`. Install the plain jar
-(`armature-fabric-1.21.1-0.2.0.jar`) — the `-sources` and `-javadoc` jars are not mods. The test
+(`armature-fabric-1.21.1-1.0.0.jar`) — the `-sources` and `-javadoc` jars are not mods. The test
 suite is JUnit 5, headless, and part of `gradlew build`; the kit's layout and text models are
 game-free by design, which is what lets them be asserted on without a running client.
 

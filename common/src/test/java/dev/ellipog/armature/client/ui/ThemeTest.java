@@ -66,7 +66,7 @@ class ThemeTest {
         // "the current look" cannot also be the fixed thing every assertion is written against.
         //
         // What this file is checking here is the *identity* of the default rather than its palette --
-        // `ThemesTest` compares all forty-two colours, and duplicating that here would mean two tests
+        // `ThemesTest` compares all forty-three colours, and duplicating that here would mean two tests
         // failing for one edit. What belongs here is that the toolkit starts on it.
         assertSame(Themes.DEFAULT, ArmatureTheme.current(),
                 "a client that has not chosen should be on the shipped default");
@@ -243,13 +243,16 @@ class ThemeTest {
         // a theme that is the right shape and has each colour shifted by one slot, which reads as a
         // palette nobody would choose rather than as a bug.
         assertThrows(IllegalArgumentException.class,
-                () -> Theme.from("x", new int[3], 4, 100L, Easing.LINEAR));
+                () -> Theme.from("x", new int[3], 4, 100L, Easing.LINEAR, CanvasBackground.NONE));
         assertThrows(IllegalArgumentException.class,
-                () -> Theme.from("x", new int[ThemeToken.ALL.size() + 1], 4, 100L, Easing.LINEAR));
+                () -> Theme.from("x", new int[ThemeToken.ALL.size() + 1], 4, 100L, Easing.LINEAR,
+                        CanvasBackground.NONE));
         assertThrows(IllegalArgumentException.class,
-                () -> Theme.from("x", new int[ThemeToken.ALL.size()], -1, 100L, Easing.LINEAR));
+                () -> Theme.from("x", new int[ThemeToken.ALL.size()], -1, 100L, Easing.LINEAR,
+                        CanvasBackground.NONE));
         assertThrows(IllegalArgumentException.class,
-                () -> Theme.from("x", new int[ThemeToken.ALL.size()], 4, -1L, Easing.LINEAR));
+                () -> Theme.from("x", new int[ThemeToken.ALL.size()], 4, -1L, Easing.LINEAR,
+                        CanvasBackground.NONE));
     }
 
     @Test

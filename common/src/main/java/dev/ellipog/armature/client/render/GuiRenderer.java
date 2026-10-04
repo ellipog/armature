@@ -6,6 +6,7 @@ import dev.ellipog.armature.client.ui.kit.Viewport;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,6 +31,13 @@ import java.util.UUID;
  * the scissor pair, and one texture {@code blit} added when a pin star became two image files
  * instead of a fill mask. Thirty-odd fills, thirty-odd strings, one centred string, two icons, two
  * scissors and one texture.
+ *
+ * <p>The image canvas background added two more, and both are about a texture being an asset rather
+ * than a sprite: {@link #textureSize} reads a file's real dimensions so a caller can preserve its
+ * aspect without knowing them, and {@link #scaled} draws a chosen region of a file into a chosen
+ * rectangle in a tint. They are the smallest pair that can tile or cover a rectangle with a PNG,
+ * and they are here rather than in the artist because both are statements about the game's texture
+ * pipeline — where a file's header lives, and how a blit is coloured.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -273,6 +281,57 @@ public interface GuiRenderer {
     // ------------------------------------------------------------------
     // Textures
     // ------------------------------------------------------------------
+
+    /**
+     * A texture's real pixel size, in the file's own pixels.
+     *
+     * <p>A nested type here rather than two ints because a size is only ever passed around whole:
+     * a caller that knows a texture is 24 by 16 knows both numbers or neither, and a method that
+     * returned one at a time would let a caller pair the width of one texture with the height of
+     * another.
+     */
+    record TextureSize(int width, int height) {
+    }
+
+    /**
+     * The real pixel size of a texture, read from its file header.
+     *
+     * <h2>Why a caller cannot assume 256, or 16</h2>
+     *
+     * <p>The two sizes this seam used to hard-code are both wrong for an arbitrary file: a blit's
+     * default texture size is a stitched atlas page, and an item is 16 pixels only because the game
+     * says so. A theme's background image is neither — it is whatever PNG the author shipped — so
+     * preserving its aspect, or covering a rectangle without distorting it, needs the numbers out of
+     * the file itself rather than a guess that happens to work for vanilla assets.
+     *
+     * @return the size, or empty when the asset is absent or the bytes are not a PNG — so a caller
+     *     draws nothing rather than a stretched rectangle of whatever the resource manager did find
+     */
+    Optional<TextureSize> textureSize(ResourceLocation texture);
+
+    /**
+     * Draws a source region of a texture into a rectangle, in a tint.
+     *
+     * <h2>What the numbers mean</h2>
+     *
+     * <p>The rectangle is the destination. The source is the region starting at {@code u}, {@code v}
+     * in the texture's own pixels, {@code sourceWidth} by {@code sourceHeight} of it, and that region
+     * is stretched to fill the destination. {@code textureWidth} and {@code textureHeight} are the
+     * file's real size, which is what turns the pixel offsets into texture coordinates — so they
+     * must be the same numbers {@link #textureSize} reported, not a nominal atlas size.
+     *
+     * <h2>The tint multiplies, and white means untouched</h2>
+     *
+     * <p>{@code argb} is multiplied channel by channel with the texture, alpha included: white
+     * ({@code 0xFFFFFFFF}) draws the file exactly as authored, a colour shifts it, and a low alpha
+     * washes it towards whatever is behind. That is what lets a background image obey a theme's
+     * {@code canvasPattern} alpha without shipping a second copy of the file, and it is why a caller
+     * passing a tint must pass {@code 0xFF} in its RGB to mean "only fade me". This is the same
+     * contract {@code fill} has with its colour, one multiplication further up the pipeline.
+     */
+    void scaled(ResourceLocation texture, int x, int y, int width, int height,
+                float u, float v, int sourceWidth, int sourceHeight,
+                int textureWidth, int textureHeight, int argb);
 
     /**
      * Draws a texture file at its own pixel size, top-left at {@code x}, {@code y}.

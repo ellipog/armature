@@ -147,7 +147,8 @@ public record ThemeToken(String id, String label, Group group) {
             new ThemeToken("line", "Dependency line", Group.GRAPH),
             new ThemeToken("lineDone", "Dependency line, met", Group.GRAPH),
             new ThemeToken("selectedRing", "Selected ring", Group.GRAPH),
-            new ThemeToken("hoverRing", "Hover ring", Group.GRAPH));
+            new ThemeToken("hoverRing", "Hover ring", Group.GRAPH),
+            new ThemeToken("canvasPattern", "Canvas pattern ink", Group.GRAPH));
 
     private static final List<ThemeToken> ROWS = List.of(
             new ThemeToken("rowHover", "Row hover wash", Group.ROW),

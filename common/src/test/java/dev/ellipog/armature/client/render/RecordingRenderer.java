@@ -8,7 +8,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -58,11 +61,29 @@ public final class RecordingRenderer implements GuiRenderer {
      * rectangle" compares numbers from two lists. Six types would be six visitors.
      */
     public record Call(Op op, int x, int y, int x2, int y2, int argb, String text,
-                       java.util.List<GuiRenderer.StyledRun> runs) {
+                       java.util.List<GuiRenderer.StyledRun> runs, Source source) {
 
-        /** A call with no runs: every op but styled text, which is the only one that carries them. */
+        /**
+         * Where a scaled texture draw read from, in the texture's own pixels.
+         *
+         * <p>A nested record rather than four more fields on the call, because it belongs to exactly
+         * one operation. A tiling test asserts the destination boxes are adjacent; a cover test
+         * asserts the source is centred and matches the destination's aspect — and the second kind
+         * of assertion should not have to read past three fields that are always zero.
+         */
+        public record Source(float u, float v, int sourceWidth, int sourceHeight,
+                             int textureWidth, int textureHeight) {
+        }
+
+        /** A call with no runs and no source: every op but styled text and scaled texture. */
         public Call(Op op, int x, int y, int x2, int y2, int argb, String text) {
-            this(op, x, y, x2, y2, argb, text, java.util.List.of());
+            this(op, x, y, x2, y2, argb, text, java.util.List.of(), null);
+        }
+
+        /** A call with runs but no source: styled text, which is the only one that carries them. */
+        public Call(Op op, int x, int y, int x2, int y2, int argb, String text,
+                    java.util.List<GuiRenderer.StyledRun> runs) {
+            this(op, x, y, x2, y2, argb, text, runs, null);
         }
 
         /** Whether this call is a filled rectangle covering the given point. */
@@ -101,6 +122,7 @@ public final class RecordingRenderer implements GuiRenderer {
     private final int charWidth;
     private final int lineHeight;
     private final boolean iconsDraw;
+    private final Map<ResourceLocation, GuiRenderer.TextureSize> textureSizes = new HashMap<>();
 
     private int openClips;
     private int deepestClip;
@@ -239,6 +261,46 @@ public final class RecordingRenderer implements GuiRenderer {
     @Override
     public void texture(ResourceLocation texture, int x, int y, int width, int height) {
         calls.add(new Call(Op.TEXTURE, x, y, x + width, y + height, 0, texture.toString()));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Recorded like {@link #texture}, with three more things a tiling or covering test needs: the
+     * tint in {@code argb}, the source region in {@link Call#source()}, and the destination box in the
+     * coordinates. Dropping the source would make the difference between whole-texture tiling and
+     * centred cover unassertable, which is exactly the pair of draw calls this operation exists for.
+     */
+    @Override
+    public void scaled(ResourceLocation texture, int x, int y, int width, int height,
+                       float u, float v, int sourceWidth, int sourceHeight,
+                       int textureWidth, int textureHeight, int argb) {
+        calls.add(new Call(Op.TEXTURE, x, y, x + width, y + height, argb, texture.toString(),
+                java.util.List.of(), new Call.Source(u, v, sourceWidth, sourceHeight,
+                        textureWidth, textureHeight)));
+    }
+
+    /**
+     * Declares a texture's size for {@link #textureSize}, the way a resource pack would.
+     *
+     * <p>A settable map rather than a fixed list, and the mirror of {@code withoutIcons}: a test that
+     * wants a tile at 24 by 16 says so, and a test that wants the unseeded path says nothing — which
+     * is the only way "an image with no readable size draws nothing" can be driven without a client.
+     */
+    public void putTextureSize(ResourceLocation texture, int width, int height) {
+        textureSizes.put(texture, new GuiRenderer.TextureSize(width, height));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Answers from what {@link #putTextureSize} was told; nothing is read from disk. A texture
+     * nobody declared is absent, which is the honest report for a headless recorder and the case a
+     * caller must survive.
+     */
+    @Override
+    public Optional<GuiRenderer.TextureSize> textureSize(ResourceLocation texture) {
+        return Optional.ofNullable(textureSizes.get(texture));
     }
 
     /**

@@ -4,6 +4,8 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 
+import dev.ellipog.armature.client.TextScale;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -13,9 +15,13 @@ import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.world.item.ItemStack;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -118,26 +124,43 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         // The shadow argument is always false, and that is not a simplification: a drop shadow is what
         // makes vanilla's text legible against vanilla's background, and this UI draws an opaque
         // backdrop behind every label instead. Both at once reads as a smudged label.
-        graphics.drawString(font(), text, x, y, argb, false);
+        double scale = TextScale.get();
+        if (scale == TextScale.DEFAULT) {
+            graphics.drawString(font(), text, x, y, argb, false);
+            return;
+        }
+        // Scaled about the string's own top-left, so the text grows right and down from where the
+        // layout put it rather than from the panel's corner. `textWidth`/`lineHeight` report the same
+        // factor, which is what keeps a layout that measured the string and the string it draws in step.
+        graphics.pose().pushPose();
+        graphics.pose().translate(x, y, 0F);
+        graphics.pose().scale((float) scale, (float) scale, 1F);
+        graphics.drawString(font(), text, 0, 0, argb, false);
+        graphics.pose().popPose();
     }
 
     @Override
     public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
         int at = x;
+        float base = (float) TextScale.get();
         for (StyledRun run : runs) {
-            if (run.scale() == 1F) {
+            float effective = run.scale() * base;
+            if (effective == 1F) {
                 drawRun(run, at, y, argb);
             }
             else {
                 // Bigger is the pose, scaled about the run's own top-left: the font has one size, and this
                 // keeps the run's top on the line's top while it grows downward into the taller line the
-                // caller reserved for it.
+                // caller reserved for it. The player's text scale multiplies the run's own, so a heading
+                // run and a body run grow together.
                 graphics.pose().pushPose();
                 graphics.pose().translate(at, y, 0F);
-                graphics.pose().scale(run.scale(), run.scale(), 1F);
+                graphics.pose().scale(effective, effective, 1F);
                 drawRun(run, 0, 0, argb);
                 graphics.pose().popPose();
             }
+            // `styledWidth` already carries the player's factor, so the advance and the drawn glyphs
+            // cannot disagree.
             at += styledWidth(run.text(), run.bold(), run.italic(), run.scale());
         }
     }
@@ -163,7 +186,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
             plain = font().width(Component.literal(text).withStyle(styleOf(new StyledRun(text, bold, italic,
                     false))));
         }
-        return Math.round(plain * scale);
+        return (int) Math.round(plain * scale * TextScale.get());
     }
 
     /** The game's style for a run: the whole of what this seam's two flags mean. */
@@ -183,12 +206,12 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
 
     @Override
     public int textWidth(String text) {
-        return font().width(text);
+        return (int) Math.round(font().width(text) * TextScale.get());
     }
 
     @Override
     public int lineHeight() {
-        return font().lineHeight;
+        return (int) Math.round(font().lineHeight * TextScale.get());
     }
 
     // ------------------------------------------------------------------
@@ -303,6 +326,107 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     // ------------------------------------------------------------------
     // Textures
     // ------------------------------------------------------------------
+
+    /** A PNG's signature: eight bytes, then the IHDR width and height at 16 and 20. */
+    private static final int PNG_HEADER_BYTES = 24;
+
+    private static final byte[] PNG_SIGNATURE =
+            {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+    /**
+     * {@inheritDoc}
+     *
+     * <h2>The header, not the image</h2>
+     *
+     * <p>{@code NativeImage.read} would answer the same question by decoding every pixel, which for a
+     * wallpaper-sized background is megabytes of work and a texture upload to learn two numbers that
+     * the first twenty-four bytes already carry. So the resource is opened, its PNG signature checked,
+     * and the IHDR width and height read as big-endian ints — the layout the PNG specification fixes,
+     * not a guess from a screenshot. Anything absent, short, unreadable or not a PNG is empty, so a
+     * caller draws nothing rather than stretching whatever file the resource manager did find.
+     *
+     * <p>No cache here: this wrapper is created per frame and holds no state, and the caller that
+     * asks for the same file every frame is the one that should remember the answer.
+     */
+    @Override
+    public Optional<TextureSize> textureSize(ResourceLocation texture) {
+        if (texture == null) {
+            return Optional.empty();
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return Optional.empty();
+        }
+        Optional<Resource> resource = minecraft.getResourceManager().getResource(texture);
+        if (resource.isEmpty()) {
+            return Optional.empty();
+        }
+        try (InputStream stream = resource.get().open()) {
+            byte[] header = stream.readNBytes(PNG_HEADER_BYTES);
+            if (header.length < PNG_HEADER_BYTES || !hasPngSignature(header)) {
+                return Optional.empty();
+            }
+            int width = readBigEndianInt(header, 16);
+            int height = readBigEndianInt(header, 20);
+            if (width <= 0 || height <= 0) {
+                return Optional.empty();
+            }
+            return Optional.of(new TextureSize(width, height));
+        }
+        catch (IOException absentOrUnreadable) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean hasPngSignature(byte[] header) {
+        for (int i = 0; i < PNG_SIGNATURE.length; i++) {
+            if (header[i] != PNG_SIGNATURE[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int readBigEndianInt(byte[] bytes, int at) {
+        return (bytes[at] & 0xFF) << 24
+                | (bytes[at + 1] & 0xFF) << 16
+                | (bytes[at + 2] & 0xFF) << 8
+                | (bytes[at + 3] & 0xFF);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <h2>The tint path, and why it is this one</h2>
+     *
+     * <p>This version's {@code GuiGraphics} has {@code setColor(float, float, float, float)}, and it
+     * is the colour state a blit actually reads: it writes the shader colour that the position-tex
+     * shader multiplies into every vertex — checked against this project's own compiled artefact
+     * rather than recalled, because a setter that only affected text or only affected fills would be
+     * worse than none. So the tint is set, the blit drawn, and white put back in a {@code finally}:
+     * the shader colour is global pipeline state, and leaving a tint behind would colour every later
+     * draw in the frame, which fails far from its cause.
+     *
+     * <p>{@code setColor} flushes a managed batch when one is open, so this call belongs outside
+     * {@link #batched} — the same layering rule the batch's own note states.
+     */
+    @Override
+    public void scaled(ResourceLocation texture, int x, int y, int width, int height,
+                       float u, float v, int sourceWidth, int sourceHeight,
+                       int textureWidth, int textureHeight, int argb) {
+        float alpha = ((argb >>> 24) & 0xFF) / 255F;
+        float red = ((argb >> 16) & 0xFF) / 255F;
+        float green = ((argb >> 8) & 0xFF) / 255F;
+        float blue = (argb & 0xFF) / 255F;
+        graphics.setColor(red, green, blue, alpha);
+        try {
+            graphics.blit(texture, x, y, width, height, u, v, sourceWidth, sourceHeight,
+                    textureWidth, textureHeight);
+        }
+        finally {
+            graphics.setColor(1F, 1F, 1F, 1F);
+        }
+    }
 
     /**
      * {@inheritDoc}
