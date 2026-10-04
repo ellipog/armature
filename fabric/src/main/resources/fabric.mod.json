@@ -9,6 +9,7 @@
     ],
     "contact": {},
     "license": "${license}",
+    "icon": "assets/armature/icon.png",
     "environment": "*",
     "entrypoints": {
         "main": [

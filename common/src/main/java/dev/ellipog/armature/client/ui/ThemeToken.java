@@ -159,7 +159,8 @@ public record ThemeToken(String id, String label, Group group) {
 
     private static final List<ThemeToken> OVERLAYS = List.of(
             new ThemeToken("tooltipFill", "Tooltip background", Group.OVERLAY),
-            new ThemeToken("tooltipEdge", "Tooltip border", Group.OVERLAY));
+            new ThemeToken("tooltipEdge", "Tooltip border", Group.OVERLAY),
+            new ThemeToken("tooltipText", "Tooltip text", Group.OVERLAY));
 
     /**
      * The ten control colours, whose values live in {@link Theme.Controls}.

@@ -126,7 +126,42 @@ public class ArmatureButton extends AbstractWidget {
      * filled the same way and would have had the same complaint.
      */
     private static final int LABEL_INSET = 6;
-    private int textColour = ArmatureTheme.title();
+
+    /**
+     * Which theme ink an ordinary label is drawn in, resolved while drawing.
+     *
+     * <p>An enum rather than a captured colour, and that is the fix rather than a nicety: a colour read
+     * in the constructor freezes whatever theme was in force when the control was <i>built</i>, and a
+     * screen that rebuilds its controls once and then draws them inside a chapter's scope would show
+     * that chapter's fills under the main theme's label ink. The two roles that matter are here; a
+     * colour a screen really does mean to pin uses {@link #textColour(int)}.
+     */
+    public enum Ink {
+        /** The brightest text, for a label that stands alone. The default. */
+        TITLE,
+        /** Ordinary text, for a label beside other content. */
+        BODY,
+        /** The blocked ink, for a label whose meaning is "this one is not available". */
+        BLOCKED,
+
+        /**
+         * The warning ink, for a label whose meaning is "this one destroys something".
+         *
+         * <h2>Why this is not {@link #BLOCKED}</h2>
+         *
+         * <p>{@code BLOCKED} resolves to the theme's blocked colour — a grey — and a grey label reads
+         * as <i>disabled</i>. A destructive control drawn with it produced exactly that report: a
+         * Disband button a player asked about, because it looked like a button they were not allowed
+         * to press. The palette has no red, so a "danger" ink has to be the warning colour it does
+         * carry; that is {@code inProgress}, the amber the node states already use for "caution".
+         */
+        DANGER
+    }
+
+    private Ink ink = Ink.TITLE;
+
+    /** A raw override, or null to resolve {@link #ink} from the theme as it is drawn. */
+    private Integer textColour;
 
     /** Whether the pointer is down on this button. Held so the pressed state can be drawn. */
     private boolean held;
@@ -192,8 +227,15 @@ public class ArmatureButton extends AbstractWidget {
         return this;
     }
 
+    /** A raw colour for the label, pinned rather than resolved from the theme. Rarely what you want. */
     public ArmatureButton textColour(int colour) {
         this.textColour = colour;
+        return this;
+    }
+
+    /** The label's ink role, resolved against the theme in force while drawing. */
+    public ArmatureButton ink(Ink role) {
+        this.ink = role;
         return this;
     }
 
@@ -406,7 +448,14 @@ public class ArmatureButton extends AbstractWidget {
             colour = ArmatureControlStyle.text(variant, true);
         }
         else {
-            colour = textColour;
+            // Resolved now rather than at construction, so a label drawn inside a chapter's scope wears
+            // that chapter's ink: see `Ink`.
+            colour = textColour != null ? textColour : switch (ink) {
+                case TITLE -> ArmatureTheme.title();
+                case BODY -> ArmatureTheme.body();
+                case BLOCKED -> ArmatureTheme.blocked();
+                case DANGER -> ArmatureTheme.inProgress();
+            };
         }
         String label = getMessage().getString();
 

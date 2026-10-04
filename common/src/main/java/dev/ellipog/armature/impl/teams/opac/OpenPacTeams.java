@@ -5,7 +5,10 @@ import com.mojang.authlib.GameProfile;
 import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.teams.MutableTeamManager;
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamFeature;
+import dev.ellipog.armature.api.teams.TeamInvite;
 import dev.ellipog.armature.api.teams.TeamManager;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 import dev.ellipog.armature.impl.teams.TeamProvider;
 
@@ -22,10 +25,8 @@ import xaero.pac.common.server.parties.party.api.IServerPartyAPI;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -190,6 +191,17 @@ public final class OpenPacTeams implements MutableTeamManager {
         return false;
     }
 
+    /**
+     * None of them, and that is OPAC's shape rather than a gap in this adapter: its public API has no
+     * rename, no ownership transfer, no party policy and no uninvite, and its own screens and commands
+     * own those. A panel asks this and hides the controls, so an OPAC party shows the roster and the
+     * actions that work instead of buttons that can only refuse.
+     */
+    @Override
+    public boolean supports(TeamFeature feature) {
+        return false;
+    }
+
     @Override
     public Collection<Team> teams() {
         onServerThread();
@@ -274,6 +286,24 @@ public final class OpenPacTeams implements MutableTeamManager {
     }
 
     /**
+     * Invites on an actor's behalf, to the extent OPAC lets this adapter check.
+     *
+     * <p>OPAC keeps its own rules for who may invite and publishes no policy through this API, so the
+     * only floor enforceable here is that the actor is in the party at all; beyond that the source
+     * owns the question, which is exactly why {@link #supports} answers false for the policy and the
+     * panel shows its settings as OPAC's rather than as this team's.
+     */
+    @Override
+    public boolean invite(UUID actor, UUID teamId, UUID player) {
+        onServerThread();
+        IServerPartyAPI party = parties().getPartyById(teamId);
+        if (party == null || party.getMemberInfo(actor) == null) {
+            return false;
+        }
+        return invite(teamId, player);
+    }
+
+    /**
      * Accepts the first invitation this player holds.
      *
      * <p>Leaves any current party first, matching the stored manager: a player who accepts an
@@ -283,14 +313,31 @@ public final class OpenPacTeams implements MutableTeamManager {
     @Override
     public Optional<Team> acceptInvite(UUID player) {
         onServerThread();
-        IPartyManagerAPI parties = parties();
-
-        Optional<IServerPartyAPI> target = parties.getAllStream()
+        Optional<IServerPartyAPI> target = parties().getAllStream()
                 .filter(party -> party.isInvited(player))
                 .findFirst();
-        if (target.isEmpty()) {
+        return target.flatMap(party -> accept(party, player));
+    }
+
+    /**
+     * Accepts one specific invitation, so a panel's Accept button means the row it is on.
+     *
+     * <p>A player can hold several invitations and the untargeted form picks the first; without this,
+     * accepting the second row's invitation joins the first row's party.
+     */
+    @Override
+    public Optional<Team> acceptInvite(UUID player, UUID teamId) {
+        onServerThread();
+        IServerPartyAPI party = parties().getPartyById(teamId);
+        if (party == null || !party.isInvited(player)) {
             return Optional.empty();
         }
+        return accept(party, player);
+    }
+
+    /** The shared half of both accept forms: leave what you are in, then join. */
+    private Optional<Team> accept(IServerPartyAPI target, UUID player) {
+        IPartyManagerAPI parties = parties();
 
         IServerPartyAPI current = parties.getPartyByMember(player);
         if (current != null && !ownerOf(current).equals(player)) {
@@ -302,9 +349,8 @@ public final class OpenPacTeams implements MutableTeamManager {
             return Optional.empty();
         }
 
-        IServerPartyAPI joined = target.get();
-        joined.addMember(player, PartyMemberRank.MEMBER, name);
-        return Optional.of(toTeam(joined));
+        target.addMember(player, PartyMemberRank.MEMBER, name);
+        return Optional.of(toTeam(target));
     }
 
     /**
@@ -385,12 +431,18 @@ public final class OpenPacTeams implements MutableTeamManager {
         party.getMemberInfoStream().forEach(member ->
                 members.put(member.getUUID(), roleOf(member)));
 
-        Set<UUID> invites = new LinkedHashSet<>();
-        party.getInvitedPlayersStream().map(IPartyPlayerInfoAPI::getUUID).forEach(invites::add);
+        UUID owner = ownerOf(party);
+        // OPAC's invitation list is bare ids, like FTB's: it publishes neither the sender nor the
+        // time, so the owner and zero stand in -- see TeamInvite. The policy is the default for the
+        // same reason, and supports() false is what keeps a panel from showing it as editable.
+        Map<UUID, TeamInvite> invites = new LinkedHashMap<>();
+        party.getInvitedPlayersStream().map(IPartyPlayerInfoAPI::getUUID)
+                .forEach(invited -> invites.put(invited, new TeamInvite(owner, 0L)));
 
         // createdAt is zero: OPAC does not expose when a party was formed. persistent is true, as every
         // party here is a real stored one.
-        return new Team(party.getId(), party.getDefaultName(), ownerOf(party), members, invites, 0L, true);
+        return new Team(party.getId(), party.getDefaultName(), owner, members, invites,
+                TeamPolicy.DEFAULT, 0L, true);
     }
 
     /**

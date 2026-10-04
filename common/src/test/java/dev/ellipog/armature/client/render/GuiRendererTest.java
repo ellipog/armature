@@ -666,4 +666,24 @@ class GuiRendererTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("a scope's radius reaches a panel, so a chapter's corners are the chapter's")
+    void aScopeRadiusReachesAPanel() {
+        // The class note used to promise that a scope changed colours only, while `panel` already read
+        // `current().cornerRadius()`. The code was right and the note was wrong: a chapter whose panels
+        // round differently is exactly what a per-chapter radius means. This pins the behaviour so the
+        // next reader of that note is not misled the way its author was.
+        ArmatureTheme.setCurrent(Themes.MODERN.withRadius(0));
+
+        RecordingRenderer r = RecordingRenderer.create();
+        try (ArmatureTheme.Scope ignored = ArmatureTheme.scope(Themes.TOME)) {
+            ArmatureTheme.panel(r, 0, 0, 20, 20, 0xFF111111, 0xFF222222);
+        }
+
+        assertFalse(r.covered(0, 0), "the corner should be cut by the scope's radius (tome is 8)");
+        assertTrue(r.covered(10, 10), "and the middle is still filled");
+
+        ArmatureTheme.resetCurrent();
+    }
 }

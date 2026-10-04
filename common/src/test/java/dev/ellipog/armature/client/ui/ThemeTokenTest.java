@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>So the pairing is checked mechanically: for every token, the method on {@code Theme} with that
  * token's name is invoked on a known theme and compared against that token's slot in
  * {@code allColours()}. Reorder either side without the other and this fails, naming the token. There is
- * no way to write that check by hand for forty-one values that stays correct when the forty-second is
+ * no way to write that check by hand for forty-two values that stays correct when the forty-third is
  * added — which is exactly why it is written with reflection.
  *
  * <h2>The second property: a name a patch or a file uses must be a colour that exists</h2>
@@ -153,9 +153,9 @@ class ThemeTokenTest {
         // `CONTROL_START` is the single number that says where `Theme`'s own components end and the
         // nested `Controls` record begins. `Theme.allColours()` asserts its top-level array against it
         // and `Theme.from` splits on it, so if it is wrong, everything is.
-        assertEquals(31, ThemeToken.CONTROL_START);
+        assertEquals(32, ThemeToken.CONTROL_START);
         assertEquals(10, ThemeToken.CONTROLS.size());
-        assertEquals(41, ThemeToken.ALL.size());
+        assertEquals(42, ThemeToken.ALL.size());
 
         assertTrue(ThemeToken.ALL.subList(0, ThemeToken.CONTROL_START).stream()
                         .noneMatch(t -> t.group() == ThemeToken.Group.CONTROL),
@@ -169,7 +169,7 @@ class ThemeTokenTest {
     @Test
     @DisplayName("every token has a label and a group, because the editor is built from the list")
     void everyTokenIsUsableByAnEditor() {
-        // The editor lists all forty-one and groups them by section. A token with an empty label would
+        // The editor lists all forty-two and groups them by section. A token with an empty label would
         // be a blank row; a token with no group would be missing from every section and unreachable --
         // which is the failure mode of building a screen from a hand-written list, prevented here by
         // building it from this one.

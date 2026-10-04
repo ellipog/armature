@@ -1,9 +1,12 @@
 package dev.ellipog.armature.impl.teams;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamInvite;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 
 import org.junit.jupiter.api.DisplayName;
@@ -79,7 +82,7 @@ class TeamStoreTest {
 
         Team team = Team.created(UUID.randomUUID(), "the crew", owner, 128L)
                 .withMember(officer, TeamRole.OFFICER)
-                .withInvite(invited);
+                .withInvite(invited, owner, 200L);
         store.put(team);
 
         Team reloaded = TeamStore.load(store.save(new CompoundTag(), null), null).byId(team.id())
@@ -115,5 +118,84 @@ class TeamStoreTest {
 
         assertEquals(0, reloaded.size(), "the unreadable team was dropped");
         assertNotNull(reloaded, "and the store itself loaded cleanly");
+    }
+
+    @Test
+    @DisplayName("the policy and an invitation's sender and time survive the round trip")
+    void policyAndInvitationMetadataSurvive() {
+        TeamStore store = new TeamStore();
+        UUID owner = UUID.randomUUID();
+        UUID invited = UUID.randomUUID();
+
+        // A policy that differs from the default in *both* fields, so a loader that read one and
+        // defaulted the other cannot pass -- and deliberately the non-default value of each, so a
+        // `getBoolean` that ignored the stored bytes would answer wrong rather than coincidentally right.
+        Team team = Team.created(UUID.randomUUID(), "open crew", owner, 500L)
+                .withPolicy(new TeamPolicy(true, false))
+                .withInvite(invited, owner, 733L);
+        store.put(team);
+
+        Team reloaded = TeamStore.load(store.save(new CompoundTag(), null), null).byId(team.id())
+                .orElseThrow(() -> new AssertionError("the team should have come back"));
+
+        assertEquals(new TeamPolicy(true, false), reloaded.policy(),
+                "both switches are read back as stored, not as defaults");
+        assertEquals(new TeamInvite(owner, 733L), reloaded.inviteOf(invited).orElseThrow(),
+                "and an invitation keeps who sent it and when -- the two facts a panel row shows and "
+                        + "a bare id could not");
+    }
+
+    @Test
+    @DisplayName("a version 1 file loads with owner-sent invitations, no time, and the default policy")
+    void aVersionOneFileMigrates() {
+        // Built by hand rather than through save(), because save() no longer writes version 1 -- and a
+        // migration test that used the current writer would be testing that the writer agrees with
+        // itself. This is the shape the old format actually had: bare invite ids and no policy keys.
+        UUID id = UUID.randomUUID();
+        UUID owner = UUID.randomUUID();
+        UUID invited = UUID.randomUUID();
+
+        CompoundTag entry = new CompoundTag();
+        entry.putString("id", id.toString());
+        entry.putString("name", "the old crew");
+        entry.putString("owner", owner.toString());
+        entry.putLong("createdAt", 7L);
+
+        ListTag members = new ListTag();
+        CompoundTag member = new CompoundTag();
+        member.putString("player", owner.toString());
+        member.putString("role", "OWNER");
+        members.add(member);
+        entry.put("members", members);
+
+        ListTag invites = new ListTag();
+        CompoundTag invite = new CompoundTag();
+        invite.putString("player", invited.toString());
+        invites.add(invite);
+        entry.put("invites", invites);
+
+        ListTag teams = new ListTag();
+        teams.add(entry);
+
+        CompoundTag versionOne = new CompoundTag();
+        versionOne.putInt("version", 1);
+        versionOne.put("teams", teams);
+
+        Team loaded = TeamStore.load(versionOne, null).byId(id)
+                .orElseThrow(() -> new AssertionError("a version 1 team must still load"));
+
+        assertEquals(owner, loaded.owner());
+        assertEquals(TeamRole.OWNER, loaded.roleOf(owner).orElseThrow());
+        TeamInvite migrated = loaded.inviteOf(invited)
+                .orElseThrow(() -> new AssertionError("the version 1 invitation must survive"));
+        assertEquals(owner, migrated.inviter(),
+                "with no sender stored, the owner stands in -- see TeamInvite on why an approximate "
+                        + "sender beats no sender");
+        assertEquals(0L, migrated.at(), "and no time stored is zero, not a made-up one");
+        assertFalse(migrated.hasTime());
+        assertEquals(TeamPolicy.DEFAULT, loaded.policy(),
+                "a party from before the switches existed loads on the documented default: invite-only, "
+                        + "with member invitations on -- and never null, which would be a policy nobody "
+                        + "can read off a team");
     }
 }

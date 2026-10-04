@@ -1,5 +1,7 @@
 package dev.ellipog.armature.client;
 
+import dev.ellipog.armature.client.ui.Themes;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -160,5 +162,31 @@ class ArmatureControlStyleTest {
                     ArmatureControlStyle.edge(SECTION, true, false, true),
                     "flat has no rule, so its `edge` is the ordinary control edge");
         }
+    }
+
+    @Test
+    @DisplayName("a scope recolours a control, so a chapter's buttons wear the chapter's palette")
+    void aScopeRecoloursControls() {
+        // The cascade's control half. Controls used to read the base theme only, while their text read
+        // the scope -- so a chapter scope produced a half-recoloured button. One theme, two reads, and
+        // this pins that they now answer the same thing.
+        ArmatureTheme.setCurrent(Themes.MODERN);
+        int chrome = ArmatureControlStyle.fill(ArmatureControlStyle.Variant.PLAIN, true, false, false);
+
+        try (ArmatureTheme.Scope ignored = ArmatureTheme.scope(Themes.MONOCHROME)) {
+            assertEquals(Themes.MONOCHROME.controls().fill(),
+                    ArmatureControlStyle.fill(ArmatureControlStyle.Variant.PLAIN, true, false, false),
+                    "inside the scope the fill is the scope's");
+            assertEquals(Themes.MONOCHROME.controls().edge(),
+                    ArmatureControlStyle.edge(ArmatureControlStyle.Variant.PLAIN, true, false, false),
+                    "and so is the border");
+            assertEquals(Themes.MONOCHROME.title(),
+                    ArmatureControlStyle.text(ArmatureControlStyle.Variant.ACCENT, true),
+                    "and the label, which already read the scope");
+        }
+
+        assertEquals(chrome,
+                ArmatureControlStyle.fill(ArmatureControlStyle.Variant.PLAIN, true, false, false),
+                "and outside it the main theme's fill is back");
     }
 }

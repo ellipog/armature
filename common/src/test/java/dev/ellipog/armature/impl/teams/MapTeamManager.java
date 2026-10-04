@@ -74,7 +74,7 @@ final class MapTeamManager implements MutableTeamManager {
         if (team == null || team.isMember(player) || team.isInvited(player)) {
             return false;
         }
-        teams.put(teamId, team.withInvite(player));
+        teams.put(teamId, team.withInvite(player, team.owner(), 0L));
         return true;
     }
 

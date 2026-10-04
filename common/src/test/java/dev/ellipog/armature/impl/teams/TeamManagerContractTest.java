@@ -1,7 +1,9 @@
 package dev.ellipog.armature.impl.teams;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamFeature;
 import dev.ellipog.armature.api.teams.TeamManager;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -111,6 +113,30 @@ class TeamManagerContractTest {
         assertRefuses(manager, "leave", () -> manager.leave(other));
         assertRefuses(manager, "kick", () -> manager.kick(actor, other));
         assertRefuses(manager, "disband", () -> manager.disband(actor, actor));
+    }
+
+    @Test
+    @DisplayName("a read-only manager refuses the optional operations too, and claims no capability")
+    void aReadOnlyManagerRefusesTheOptionalOperations() {
+        TeamManager manager = new ReadOnlyTeamManager();
+        UUID actor = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+
+        // The capability question and the refusal have to agree: a caller that asked supports() and
+        // saw true would offer a control that throws. False here is the same answer as the throws
+        // below, asked in the form the panel uses before it draws anything.
+        assertFalse(manager.supports(TeamFeature.RENAME), "no capability by default");
+        assertEquals(0, manager.memberLimit(),
+                "and no stated limit -- zero means 'this source cannot say', not 'no room'");
+
+        assertRefuses(manager, "rename", () -> manager.rename(actor, actor, "new name"));
+        assertRefuses(manager, "transferOwnership", () -> manager.transferOwnership(actor, actor, other));
+        assertRefuses(manager, "setPolicy", () -> manager.setPolicy(actor, actor, TeamPolicy.OPEN));
+        assertRefuses(manager, "joinPublic", () -> manager.joinPublic(actor, other));
+        assertRefuses(manager, "declineInvite", () -> manager.declineInvite(actor, other));
+        assertRefuses(manager, "cancelInvite", () -> manager.cancelInvite(actor, actor, other));
+        assertRefuses(manager, "invite", () -> manager.invite(actor, actor, other));
+        assertRefuses(manager, "acceptInvite", () -> manager.acceptInvite(actor, other));
     }
 
     @Test

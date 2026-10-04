@@ -83,7 +83,18 @@ for (PartyRoster.Member m : roster.members()) {
 }
 ```
 
-A `Member` carries the id, name, role, and four facts a panel would otherwise re-derive — `self`,
-`owner`, `canRemove` (the same rule the server will apply) and `online`. One of those is worth
-calling out: `isReal()` distinguishes "a party of one you just created" from "you are alone", which a
-panel inferring it from `size() == 1` would get wrong for the ten seconds after the party is made.
+A `Member` carries the id, name, role, and five facts a panel would otherwise re-derive — `self`,
+`owner`, `canRemove` and `canTransfer` (the same rules the server will apply) and `online`. One of
+those is worth calling out: `isReal()` distinguishes "a party of one you just created" from "you are
+alone", which a panel inferring it from `size() == 1` would get wrong for the ten seconds after the
+party is made.
+
+Each row reserves `PartyRoster.actionStrip()` on its right — room for Transfer and Remove, laid out by
+`transferSlot` and `removeSlot` from the row's own slot. It is reserved on **every** row, including
+the ones no control is drawn on, so two rows never have different text widths for a reason nothing on
+screen explains. A consumer that draws a role badge from the same strip measures it against the same
+`actionStrip()`, which is what keeps the chip and the hover controls one place rather than two.
+
+From a wire-format rather than a live team, `PartyRoster.fromParts(..., policy, memberLimit)` builds
+the same roster from what the snapshot carried — `canRemove` and friends recomputed from the roles
+rather than sent, because a boolean that travels can disagree with the roles it came from.

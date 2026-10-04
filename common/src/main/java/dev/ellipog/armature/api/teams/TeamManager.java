@@ -23,7 +23,7 @@ import java.util.UUID;
  * {@link #allTeams} and {@link #teamCount} are default methods written on top of those three, so an
  * implementation that can only read gets the whole read surface for nothing.
  *
- * <p><b>Writing is optional, and refusing is not a failure.</b> The six mutators throw
+ * <p><b>Writing is optional, and refusing is not a failure.</b> The six structural mutators throw
  * {@link UnsupportedOperationException} by default, naming the manager in the message. That is
  * deliberate rather than lazy: a read-only source is a legitimate answer — a mod can expose parties
  * that its own commands create — and the alternative to a loud refusal is a silent no-op, which
@@ -34,6 +34,16 @@ import java.util.UUID;
  * <p>Implementations that <i>do</i> write should implement {@link MutableTeamManager} instead, which
  * redeclares those six as abstract so "this one really can" is checkable at compile time rather than
  * a promise in a javadoc.
+ *
+ * <h2>Beyond the six: named capabilities, because sources differ</h2>
+ *
+ * <p>{@link #rename}, {@link #transferOwnership}, {@link #setPolicy}, {@link #joinPublic},
+ * {@link #declineInvite} and {@link #cancelInvite} are newer operations a source may or may not be
+ * able to offer — Open Parties and Claims cannot rename a party at all, and FTB Teams is read-only
+ * here by design. They throw by default like the six, but "can this source do it" is a different
+ * question from "does this source write at all", so it is asked with {@link #supports} rather than
+ * folded into {@link #managesMembership()}. A caller offers a control only where the answer is yes;
+ * a control that can only ever be refused is worse than a missing one.
  *
  * <h2>Threading</h2>
  *
@@ -170,6 +180,108 @@ public interface TeamManager {
     }
 
     // ------------------------------------------------------------------
+    // Optional operations, one capability each
+    // ------------------------------------------------------------------
+
+    /**
+     * Invites a player, on {@code actor}'s behalf.
+     *
+     * <p>The actor-aware form of {@link #invite(UUID, UUID)}, and the one a command should use: the
+     * permission rule is {@link Team#canInvite}, which the policy switch feeds, and enforcing it needs
+     * to know who is asking. A source that cannot tell who may invite (a foreign parties mod owns
+     * that rule) refuses when the actor is not a member at all, and leaves the rest to itself.
+     *
+     * @return false when the actor may not invite, the target is already in or invited, or the team
+     *         is at {@link #memberLimit()}
+     */
+    default boolean invite(UUID actor, UUID teamId, UUID player) {
+        throw unsupported("invite");
+    }
+
+    /**
+     * Accepts one specific invitation.
+     *
+     * <p>A player can hold invitations from several parties, so the untargeted
+     * {@link #acceptInvite(UUID)} picking the first is a convenience rather than the whole story: a
+     * panel's Accept button sits on one invitation's row and must mean <i>that</i> one, or a click on
+     * the second row joins the first row's party.
+     *
+     * @return the team they joined, or empty when there is no invitation for that team, or the team
+     *         filled up before they answered
+     */
+    default Optional<Team> acceptInvite(UUID player, UUID teamId) {
+        throw unsupported("acceptInvite");
+    }
+
+    /**
+     * Renames a team. Owner only.
+     *
+     * <p>{@link TeamLimits#isValidName} decides what a name may be; the manager applies the same rule
+     * the command reports, so "that name is too long" and the refusal cannot disagree.
+     *
+     * @return false when the actor is not the owner, the team is gone, or the name is not one a party
+     *         may be given. True includes the no-op case of renaming to the name it already has
+     */
+    default boolean rename(UUID actor, UUID teamId, String name) {
+        throw unsupported("rename");
+    }
+
+    /**
+     * Hands ownership to another member. The previous owner becomes an ordinary member.
+     *
+     * @return false unless {@link Team#canTransfer} says the actor may and the target is a member
+     */
+    default boolean transferOwnership(UUID actor, UUID teamId, UUID target) {
+        throw unsupported("transferOwnership");
+    }
+
+    /**
+     * Changes what members may do. Owner only.
+     *
+     * @return false when the actor is not the owner or the team is gone
+     */
+    default boolean setPolicy(UUID actor, UUID teamId, TeamPolicy policy) {
+        throw unsupported("setPolicy");
+    }
+
+    /**
+     * Joins a public team, without an invitation.
+     *
+     * <p>The one path that does not start from an invitation, so it carries the checks invitations
+     * make implicit: the party must actually be open ({@link TeamPolicy#openJoin}), there must be
+     * room, and the player must not already be in a real team — joining is for the solo screen, and
+     * silently moving somebody out of their current party is the one behaviour this refuses.
+     *
+     * @return the team they joined, or empty when any of the three conditions fails
+     */
+    default Optional<Team> joinPublic(UUID teamId, UUID player) {
+        throw unsupported("joinPublic");
+    }
+
+    /**
+     * Declines an invitation. The invitee's own act, so no actor parameter.
+     *
+     * @return true if there was an invitation from that team to decline
+     */
+    default boolean declineInvite(UUID player, UUID teamId) {
+        throw unsupported("declineInvite");
+    }
+
+    /**
+     * Withdraws an invitation before it is answered.
+     *
+     * <p>The inviter's side of {@link #declineInvite}. Permitted to anyone who may invite —
+     * {@link Team#canInvite} — so an officer can clean up their own invitation, and the owner can
+     * always clean up anybody's. The person who sent this particular invitation may always withdraw
+     * it, including after a policy change took their permission away.
+     *
+     * @return false when the target is not invited or the actor may not invite
+     */
+    default boolean cancelInvite(UUID actor, UUID teamId, UUID target) {
+        throw unsupported("cancelInvite");
+    }
+
+    // ------------------------------------------------------------------
     // What a caller may assume
     // ------------------------------------------------------------------
 
@@ -182,6 +294,30 @@ public interface TeamManager {
      */
     default boolean managesMembership() {
         return false;
+    }
+
+    /**
+     * Whether this source can perform an optional operation.
+     *
+     * <p>False by default, and deliberately not tied to {@link #managesMembership()}: Open Parties
+     * and Claims writes the structural six but cannot rename a party, and a source that reads but
+     * cannot write may still be able to answer. The caller that draws a control asks this first —
+     * see {@link TeamFeature} for what each value gates and why a capability exists at all.
+     */
+    default boolean supports(TeamFeature feature) {
+        return false;
+    }
+
+    /**
+     * How many members a team may hold, or <b>zero</b> when the source cannot say.
+     *
+     * <p>Zero rather than a large number, because the two mean different things to a caller drawing
+     * a header: {@code 3/8} where the limit is known, {@code 3 members} where it is not. A source
+     * with its own limit — a foreign parties mod — answers zero here and refuses a join itself when
+     * it wants to.
+     */
+    default int memberLimit() {
+        return 0;
     }
 
     /**
@@ -210,7 +346,7 @@ public interface TeamManager {
      */
     private UnsupportedOperationException unsupported(String operation) {
         return new UnsupportedOperationException("the '" + name() + "' team manager cannot "
-                + operation + " — it provides teams it does not own. Use managesMembership() to ask "
-                + "before calling a mutator.");
+                + operation + " — it provides teams it does not own. Use managesMembership() or "
+                + "supports(TeamFeature) to ask before calling a mutator.");
     }
 }

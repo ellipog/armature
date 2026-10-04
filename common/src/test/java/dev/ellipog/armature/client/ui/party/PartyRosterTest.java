@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client.ui.party;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 import dev.ellipog.armature.client.ui.kit.Layout;
 import dev.ellipog.armature.client.ui.kit.Measure;
@@ -123,7 +124,7 @@ class PartyRosterTest {
             handedOver.put(OWNER, TeamRole.OWNER);
 
             Team team = new Team(UUID.randomUUID(), "late owner", OWNER, handedOver,
-                    java.util.Set.of(), 0L, true);
+                    Map.of(), TeamPolicy.DEFAULT, 0L, true);
 
             PartyRoster roster = PartyRoster.of(team, OWNER, PartyRosterTest::nameOf, EVERYBODY);
 
@@ -252,6 +253,86 @@ class PartyRosterTest {
     }
 
     // ------------------------------------------------------------------
+    // Handing the party over, and the settings the owner reads
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("who may be handed the party, and what the viewer may change")
+    class TransferAndSettings {
+
+        @Test
+        @DisplayName("every row's canTransfer is the team's own answer, over every role pairing")
+        void transferAgreesWithTheTeam() {
+            // The same sweep `canRemove` gets, for the same reason: the Transfer control the panel
+            // draws and the manager's refusal have to be one rule, and the interesting failures are
+            // the ones where a plausible-looking comparison says yes and the server says no.
+            for (TeamRole viewerRole : TeamRole.values()) {
+                for (TeamRole targetRole : TeamRole.values()) {
+                    final TeamRole viewer = viewerRole;
+                    final TeamRole target = targetRole;
+                    Team team = Team.created(UUID.randomUUID(), "pairing", OWNER, 0L)
+                            .withMember(MEMBER, viewer)
+                            .withMember(OFFICER, target);
+
+                    PartyRoster roster = PartyRoster.of(team, MEMBER, PartyRosterTest::nameOf, EVERYBODY);
+                    PartyRoster.Member row = roster.members().stream()
+                            .filter(m -> m.id().equals(OFFICER)).findFirst().orElseThrow();
+
+                    assertEquals(team.canTransfer(MEMBER, OFFICER), row.canTransfer(),
+                            () -> "a roster drawn for a " + viewer + " looking at a " + target
+                                    + " disagreed with the team's own transfer rule");
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("the owner sees the management controls and others do not")
+        void ownerOnlyControls() {
+            PartyRoster asOwner = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
+            assertTrue(asOwner.canRename(), "the owner may rename");
+            assertTrue(asOwner.canSetPolicy(), "and change the settings");
+            assertTrue(asOwner.canInvite(), "and invite");
+
+            PartyRoster asOfficer = PartyRoster.of(party(), OFFICER, PartyRosterTest::nameOf, EVERYBODY);
+            assertFalse(asOfficer.canRename(), "an officer cannot rename the party");
+            assertFalse(asOfficer.canSetPolicy(), "nor change its settings");
+            assertTrue(asOfficer.canInvite(), "but an officer may always invite -- the member switch "
+                    + "is about members, not a replacement for the rank table");
+
+            PartyRoster asMember = PartyRoster.of(party(), MEMBER, PartyRosterTest::nameOf, EVERYBODY);
+            assertFalse(asMember.canRename());
+            assertFalse(asMember.canSetPolicy());
+            assertTrue(asMember.canInvite(), "and a member may too, on the default policy");
+        }
+
+        @Test
+        @DisplayName("a member may invite only while the policy says so")
+        void memberInvitationsFollowThePolicy() {
+            Team closed = party().withPolicy(TeamPolicy.DEFAULT.withMembersCanInvite(false));
+
+            PartyRoster roster = PartyRoster.of(closed, MEMBER, PartyRosterTest::nameOf, EVERYBODY);
+            assertFalse(roster.canInvite(),
+                    "with the switch off an ordinary member gets no Invite row -- the same answer "
+                            + "StoredTeamManager.invite gives");
+            assertFalse(roster.membersCanInvite(), "and the switch itself reads what the team carries");
+        }
+
+        @Test
+        @DisplayName("a solo roster offers no management and reports the default policy")
+        void soloOffersNothing() {
+            PartyRoster roster = PartyRoster.of(solo(), MEMBER, PartyRosterTest::nameOf, EVERYBODY);
+
+            assertFalse(roster.canInvite(), "there is no party to invite anybody to");
+            assertFalse(roster.canRename());
+            assertFalse(roster.canSetPolicy());
+            assertTrue(roster.membersCanInvite(),
+                    "the policy a solo team carries is the default -- not a null a switch would "
+                            + "have to special-case");
+            assertFalse(roster.openJoin(), "and a solo team is not a public party");
+        }
+    }
+
+    // ------------------------------------------------------------------
     // A party of one, and no party at all
     // ------------------------------------------------------------------
 
@@ -356,9 +437,10 @@ class PartyRosterTest {
         @Test
         @DisplayName("the room taken off the right is reserved on every row, not only the ones with a button")
         void theButtonColumnIsReservedOnEveryRow() {
-            // The property that keeps a name from running under the next row's button. Every row gives
-            // up REMOVE_WIDTH + both insets, including the rows that carry no button -- so two rows
-            // never have different text widths for a reason nothing on screen explains.
+            // The property that keeps a name from running under the next row's controls. Every row
+            // gives up the whole action strip -- Transfer, the gap, Remove and both insets -- including
+            // the rows that carry no control, so two rows never have different text widths for a reason
+            // nothing on screen explains.
             PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
             Layout layout = roster.stack(WIDTH, MEASURE);
 
@@ -366,7 +448,7 @@ class PartyRosterTest {
             int narrowest = layout.slots().stream().mapToInt(Slot::width).min().orElseThrow();
 
             assertEquals(widest, narrowest, "every row is the same width");
-            assertEquals(WIDTH - (PartyRoster.REMOVE_WIDTH + PartyRoster.REMOVE_INSET * 2), widest,
+            assertEquals(WIDTH - PartyRoster.actionStrip(), widest,
                     "and that width is the column less the button's own room");
         }
 

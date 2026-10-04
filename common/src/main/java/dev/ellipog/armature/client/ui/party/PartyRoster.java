@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client.ui.party;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 import dev.ellipog.armature.client.ui.kit.Insets;
 import dev.ellipog.armature.client.ui.kit.Layout;
@@ -66,7 +67,20 @@ public final class PartyRoster {
     public static final int ROW_GAP = 2;
 
     /** How wide the Remove button is. Its label is a word, so it is not a square. */
-    public static final int REMOVE_WIDTH = 54;
+    public static final int REMOVE_WIDTH = 46;
+
+    /**
+     * How wide the Transfer button is.
+     *
+     * <h2>Why the two buttons share a strip rather than each having one</h2>
+     *
+     * <p>Both are owner controls on the same row and both act on the same member, so they belong side
+     * by side in one reserved strip: two strips would take twice the width from the name, and the
+     * column is the narrower half of the panel. The strip is reserved on <b>every</b> row — see
+     * {@link #composition} — so a member's name has the same room whether or not a control happens to
+     * be drawn on their row.
+     */
+    public static final int TRANSFER_WIDTH = 48;
 
     /** Kept between a row's edges and the button inside it. */
     public static final int REMOVE_INSET = 2;
@@ -76,6 +90,9 @@ public final class PartyRoster {
 
     /** What a Remove button's key starts with. */
     public static final String REMOVE_PREFIX = "party:remove:";
+
+    /** What a Transfer button's key starts with. */
+    public static final String TRANSFER_PREFIX = "party:transfer:";
 
     /**
      * One member, and everything a row needs to know about them.
@@ -88,9 +105,12 @@ public final class PartyRoster {
      * @param owner     whether this is the party's owner
      * @param canRemove whether <b>the viewer</b> may remove them. See the class note: this is the same
      *                  answer the server will give
+     * @param canTransfer whether <b>the viewer</b> may hand ownership to them. {@link Team#canTransfer},
+     *                    like {@code canRemove} — the panel's Transfer control and the manager's
+     *                    refusal ask the same rule
      */
     public record Member(UUID id, String name, TeamRole role, boolean self, boolean owner,
-                         boolean canRemove, boolean online) {
+                         boolean canRemove, boolean canTransfer, boolean online) {
 
         /** What places this row, and what a click on it is routed by. */
         public String key() {
@@ -100,6 +120,11 @@ public final class PartyRoster {
         /** What places this member's Remove button, and what a click on it is routed by. */
         public String removeKey() {
             return REMOVE_PREFIX + id;
+        }
+
+        /** What places this member's Transfer button, and what a click on it is routed by. */
+        public String transferKey() {
+            return TRANSFER_PREFIX + id;
         }
 
         /** The role, spelling the way the command spells it. */
@@ -143,12 +168,14 @@ public final class PartyRoster {
     private final UUID viewer;
     private final List<Member> members;
     private final boolean real;
+    private final int memberLimit;
 
-    private PartyRoster(Team team, UUID viewer, List<Member> members, boolean real) {
+    private PartyRoster(Team team, UUID viewer, List<Member> members, boolean real, int memberLimit) {
         this.team = team;
         this.viewer = viewer;
         this.members = List.copyOf(members);
         this.real = real;
+        this.memberLimit = memberLimit;
     }
 
     /**
@@ -175,6 +202,19 @@ public final class PartyRoster {
      *     answer passes {@link Online#NOBODY}, which draws every row as offline rather than guessing.
      */
     public static PartyRoster of(Team team, UUID viewer, Function<UUID, String> names, Online online) {
+        return build(team, viewer, names, online, 0);
+    }
+
+    /**
+     * The same roster, with the server's stated member limit.
+     *
+     * <p>A private second entry point rather than a parameter on {@link #of}: a server reading a real
+     * {@code Team} has no limit to hand over — the limit is a property of the team <i>manager</i> —
+     * and the one caller that has both is {@link #fromParts}, whose snapshot carried the answer. A
+     * public overload would invite a caller to invent a limit.
+     */
+    private static PartyRoster build(Team team, UUID viewer, Function<UUID, String> names,
+                                     Online online, int memberLimit) {
         Objects.requireNonNull(team, "team");
         Objects.requireNonNull(names, "names");
         Objects.requireNonNull(online, "online");
@@ -198,10 +238,11 @@ public final class PartyRoster {
                     id.equals(viewer),
                     id.equals(team.owner()),
                     team.canActOn(viewer, id),
+                    team.canTransfer(viewer, id),
                     online.isOnline(id)));
         }
 
-        return new PartyRoster(team, viewer, rows, team.persistent());
+        return new PartyRoster(team, viewer, rows, team.persistent(), memberLimit);
     }
 
     // ------------------------------------------------------------------
@@ -252,6 +293,57 @@ public final class PartyRoster {
         return real && team.owner().equals(viewer);
     }
 
+    /**
+     * Whether the viewer may invite under the party's policy. {@link Team#canInvite}, asked here so
+     * the panel's Invite row and the server's refusal are one rule.
+     *
+     * <p>False for a solo team, where there is no party to invite anybody to.
+     */
+    public boolean canInvite() {
+        return real && team.canInvite(viewer);
+    }
+
+    /** Whether the viewer may rename the party. Owner only, like {@link #canDisband}. */
+    public boolean canRename() {
+        return real && team.isOwner(viewer);
+    }
+
+    /** Whether the viewer may change the party's settings. Owner only. */
+    public boolean canSetPolicy() {
+        return real && team.isOwner(viewer);
+    }
+
+    /**
+     * Whether an ordinary member may invite, as the party's policy currently says.
+     *
+     * <p>The switch's state rather than the permission: the panel draws the toggle from this and the
+     * Invite row from {@link #canInvite}, and neither answers the other's question.
+     */
+    public boolean membersCanInvite() {
+        return team.policy().membersCanInvite();
+    }
+
+    /** Whether the party is open for anyone to join without an invitation. */
+    public boolean openJoin() {
+        return team.policy().openJoin();
+    }
+
+    /**
+     * How many members the party may hold, or <b>zero</b> when the server did not say.
+     *
+     * <p>Zero is the honest answer for a source with its own limit — a foreign parties mod — and for a
+     * roster built from a live {@code Team}, which has no limit to read. The header draws a count
+     * without the cap then, rather than inventing one; see {@link #hasMemberLimit()}.
+     */
+    public int memberLimit() {
+        return memberLimit;
+    }
+
+    /** Whether a limit is known, so a header may write {@code 3/8} rather than {@code 3 members}. */
+    public boolean hasMemberLimit() {
+        return memberLimit > 0;
+    }
+
     /** How many rows carry a Remove button. Diagnostics, and the count a test asserts against. */
     public int removableCount() {
         return (int) members.stream().filter(Member::canRemove).count();
@@ -283,7 +375,7 @@ public final class PartyRoster {
             // row's button, and the two rows would have different text widths for a reason nothing on
             // screen explains.
             stack.row(members.get(i).key(), ROW_HEIGHT,
-                    new Insets(0, 0, REMOVE_WIDTH + REMOVE_INSET * 2, 0));
+                    new Insets(0, 0, actionStrip(), 0));
         }
         return stack;
     }
@@ -297,6 +389,36 @@ public final class PartyRoster {
      */
     public Layout stack(int width, Measure measure) {
         return composition().build(Math.max(0, width), measure);
+    }
+
+    /**
+     * The room every member row reserves for its owner controls: Transfer, then Remove.
+     *
+     * <p>One function, because the inset the rows are built with and the x the buttons are placed at
+     * have to be the same arithmetic — and they are read by two different methods.
+     */
+    public static int actionStrip() {
+        return TRANSFER_WIDTH + ROW_GAP + REMOVE_WIDTH + REMOVE_INSET * 2;
+    }
+
+    /**
+     * Where a member's Transfer button sits, given the row it belongs to.
+     *
+     * <p>Left of the Remove button, inside the same strip. Null for a member the viewer may not hand
+     * the party to, exactly as {@link #removeSlot} is null for one they may not remove: a caller
+     * iterating the roster skips the nulls and cannot place a button whose permission it forgot.
+     */
+    public static Slot transferSlot(Member member, Slot row) {
+        Objects.requireNonNull(member, "member");
+        if (row == null || !member.canTransfer()) {
+            return null;
+        }
+        int width = Math.min(TRANSFER_WIDTH, Math.max(0, row.width()));
+        return new Slot(member.transferKey(),
+                row.right() - REMOVE_INSET - REMOVE_WIDTH - ROW_GAP - width,
+                row.y() + REMOVE_INSET,
+                width,
+                Math.max(0, row.height() - REMOVE_INSET * 2));
     }
 
     /**
@@ -344,10 +466,15 @@ public final class PartyRoster {
      * @param roles    every member and their rank. Order is not read; see the class note
      * @param viewer   whose eyes this is
      * @param names    how to spell a member's name
+     * @param policy   the party's policy as the wire carried it. Null reads as the default, so a
+     *                 server that predates the field leaves a switch in its documented initial state
+     *                 rather than in an unknown one
+     * @param memberLimit how many members the party may hold, or zero when the server did not say
      */
     public static PartyRoster fromParts(UUID teamId, String teamName, UUID owner,
                                         Map<UUID, TeamRole> roles, UUID viewer,
-                                        Function<UUID, String> names, Online online) {
+                                        Function<UUID, String> names, Online online,
+                                        TeamPolicy policy, int memberLimit) {
         Objects.requireNonNull(teamId, "teamId");
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(roles, "roles");
@@ -357,8 +484,8 @@ public final class PartyRoster {
         // decides `canRemove` here too. Hand-rolling the comparison would be a second implementation of
         // authority on the client, which is precisely the drift this arrangement avoids.
         Team rebuilt = new Team(teamId, teamName == null ? "" : teamName, owner, roles,
-                java.util.Set.of(), 0L, true);
-        return of(rebuilt, viewer, names, online);
+                Map.of(), policy == null ? TeamPolicy.DEFAULT : policy, 0L, true);
+        return build(rebuilt, viewer, names, online, memberLimit);
     }
 
     /**

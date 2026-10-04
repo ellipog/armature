@@ -137,6 +137,7 @@ public record Theme(
 
         int tooltipFill,
         int tooltipEdge,
+        int tooltipText,
 
         Controls controls,
 
@@ -256,7 +257,7 @@ public record Theme(
                 line, lineDone, selectedRing, hoverRing,
                 rowHover, labelBackdrop,
                 scrollTrack, scrollThumb,
-                tooltipFill, tooltipEdge,
+                tooltipFill, tooltipEdge, tooltipText,
         };
         if (top.length != ThemeToken.CONTROL_START) {
             // A compile-time constant check, in effect: this is the one list that can silently fall out
@@ -309,7 +310,7 @@ public record Theme(
                 colours[21], colours[22], colours[23], colours[24],
                 colours[25], colours[26],
                 colours[27], colours[28],
-                colours[29], colours[30],
+                colours[29], colours[30], colours[31],
                 Controls.from(java.util.Arrays.copyOfRange(colours, ThemeToken.CONTROL_START, colours.length)),
                 cornerRadius,
                 motion,

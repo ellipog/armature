@@ -106,7 +106,7 @@ class ThemesTest {
     @Test
     @DisplayName("modern states every colour, so nothing inherits a zero")
     void modernIsComplete() {
-        // The reference theme is the one theme that states all forty-one values, and the reason is that
+        // The reference theme is the one theme that states all forty-two values, and the reason is that
         // it is the theme every screenshot in the repository was taken with. A theme system that
         // quietly moved one pixel of the palette would make a rendering regression indistinguishable
         // from a colour decision.

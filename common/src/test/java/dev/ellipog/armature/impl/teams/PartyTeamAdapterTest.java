@@ -1,7 +1,9 @@
 package dev.ellipog.armature.impl.teams;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamInvite;
 import dev.ellipog.armature.api.teams.TeamManager;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 
 import org.junit.jupiter.api.DisplayName;
@@ -88,7 +90,11 @@ class PartyTeamAdapterTest {
         assertEquals("the crew", mapped.name());
         assertEquals(owner, mapped.owner());
         assertEquals(members, mapped.members());
-        assertEquals(Set.of(invited), mapped.invites());
+        // A foreign invitation is a bare id: the owner stands in as the sender and zero as the time,
+        // because the source publishes neither -- see TeamInvite on why zero rather than a made-up
+        // time. The policy is the same kind of answer: this source has no policy API to read.
+        assertEquals(Map.of(invited, new TeamInvite(owner, 0L)), mapped.invites());
+        assertEquals(TeamPolicy.DEFAULT, mapped.policy());
 
         // The two honest unknowns, asserted rather than left to a comment. `persistent` is true
         // because a party read out of somebody's store is a real team, whatever produced it, so there

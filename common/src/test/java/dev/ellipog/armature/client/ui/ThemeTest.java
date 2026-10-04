@@ -66,7 +66,7 @@ class ThemeTest {
         // "the current look" cannot also be the fixed thing every assertion is written against.
         //
         // What this file is checking here is the *identity* of the default rather than its palette --
-        // `ThemesTest` compares all forty-one colours, and duplicating that here would mean two tests
+        // `ThemesTest` compares all forty-two colours, and duplicating that here would mean two tests
         // failing for one edit. What belongs here is that the toolkit starts on it.
         assertSame(Themes.DEFAULT, ArmatureTheme.current(),
                 "a client that has not chosen should be on the shipped default");

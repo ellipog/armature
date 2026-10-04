@@ -2,6 +2,11 @@ package dev.ellipog.armature.api.data;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.Dynamic;
+import com.mojang.serialization.JsonOps;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -44,5 +49,25 @@ public final class Codecs {
                             : DataResult.error(() -> "'" + name + "' is not one of: " + valid);
                 },
                 value -> value.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * A codec for a raw JSON object, carried exactly as it was written.
+     *
+     * <p>For a field whose contents belong to another system — a theme patch is validated and parsed by
+     * the toolkit that draws it, not by the model that carries it. The model's job there is to hold the
+     * object and hand it on; decoding it strictly here would be a second parser, and the second parser
+     * is the one that refuses a file the client could have read. The validator is where a patch's
+     * contents are checked, on the side that can name the line.
+     */
+    public static Codec<JsonObject> jsonObject() {
+        return Codec.PASSTHROUGH.comapFlatMap(
+                dynamic -> {
+                    JsonElement element = dynamic.convert(JsonOps.INSTANCE).getValue();
+                    return element instanceof JsonObject object
+                            ? DataResult.success(object)
+                            : DataResult.error(() -> "expected an object");
+                },
+                object -> new Dynamic<>(JsonOps.INSTANCE, object));
     }
 }

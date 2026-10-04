@@ -59,9 +59,10 @@ public final class ArmatureTextArea extends AbstractWidget {
     private Consumer<String> onSubmit = value -> {
     };
 
-    private int textColour = 0xFFFFFFFF;
-    private int fillColour = 0xFF101014;
-    private int edgeColour = 0xFF3A3A46;
+    /** The three colours, or null for the theme's own — resolved while drawing. See the one-line field. */
+    private Integer textColour;
+    private Integer fillColour;
+    private Integer edgeColour;
 
     /** The first visual line drawn, so a long block scrolls to keep the caret in view. */
     private int firstVisibleLine;
@@ -108,11 +109,27 @@ public final class ArmatureTextArea extends AbstractWidget {
         return this;
     }
 
+    /** Pin the three colours rather than letting the theme resolve them. A raw override. */
     public ArmatureTextArea colours(int text, int fill, int edge) {
         this.textColour = text;
         this.fillColour = fill;
         this.edgeColour = edge;
         return this;
+    }
+
+    /** The text ink in force: the caller's pin, or the theme's title. */
+    private int textInk() {
+        return textColour != null ? textColour : ArmatureTheme.title();
+    }
+
+    /** The box's fill in force: the caller's pin, or the theme's recessed surface. */
+    private int fillInk() {
+        return fillColour != null ? fillColour : ArmatureTheme.recessed();
+    }
+
+    /** The border in force: the caller's pin, or the theme's panel edge. */
+    private int edgeInk() {
+        return edgeColour != null ? edgeColour : ArmatureTheme.panelEdge();
     }
 
     /**
@@ -202,8 +219,8 @@ public final class ArmatureTextArea extends AbstractWidget {
         // The border is the caller's in every state, focused or not: a field must look the same while
         // it is being edited as it does the frame after, or every click moves and recolours the text
         // it surrounds. The caret is what says which field has the keyboard.
-        r.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), edgeColour);
-        r.fill(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1, fillColour);
+        r.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), edgeInk());
+        r.fill(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1, fillInk());
 
         List<TextArea.Span> lines = spans();
         int lineHeight = lineHeight();
@@ -230,16 +247,16 @@ public final class ArmatureTextArea extends AbstractWidget {
                         int markX = x + textWidth(whole.substring(span.start(), from));
                         int markTo = x + textWidth(whole.substring(span.start(), to));
                         r.fill(markX, y - 1, markTo, y + lineHeight - 1,
-                                Colour.alphaOf(textColour, 0.35F));
+                                Colour.alphaOf(textInk(), 0.35F));
                     }
                 }
 
-                r.text(span.text(whole), x, y, textColour);
+                r.text(span.text(whole), x, y, textInk());
 
                 if (isFocused() && model.caret() >= span.start() && model.caret() <= span.end()
                         && model.caretVisible(Util.getMillis())) {
                     int caretX = x + textWidth(whole.substring(span.start(), model.caret()));
-                    r.fill(caretX, y - 1, caretX + 1, y + lineHeight - 1, textColour);
+                    r.fill(caretX, y - 1, caretX + 1, y + lineHeight - 1, textInk());
                 }
             }
         }

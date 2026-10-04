@@ -68,24 +68,24 @@ import java.util.Objects;
  * on every exit path, so the two cannot come apart. Same argument as {@code GuiRenderer.clip}, which is
  * the same mechanism for the same reason.
  *
- * <h2>A scope changes colours only, and that is not a limitation to fix later</h2>
+ * <h2>What a scope changes: the colours and the corners</h2>
  *
- * <p>{@link Theme} also carries a corner radius, a motion duration and an easing curve. A scope applies
- * none of them, deliberately:
+ * <p>{@link Theme} also carries a corner radius, a motion duration and an easing curve.
  *
  * <ul>
+ *   <li><b>The radius travels with the scope.</b> {@code panel} and {@code fillSurface} read it from
+ *       {@link #current()}, so a surface drawn inside a scope is rounded by the theme it is drawn in —
+ *       which is what "this chapter's panels have their own corners" has to mean. The class note used to
+ *       claim the opposite while the code already did this; the code was right.</li>
  *   <li><b>Motion is process-wide.</b> It is pushed into {@link Motion} once, when the main theme
  *       changes, and read by every tween in the toolkit. A region with its own animation timing would
  *       mean every tween asking which region it was in, and the honest reading of "this chapter animates
- *       differently" is a mystery to a player rather than a feature.</li>
- *   <li><b>Radius is a per-panel decision, not a per-region one.</b> It is read at the call site that
- *       draws a rounded box, so honouring a scoped radius would mean that box rounding differently
- *       depending on what it happened to be drawn over. A panel's corners are its own.</li>
+ *       differently" is a mystery to a player rather than a feature. {@code scope} pushes the theme
+ *       record only; {@link Motion} is untouched by it.</li>
  * </ul>
  *
- * <p>So {@code ThemePatch.tint} is what a group or entry goes through, and it cannot set those three.
- * The rule lives in the patch rather than here, so that a caller cannot apply a scoped theme that
- * quietly cannot work.
+ * <p>{@code ThemePatch.tint} still cannot set radius or motion: a group or entry is a colouring, and the
+ * patch's own {@code applyTo} is the form that carries the non-colour fields.
  *
  * <h2>Threading, stated rather than assumed</h2>
  *
@@ -369,19 +369,21 @@ public final class ArmatureTheme {
      * mistake as two colliding buttons and an icon that did not scale with its box — <b>two values that
      * have to differ, chosen independently.</b> A theme is where they get chosen together.
      *
-     * <h2>Reads the chrome, not a scope — and that is the point of the whole feature</h2>
+     * <h2>Reads the scope, so a chapter's own controls wear its palette</h2>
      *
-     * <p>Controls are chrome. A chapter that reskinned its canvas must not repaint the buttons you press
-     * to leave it, or the control that changes the theme would itself change colour depending on where
-     * you were standing — a control reporting a state it does not have. So this reads {@link #chrome}
-     * directly rather than {@link #current}.
+     * <p>A control that belongs to a chapter — the buttons and fields on that chapter's own card, the
+     * picker opened for its icon — is part of that chapter's surface, and a theme that reached every
+     * pixel of the card except the buttons on it would read as a half-finished skin. So this reads
+     * {@link #current()}: inside a chapter's scope its controls take the chapter's fills, edges and
+     * accents, and outside one they take the main theme's.
      *
-     * <p>Which is safe to do because nothing draws a control inside a scope: controls are widgets, drawn
-     * by the screen outside its content block. This method is the one that would notice if that changed,
-     * so the choice is stated here rather than left as an accident of {@link #current}.
+     * <p>Chrome that must not shift per chapter — the sidebar, the header, the right-click menus, the
+     * tools panel — is drawn outside any chapter scope, so it keeps the main theme by position rather
+     * than by a special case. {@link #chrome} remains the explicit escape hatch for a caller that needs
+     * the main theme <i>inside</i> a scope.
      */
     public static Theme.Controls controls() {
-        return base.controls();
+        return current().controls();
     }
 
     /**
@@ -393,12 +395,12 @@ public final class ArmatureTheme {
      * that decides which applies can reach them.
      */
     public static int controlEdge() {
-        return base.controls().edge();
+        return current().controls().edge();
     }
 
     /** A control's border at its brightest, for a tooltip frame or a highlight. */
     public static int controlEdgeBright() {
-        return base.controls().edgeBright();
+        return current().controls().edgeBright();
     }
 
     // ------------------------------------------------------------------
@@ -636,6 +638,17 @@ public final class ArmatureTheme {
     /** The border of that panel. See {@link #tooltipFill} for why this is not `controlEdgeBright`. */
     public static int tooltipEdge() {
         return current().tooltipEdge();
+    }
+
+    /**
+     * The ink of the lines inside that panel.
+     *
+     * <p>A token of its own rather than {@code body()}, because a tooltip is a floating surface with its
+     * own fill: on a light theme the body ink that reads well on a panel can vanish on a tooltip, and
+     * the point of the tooltip tokens is that a theme answers this without touching its prose.
+     */
+    public static int tooltipText() {
+        return current().tooltipText();
     }
 
     // ------------------------------------------------------------------

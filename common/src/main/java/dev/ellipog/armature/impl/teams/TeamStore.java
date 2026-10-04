@@ -1,6 +1,8 @@
 package dev.ellipog.armature.impl.teams;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamInvite;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 
 import net.minecraft.core.HolderLookup;
@@ -101,7 +103,9 @@ public final class TeamStore extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
-        tag.putInt("version", 1);
+        // Version 2 added invitations with a sender and a time, and the party policy. A version 1
+        // file loads as owner-sent invitations with no time and the default policy -- see load.
+        tag.putInt("version", 2);
 
         ListTag list = new ListTag();
         for (Team team : teams.values()) {
@@ -110,6 +114,8 @@ public final class TeamStore extends SavedData {
             entry.putString("name", team.name());
             entry.putString("owner", team.owner().toString());
             entry.putLong("createdAt", team.createdAt());
+            entry.putBoolean("openJoin", team.policy().openJoin());
+            entry.putBoolean("membersCanInvite", team.policy().membersCanInvite());
 
             ListTag members = new ListTag();
             team.members().forEach((player, role) -> {
@@ -121,11 +127,13 @@ public final class TeamStore extends SavedData {
             entry.put("members", members);
 
             ListTag invites = new ListTag();
-            for (UUID invited : team.invites()) {
-                CompoundTag invite = new CompoundTag();
-                invite.putString("player", invited.toString());
-                invites.add(invite);
-            }
+            team.invites().forEach((invited, invite) -> {
+                CompoundTag stored = new CompoundTag();
+                stored.putString("player", invited.toString());
+                stored.putString("inviter", invite.inviter().toString());
+                stored.putLong("at", invite.at());
+                invites.add(stored);
+            });
             entry.put("invites", invites);
 
             list.add(entry);
@@ -188,17 +196,28 @@ public final class TeamStore extends SavedData {
                 members.put(owner, TeamRole.OWNER);
             }
 
-            Set<UUID> invites = new LinkedHashSet<>();
+            Map<UUID, TeamInvite> invites = new LinkedHashMap<>();
             ListTag inviteList = entry.getList("invites", Tag.TAG_COMPOUND);
             for (int n = 0; n < inviteList.size(); n++) {
-                UUID invited = readUuid(inviteList.getCompound(n), "player");
-                if (invited != null) {
-                    invites.add(invited);
+                CompoundTag inviteTag = inviteList.getCompound(n);
+                UUID invited = readUuid(inviteTag, "player");
+                if (invited == null) {
+                    continue;
                 }
+                // Version 1 stored a bare id: no sender and no time. The owner and zero are the two
+                // honest substitutes -- see TeamInvite on why zero rather than a made-up time.
+                UUID inviter = readUuid(inviteTag, "inviter");
+                invites.put(invited, new TeamInvite(inviter == null ? owner : inviter, inviteTag.getLong("at")));
             }
 
+            // Absent on a version 1 file, whose parties predate both switches. The default is what
+            // such a party behaved as, and it is what a solo team gets -- see TeamPolicy.
+            TeamPolicy policy = entry.contains("openJoin") || entry.contains("membersCanInvite")
+                    ? new TeamPolicy(entry.getBoolean("openJoin"), entry.getBoolean("membersCanInvite"))
+                    : TeamPolicy.DEFAULT;
+
             store.teams.put(id, new Team(id, entry.getString("name"), owner,
-                    members, invites, entry.getLong("createdAt"), true));
+                    members, invites, policy, entry.getLong("createdAt"), true));
         }
 
         ListTag retiredList = tag.getList("retired", Tag.TAG_COMPOUND);

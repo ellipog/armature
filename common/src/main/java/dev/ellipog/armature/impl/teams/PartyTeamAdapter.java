@@ -1,9 +1,13 @@
 package dev.ellipog.armature.impl.teams;
 
 import dev.ellipog.armature.api.teams.Team;
+import dev.ellipog.armature.api.teams.TeamInvite;
 import dev.ellipog.armature.api.teams.TeamManager;
+import dev.ellipog.armature.api.teams.TeamPolicy;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -110,7 +114,15 @@ public final class PartyTeamAdapter implements TeamManager {
      * is a second place for the owner or the id to be got wrong.
      */
     public static Team toTeam(PartySource.Party party) {
-        return new Team(party.id(), party.name(), party.owner(), party.members(), party.invites(),
-                0L, true);
+        // Invitations gain a sender and a time here, and a foreign source can supply neither: its
+        // list is bare ids. The owner and zero are the honest substitutes -- see TeamInvite -- and
+        // TeamPolicy.DEFAULT is what a party with no policy API behaves as. The panel hides the
+        // controls this source cannot honour rather than showing these values as editable truth.
+        Map<UUID, TeamInvite> invites = new LinkedHashMap<>();
+        for (UUID invited : party.invites()) {
+            invites.put(invited, new TeamInvite(party.owner(), 0L));
+        }
+        return new Team(party.id(), party.name(), party.owner(), party.members(), invites,
+                TeamPolicy.DEFAULT, 0L, true);
     }
 }

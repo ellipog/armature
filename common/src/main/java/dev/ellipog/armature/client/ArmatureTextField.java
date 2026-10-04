@@ -61,10 +61,16 @@ public final class ArmatureTextField extends AbstractWidget {
     private Consumer<String> onSubmit = value -> {
     };
 
-    /** The colour of the box, and of its border. */
-    private int textColour = 0xFFFFFFFF;
-    private int fillColour = 0xFF101014;
-    private int edgeColour = 0xFF3A3A46;
+    /**
+     * The colour of the box, and of its border. Null means the theme's own, resolved while drawing.
+     *
+     * <p>Null rather than a captured default, so a field drawn inside a chapter's scope wears that
+     * chapter's recessed surface and border — a card whose buttons were themed but whose text fields
+     * were not would be the half-skinned look the scope exists to avoid.
+     */
+    private Integer textColour;
+    private Integer fillColour;
+    private Integer edgeColour;
 
     /**
      * Set while {@link #submit()} is running its handler.
@@ -122,11 +128,27 @@ public final class ArmatureTextField extends AbstractWidget {
         return this;
     }
 
+    /** Pin the three colours rather than letting the theme resolve them. A raw override. */
     public ArmatureTextField colours(int text, int fill, int edge) {
         this.textColour = text;
         this.fillColour = fill;
         this.edgeColour = edge;
         return this;
+    }
+
+    /** The label ink in force: the caller's pin, or the theme's title. */
+    private int textInk() {
+        return textColour != null ? textColour : ArmatureTheme.title();
+    }
+
+    /** The box's fill in force: the caller's pin, or the theme's recessed surface. */
+    private int fillInk() {
+        return fillColour != null ? fillColour : ArmatureTheme.recessed();
+    }
+
+    /** The border in force: the caller's pin, or the theme's panel edge. */
+    private int edgeInk() {
+        return edgeColour != null ? edgeColour : ArmatureTheme.panelEdge();
     }
 
     /**
@@ -371,8 +393,8 @@ public final class ArmatureTextField extends AbstractWidget {
     /** The same, through the seam, so a caller with a renderer can draw it. */
     public void render(GuiRenderer r) {
         // The caller's edge, focused or not -- see the class note on why this does not answer to focus.
-        r.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), edgeColour);
-        r.fill(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1, fillColour);
+        r.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), edgeInk());
+        r.fill(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1, fillInk());
 
         int line = getY() + (getHeight() - 8) / 2;
         try (GuiRenderer.Scoped clip = r.clip(getX() + 1, getY() + 1, getX() + getWidth() - 1,
@@ -383,13 +405,13 @@ public final class ArmatureTextField extends AbstractWidget {
                 // box and nothing else, so the mark is made from what it has rather than from a theme.
                 int from = textX + r.textWidth(model.value().substring(0, model.selectionStart()));
                 int to = textX + r.textWidth(model.value().substring(0, model.selectionEnd()));
-                r.fill(from, line - 1, to, line + 9, Colour.alphaOf(textColour, 0.35F));
+                r.fill(from, line - 1, to, line + 9, Colour.alphaOf(textInk(), 0.35F));
             }
-            r.text(model.value(), textX, line, textColour);
+            r.text(model.value(), textX, line, textInk());
             if (isFocused() && model.caretVisible(Util.getMillis())) {
                 int caret = textX + r.textWidth(model.value().substring(0, Math.min(model.caret(),
                         model.length())));
-                r.fill(caret, line - 1, caret + 1, line + 9, textColour);
+                r.fill(caret, line - 1, caret + 1, line + 9, textInk());
             }
         }
     }
