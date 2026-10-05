@@ -35,13 +35,20 @@ installed on its own.
   through `RichText`), and the visual vocabulary (`RoundedRect`, `NineSlice`, `Outline`, `Colour`,
   `Easing`, `Tween`, `Motion`, `Hover`).
 - **`ui.shape`** — a `Shape` is a span list per row, so drawing and hit-testing agree by
-  construction. Ten named shapes — rectangle, circle, hexagon, tome, diamond, octagon, pentagon,
-  gear, heart, rounded — plus rounded, rotated and point-sampled factories.
-- **Themes** — a `Theme` record of colour tokens, sixteen built-ins, JSON patches loaded from
-  `config/armature/themes`, and `Look`, the per-mod instance a mod owns. `ArmatureTheme` scopes a
-  theme to a region while drawing.
-- **Widgets and screens** — `ArmatureButton`, `ArmatureTextField`, `ArmatureTextArea`, and
-  `ArmatureScreen` with `ArmatureLive`, which rebuilds the screen when watched state changes.
+  construction. Eleven named shapes — rectangle, circle, hexagon, tome, diamond, star, octagon,
+  pentagon, gear, heart, rounded — plus rounded, rotated and point-sampled factories.
+- **Themes** — a `Theme` record of colour tokens, the corner radius, the motion duration and curve,
+  and the canvas background, with sixteen built-ins and JSON patches read from a themes directory the
+  mod hands `Look`. The library never chooses that directory, so a mod owns its own appearance file
+  rather than sharing one with everything else on the client. `Look` is the per-mod instance a mod
+  owns, and `ArmatureTheme` scopes a theme to a region while drawing.
+- **Canvas backgrounds** — a theme field rather than a feature of a screen: a flat surface, a
+  procedural pattern drawn from arithmetic, or a tiled or covered image. A pattern is anchored either
+  to the content, so it pans and zooms with the graph under it, or to the screen, so the content
+  glides over it.
+- **Widgets and screens** — `ArmatureButton`, `ArmatureTextField`, `ArmatureTextArea`,
+  `ArmatureSlider` and `ArmatureSwitch`, and `ArmatureScreen` with `ArmatureLive`, which rebuilds the
+  screen when watched state changes. `ArmatureScreens` is the screen registry and the opener.
 - **`ui.inspect`** — the machinery behind a property editor: typed fields with parse errors, row
   kinds and metrics, and section panels a mod registers per type.
 - **`ui.party`** — `PartyRoster`, the model behind a party panel: members, roles, self and owner
@@ -74,7 +81,7 @@ gradlew build
 ```
 
 Jars land in `fabric/build/libs` and `neoforge/build/libs`. Install the plain jar
-(`armature-fabric-1.21.1-1.0.0.jar`) — the `-sources` and `-javadoc` jars are not mods. The test
+(`armature-fabric-1.21.1-1.0.0.jar`) — the `-sources` jars are not mods. The test
 suite is JUnit 5, headless, and part of `gradlew build`; the kit's layout and text models are
 game-free by design, which is what lets them be asserted on without a running client.
 
@@ -116,7 +123,8 @@ testModsDirNeoForge=<your Modrinth profile folder>/mods
 | `common/` | Compiled against vanilla only. `api/` is the public surface, `impl/` is internal and free to change, `client/` is the renderer seam and the toolkit. |
 | `fabric/` | Fabric entry points: platform, registrar, events, key mappings. |
 | `neoforge/` | NeoForge entry points for the same. |
-| `docs/` | Documentation. |
+| `buildSrc/` | The shared Gradle logic both loaders apply — the jar naming, the `sources` jar, and the deploy tasks. A new `gradle.properties` field has to be added to its `expandProps` map to reach the metadata. |
+| `docs/` | Documentation: `docs/index.md` is the front door, `docs/api/` covers the mod-facing API, and `docs/toolkit/` the client toolkit. |
 
 `common/` cannot reference `fabric/` or `neoforge/`. That direction is enforced by the build, not
 by convention.
