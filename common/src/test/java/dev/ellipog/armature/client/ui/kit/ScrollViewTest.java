@@ -1,5 +1,12 @@
 package dev.ellipog.armature.client.ui.kit;
 
+import dev.ellipog.armature.client.ArmatureButton;
+import dev.ellipog.armature.client.ArmatureTheme;
+
+import net.minecraft.network.chat.Component;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -11,223 +18,258 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The scroll view's bar, as a control rather than as decoration.
+ * The placement half of {@link ScrollView}: the widgets inside a region follow its scroll.
  *
- * <h2>What this covers, and why it needs its own file</h2>
+ * <h2>Why this file exists, and why it did not</h2>
  *
- * <p>{@link ScrollView} had no test at all before this. It was the one kit class that names the game,
- * so it could not live in the game-free group — and the consequence was that the only part of it with
- * arithmetic in it, the scrollbar, was verified by looking at it. The report that came back is the
- * evidence that was not enough: <i>"make scrollbar draggable with mouse"</i>, from a build where the
- * bar drew correctly and could not be touched.
+ * <p>It is the test that was missing, and its absence is worth recording rather than tidying away. The
+ * bar's arithmetic lived in {@code ScrollView} once and moved to {@link ScrollBar}, and its tests moved
+ * with it — leaving <b>nothing</b> testing what a scroll does to the widgets, on the stated grounds that
+ * a test of that "needs {@code AbstractWidget}s and so a client". That is not true: {@code
+ * ArmatureButtonTest} builds buttons with no client at all, and a button is all this needs.
  *
- * <p>No widget is registered in any test here, deliberately. The bar's geometry depends on the
- * viewport and the scroll offset and on nothing else, so a test that needed a real control would be
- * testing {@code AbstractWidget} rather than this — and the drag mapping, which is the part that can
- * be quietly wrong, is pure arithmetic.
+ * <p>What the gap cost is the reason the file is written now. Moving the offset writes into the bar
+ * dropped the old {@code scrollBy}/{@code scrollTo} guarantee that the children are re-placed, and
+ * nothing noticed: the offset moved, the drawn rows moved, and the widgets stayed exactly where they
+ * were. In the consumer that found it, exactly two of nine views both register widgets *and* place them
+ * only during a rebuild — a tools panel's fields and buttons, and a sidebar's rows — and the other seven
+ * hid the fault. So the first test here is the one that would have caught it, and it is written against
+ * the <i>bar</i> rather than against {@code scrollBy}, because the bar is the way a screen actually
+ * scrolls a list now.
  */
-@DisplayName("the scroll view's scrollbar")
+@DisplayName("a scroll view's widgets")
 class ScrollViewTest {
 
-    private static final int BODY = 200;
+    private static final int BODY = 100;
+
+    /** The region is 100 wide and 50 tall, and the content is 80: thirty pixels of scroll, exactly. */
+    private static final int VIEW_HEIGHT = 50;
+    private static final int CONTENT_HEIGHT = 80;
+    private static final int SCROLL_RANGE = CONTENT_HEIGHT - VIEW_HEIGHT;
+
+    @BeforeEach
+    @AfterEach
+    void resetTheme() {
+        // `ArmatureButton` reads the theme when it is *drawn*, and nothing here draws -- but a test that
+        // depends on which theme another test left in force is a test that fails in a different order.
+        ArmatureTheme.resetCurrent();
+    }
+
+    private static Measure measure() {
+        return Measure.of(text -> text.length() * 6, 9);
+    }
+
+    /** Four rows of twenty, so the content is taller than the region and a scroll is real. */
+    private static Layout fourRows() {
+        return Stack.stack()
+                .row("a", 20, Insets.NONE)
+                .row("b", 20, Insets.NONE)
+                .row("c", 20, Insets.NONE)
+                .row("d", 20, Insets.NONE)
+                .build(BODY, measure());
+    }
+
+    private static ArmatureButton button() {
+        return new ArmatureButton(0, 0, BODY, 20, Component.literal("row"), () -> {
+        });
+    }
 
     /**
-     * A view whose content is {@code content} tall inside a {@code view} tall viewport.
+     * A view with a button in every row, placed.
      *
-     * <p>The measure is never consulted — every element here is a {@code row}, whose height is declared
-     * rather than measured — but {@code Stack.build} requires one, so it is written out rather than
-     * passed null. Six pixels a character matches the kit's other layout tests, so arithmetic in an
-     * assertion here is checkable by hand the same way.
+     * <p>The region starts at y = 50 rather than 0 on purpose: a placement that ignored the origin would
+     * put every widget at the content's own y, and a fixture at the origin could not tell the difference.
      */
-    private static ScrollView view(int view, int content) {
-        ScrollView scroll = ScrollView.of(Viewport.fixed());
-        scroll.viewport().bounds(0, 50, BODY, view);
-        // The one call that sizes the range and places the widgets, so the content height and the
-        // scrollbar can never disagree -- see its note. A `Layout` from a stack, since that is what a
-        // real caller passes.
-        scroll.apply(
-                Stack.stack().row("a", content, Insets.NONE).build(BODY, Measure.of(text -> text.length() * 6, 9)),
-                BODY);
-        return scroll;
+    private static ScrollView view() {
+        ScrollView view = ScrollView.of(Viewport.fixed());
+        view.viewport().bounds(0, 50, BODY, VIEW_HEIGHT);
+        view.put("a", button()).put("b", button()).put("c", button()).put("d", button());
+        view.apply(fourRows(), BODY);
+        return view;
+    }
+
+    /** Where a row at content y 20 lands, at the scroll in force. */
+    private static int expectedRowY(ScrollView view) {
+        return view.viewport().screenY(20);
     }
 
     @Nested
-    @DisplayName("when everything fits")
-    class Fits {
+    @DisplayName("placement")
+    class Placement {
 
         @Test
-        @DisplayName("there is no bar and nothing to press")
-        void nothingIsDrawn() {
-            // A track with a full-height thumb in it says "there is more" and lies. The same condition
-            // has to gate the hit test, or a press in the margin of a short list is swallowed by a bar
-            // nobody drew -- which reads as a dead zone beside the list.
-            ScrollView scroll = view(300, 100);
+        @DisplayName("a widget is placed at its slot's on-screen position")
+        void widgetsLandOnTheirSlots() {
+            ScrollView view = view();
 
-            assertNull(scroll.scrollbarTrack(), "no track when the content fits");
-            assertNull(scroll.scrollbarThumb(), "and no thumb");
-            assertFalse(scroll.scrollbarHit(202, 60),
-                    "and a press in the margin belongs to nobody, so the row behind it can have it");
+            assertEquals(50, view.get("a").getY(), "the first row starts at the region's top");
+            assertEquals(70, view.get("b").getY(), "and the next is one row down");
+            assertEquals(BODY, view.get("b").getWidth(), "sized to its slot too");
+            // Three of the four fit: the region is fifty tall and the rows start at its top, so the
+            // fourth is at y 110 -- past the bottom at 100 -- and the cull is what says so.
+            assertEquals(3, view.placed(), "the rows that fit are placed");
+            assertEquals(1, view.culled(), "and the one that does not is culled");
         }
 
         @Test
-        @DisplayName("a drag that somehow starts does nothing rather than throwing")
-        void draggingIsHarmless() {
-            // Defensive rather than speculative: `beginThumbDrag` is public and a caller can reach it
-            // from a state a test cannot produce, such as a drag surviving a resize that made the
-            // content fit. A silent no-op is right; an exception inside a mouse handler is a crash.
-            ScrollView scroll = view(300, 100);
+        @DisplayName("a widget scrolled out of the region is hidden, not left where it was")
+        void theCullHidesWhatIsOffScreen() {
+            // Hiding is a correctness property rather than an optimisation: `AbstractWidget.isMouseOver`
+            // is false for an invisible widget, so a control scrolled out of the region cannot be clicked
+            // where it used to be drawn.
+            ScrollView view = view();
 
-            scroll.beginThumbDrag(60);
-            scroll.dragThumbTo(120);
+            view.scrollTo(SCROLL_RANGE);
 
-            assertEquals(0, scroll.viewport().scrollY(), "nothing moved, because there is no range");
-        }
-    }
-
-    @Nested
-    @DisplayName("geometry")
-    class Geometry {
-
-        @Test
-        @DisplayName("the track spans the viewport, just outside its right edge")
-        void theTrackSpansTheViewport() {
-            ScrollView scroll = view(100, 400);
-            Slot track = scroll.scrollbarTrack();
-
-            assertNotNull(track, "content four times the viewport height must have a bar");
-            assertEquals(50, track.y(), "the track starts where the viewport's visible area does");
-            assertEquals(100, track.height(), "and is as tall as it");
-            assertTrue(track.x() >= BODY, "and sits outside the rows rather than over them");
+            assertFalse(view.get("a").visible, "the first row is past the top of the region");
+            assertTrue(view.get("d").visible, "while the last one is in view");
+            assertTrue(view.culled() > 0, "the cull ran rather than being skipped");
+            assertTrue(view.placed() > 0, "and it placed the ones that are on screen");
         }
 
         @Test
-        @DisplayName("the thumb's height is the visible fraction of the content, floored")
-        void theThumbIsProportional() {
-            // A quarter of the content is visible, so the thumb is a quarter of the track -- with the
-            // 16-pixel floor, which exists because a 4000-row list would otherwise give a scrollbar
-            // with a hairline thumb too small to aim at.
-            ScrollView quarter = view(100, 400);
-            assertEquals(100 * 100 / 400, quarter.scrollbarThumb().height());
+        @DisplayName("a widget the layout has no slot for is hidden")
+        void aWidgetWithNoSlotIsHidden() {
+            // The rule that stops a control from a previous entry -- Submit for a task that no longer
+            // exists -- from lingering on screen, invisible but clickable.
+            ScrollView view = view();
+            view.put("gone", button());
 
-            ScrollView tiny = view(100, 100_000);
-            assertEquals(16, tiny.scrollbarThumb().height(),
-                    "a thumb can shrink to the floor and no further");
+            view.apply(fourRows(), BODY);
+
+            assertFalse(view.get("gone").visible, "a widget with no slot is not drawn");
+            assertNull(view.placedSlot("gone"), "and asking where it is answers nothing");
         }
 
         @Test
-        @DisplayName("the thumb is at the top when unscrolled and at the bottom when fully scrolled")
-        void theEndsAreTheEnds() {
-            // The property a proportional bar has to have: the thumb's two extremes are the track's two
-            // extremes. Off by anything at either end and the bar reports a range the list does not
-            // have -- either promising rows past the last one or hiding the ones that are there.
-            ScrollView scroll = view(100, 400);
-            Slot track = scroll.scrollbarTrack();
+        @DisplayName("a widget registered after the last placement is hidden until the next one")
+        void aLateWidgetIsHidden() {
+            // The safe direction: a control added but not yet placed is not drawn where the last layout
+            // happened to leave room for something else.
+            ScrollView view = view();
+            ArmatureButton late = button();
 
-            assertEquals(track.y(), scroll.scrollbarThumb().y(), "at rest the thumb is at the top");
+            view.put("late", late);
 
-            scroll.scrollTo(scroll.viewport().maxScrollY());
-
-            Slot bottom = scroll.scrollbarThumb();
-            assertEquals(track.bottom(), bottom.bottom(),
-                    "and at the end its bottom is the track's bottom: " + bottom + " in " + track);
+            assertFalse(late.visible, "a widget added after `apply` waits for the next one");
         }
     }
 
     @Nested
-    @DisplayName("dragging")
-    class Dragging {
+    @DisplayName("the scroll moves the widgets")
+    class Scrolling {
 
         @Test
-        @DisplayName("pressing the middle of the thumb and dragging it down scrolls down")
-        void draggingMovesTheList() {
-            ScrollView scroll = view(100, 400);
-            Slot thumb = scroll.scrollbarThumb();
-            int middle = thumb.y() + thumb.height() / 2;
+        @DisplayName("a wheel through the bar moves the widgets, not only the offset")
+        void aWheelThroughTheBarMovesTheWidgets() {
+            // **The regression test.** The offset and the widgets are two things, and moving one without
+            // the other is a list whose rows scroll under controls that stay still -- which is what the
+            // tools panel and the sidebar did, because both place their widgets only in a rebuild.
+            ScrollView view = view();
+            int before = view.get("b").getY();
 
-            assertEquals(0, scroll.viewport().scrollY());
-            scroll.beginThumbDrag(middle);
-            scroll.dragThumbTo(middle + 20);
+            view.bar().wheel(-1);
 
-            assertTrue(scroll.viewport().scrollY() > 0,
-                    "dragging the thumb down 20 pixels should scroll the list");
+            assertEquals(SCROLL_RANGE, view.viewport().scrollY(), "one notch down, clamped at the end");
+            assertEquals(before - SCROLL_RANGE, view.get("b").getY(),
+                    "and the widget moved with the scroll the bar applied");
+            assertEquals(expectedRowY(view), view.get("b").getY(),
+                    "which is the viewport's own answer, not a second one");
         }
 
         @Test
-        @DisplayName("the thumb stays where the pointer grabbed it, at every point in the drag")
-        void theGrabOffsetIsHeld() {
-            // The property that makes a hand-rolled scrollbar feel right rather than almost right. If
-            // the thumb snapped to put its *top* under the pointer, grabbing its middle would make the
-            // list jump on the first pixel of movement -- and a jump at the start of a drag reads as
-            // the list being over-sensitive rather than as an off-by-a-grab arithmetic.
-            ScrollView scroll = view(100, 400);
-            Slot thumb = scroll.scrollbarThumb();
-            int grabbed = thumb.y() + thumb.height() - 2;   // near the bottom edge of the thumb
+        @DisplayName("a drag through the bar moves the widgets too")
+        void aDragThroughTheBarMovesTheWidgets() {
+            ScrollView view = view();
+            Slot grip = view.bar().thumb();
+            assertNotNull(grip, "the fixture has to overflow, or there is no grip to drag");
+            assertTrue(view.bar().press(grip.x() + 1, grip.y() + 2, 0L), "the grip takes the press");
 
-            scroll.beginThumbDrag(grabbed);
-            for (int y = grabbed; y <= grabbed + 40; y += 8) {
-                scroll.dragThumbTo(y);
-                Slot moved = scroll.scrollbarThumb();
-                assertEquals(y, moved.y() + moved.height() - 2,
-                        "the point grabbed should still be under the pointer at y=" + y);
-            }
+            int before = view.get("b").getY();
+            view.bar().dragTo(grip.y() + 12);
+
+            assertTrue(view.viewport().scrollY() > 0, "the drag scrolled the list");
+            assertEquals(before - view.viewport().scrollY(), view.get("b").getY(),
+                    "and every widget followed it");
         }
 
         @Test
-        @DisplayName("dragging past either end clamps rather than running off")
-        void draggingClamps() {
-            // A drag that keeps going after the thumb has hit the bottom must not scroll past the last
-            // row. The clamp is in the drag rather than only in the viewport, because the *mapping*
-            // from pointer to offset is what would otherwise produce an out-of-range number and rely on
-            // somebody else to fix it.
-            ScrollView scroll = view(100, 400);
-            scroll.beginThumbDrag(scroll.scrollbarThumb().y() + 2);
+        @DisplayName("a press on the groove moves the widgets with the page it takes")
+        void aGroovePressMovesTheWidgets() {
+            ScrollView view = view();
+            Slot track = view.bar().track();
+            assertNotNull(track, "the fixture has to overflow, or there is no groove");
+            assertTrue(view.bar().press(track.x() + 1, track.bottom() - 1, 0L), "below the grip");
 
-            scroll.dragThumbTo(9_999);
-            assertEquals(scroll.viewport().maxScrollY(), scroll.viewport().scrollY(),
-                    "dragged far past the bottom, the list is at its end and no further");
-
-            scroll.dragThumbTo(-9_999);
-            assertEquals(0, scroll.viewport().scrollY(),
-                    "and dragged far past the top, it is at its start");
+            // A page is the region less one pitch, not the whole region: 50 - 30 = 20. The row that
+            // carried over is the point of it -- the page after a page starts with something already seen.
+            assertEquals(view.bar().pageStep(), view.viewport().scrollY(), "the press paged once");
+            assertEquals(expectedRowY(view) + 40, view.get("d").getY(),
+                    "and the last row moved with the page it took");
         }
 
         @Test
-        @DisplayName("moves before the drag begins are ignored, and a doubled release is harmless")
-        void theDragHasToStart() {
-            // `dragThumbTo` is called from `mouseDragged`, which also fires for a canvas pan. Without
-            // the guard, panning the graph would scroll the sidebar -- which is the same fault the
-            // region routing in `mouseScrolled` exists to prevent, arriving by a different route.
-            ScrollView scroll = view(100, 400);
+        @DisplayName("the old scrollBy and scrollTo still place, because other callers use them")
+        void theScrollViewOwnWritesStillPlace() {
+            // Not redundant with the tests above: a consumer still scrolls some views through these --
+            // a sidebar's own snapping and its drag auto-scroll -- so the contract they had before the
+            // bar existed has to keep holding.
+            ScrollView view = view();
 
-            scroll.dragThumbTo(200);
-            assertEquals(0, scroll.viewport().scrollY(), "no drag in progress, so nothing moved");
+            view.scrollBy(20);
+            assertEquals(20, view.viewport().scrollY());
+            assertEquals(expectedRowY(view), view.get("b").getY(), "scrollBy placed the widgets");
 
-            scroll.beginThumbDrag(60);
-            assertTrue(scroll.draggingThumb());
-            assertTrue(scroll.endThumbDrag(), "the first release ends the drag");
-            assertFalse(scroll.endThumbDrag(), "and the second reports that there was nothing to end");
-            assertFalse(scroll.draggingThumb());
+            view.scrollTo(0);
+            assertEquals(0, view.viewport().scrollY());
+            assertEquals(70, view.get("b").getY(), "and so did scrollTo");
         }
 
         @Test
-        @DisplayName("a press in the grab band starts a drag; one in the rows does not")
-        void theGrabBandIsOutsideTheRows() {
-            // The two halves of the routing decision, asserted against the same rectangle the drawing
-            // uses. A band that reached *into* the viewport would take clicks from the last few pixels
-            // of every row, which is a bug nobody would connect to the scrollbar.
-            ScrollView scroll = view(100, 400);
-            Slot track = scroll.scrollbarTrack();
+        @DisplayName("a new layout re-places the widgets, at the scroll it can still hold")
+        void applyReplacesAtTheCurrentScroll() {
+            ScrollView view = view();
+            view.scrollTo(SCROLL_RANGE);
+            assertEquals(SCROLL_RANGE, view.viewport().scrollY());
 
-            assertTrue(scroll.scrollbarHit(track.x() + 1, track.y() + 10),
-                    "on the bar itself");
-            assertTrue(scroll.scrollbarHit(track.right() + 2, track.y() + 10),
-                    "and a little past it, because three pixels is a target you miss");
-            assertFalse(scroll.scrollbarHit(BODY - 1, track.y() + 10),
-                    "but not over the rows: a press there belongs to a row");
-            assertFalse(scroll.scrollbarHit(track.x() + 1, track.y() - 10),
-                    "and not above the track, which is the header");
-            assertFalse(scroll.scrollbarHit(track.x() + 1, track.bottom() + 10),
-                    "nor below it, which is the panel's edge");
+            // Three rows instead of four: 60 of content in a 50-tall region, so ten is all the scroll
+            // there is now. The offset is clamped rather than reset -- a rebuild must not throw the reader
+            // back to the top -- and that is the property this asserts.
+            view.apply(Stack.stack().row("a", 20, Insets.NONE).row("b", 20, Insets.NONE)
+                    .row("c", 20, Insets.NONE).build(BODY, measure()), BODY);
+
+            assertEquals(10, view.viewport().scrollY(),
+                    "the offset is clamped against the new height, not reset");
+            assertEquals(expectedRowY(view), view.get("b").getY(),
+                    "and the widgets are placed against the new layout");
+        }
+    }
+
+    @Nested
+    @DisplayName("what a caller can ask")
+    class Reading {
+
+        @Test
+        @DisplayName("placedSlot reads the widget's own position, so it cannot disagree with the drawing")
+        void placedSlotReadsTheWidget() {
+            ScrollView view = view();
+
+            Slot placed = view.placedSlot("b");
+
+            assertNotNull(placed);
+            assertEquals(view.get("b").getY(), placed.y(), "the answer is the widget's own y");
+            assertEquals(view.get("b").getX(), placed.x());
+        }
+
+        @Test
+        @DisplayName("accepts is the region's own test, which is what rejects a click outside the clip")
+        void acceptsIsTheRegion() {
+            ScrollView view = view();
+
+            assertTrue(view.accepts(10, 60), "inside the region");
+            assertFalse(view.accepts(10, 20), "above it");
+            assertFalse(view.accepts(10, 120), "below it");
+            assertFalse(view.accepts(BODY + 1, 60), "and to the right of it");
         }
     }
 }

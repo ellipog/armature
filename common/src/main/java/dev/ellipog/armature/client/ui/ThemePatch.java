@@ -22,8 +22,8 @@ import java.util.Set;
  * four implementations:
  *
  * <ol>
- *   <li><b>A theme file</b> in {@code config/armature/themes/} — a full theme, but written as a diff
- *       against a built-in so it says only what it changes.</li>
+ *   <li><b>A theme file</b> in the themes directory the mod hands the library — a full theme, but
+ *       written as a diff against a built-in so it says only what it changes.</li>
  *   <li><b>A group</b> in a data file, naming a theme and optionally a handful of colours.</li>
  *   <li><b>A single entry</b>, which may do the same on top of its group.</li>
  *   <li><b>The editor</b>, which is a person changing one colour at a time and expecting the rest to
@@ -331,6 +331,17 @@ public record ThemePatch(
                 ? root.get("basedOn").getAsString()
                 : null;
     }
+
+    /**
+     * Every key a patch may carry at its root, in the order a message should name them.
+     *
+     * <p>The vocabulary {@link #fromJson} reads, written once here rather than listed again by whoever
+     * needs to describe a patch. A hand-written list elsewhere named four of these six, which is the
+     * kind of drift a second copy always produces — so a caller that has to say what a patch may hold
+     * asks this rather than spelling the keys out.
+     */
+    public static final List<String> KEYS =
+            List.of("name", "colours", "cornerRadius", "motion", "easing", "canvasBackground");
 
     /**
      * Reads a patch, collecting anything wrong into {@code problems}.

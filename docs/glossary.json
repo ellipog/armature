@@ -10,7 +10,7 @@
     {
       "id": "theme",
       "term": "Theme",
-      "definition": "The colours, corner radius and motion a drawing reads, in one record. Sixteen are built in, and more can be written as files in config/armature/themes."
+      "definition": "The colours, corner radius and motion a drawing reads, in one record. Sixteen are built in, and more can be written as files in the themes folder the mod hands the library."
     },
     {
       "id": "shape",

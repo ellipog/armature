@@ -53,7 +53,7 @@ for (RichText.Paragraph p : paragraphs) {
   (a line that began with `- `, `* ` or `+ `).
 - **Inline**, one level: `**bold**`, `*italic*` / `_italic_`, `` `code` ``, `[text](url)`. Markup
   inside a styled span is shown literally rather than interpreted — a real inline grammar is a much
-  larger promise to keep. A `\` escapes the character after it, and an unmatched delimiter is left as
+  larger promise to keep. A `\` escapes the punctuation that would otherwise be markup, and an unmatched delimiter is left as
   itself: a description with one stray `*` should read as prose, not as a parse error.
 - **A line break is a line break.** Markdown here does not join lines into flowing paragraphs, because
   these files are written a line per paragraph and joining them would re-wrap prose an author had

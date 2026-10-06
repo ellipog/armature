@@ -22,9 +22,9 @@ import java.util.UUID;
  * unchanged. Without it, it is every draw call in a toolkit and a screen, twice, with no way to tell
  * which were missed.
  *
- * <h2>Seven methods, because that is what was actually being used</h2>
+ * <h2>Fifteen abstract methods and three defaults, because that is what was actually being used</h2>
  *
- * <p>Not a guess at what a UI toolkit might need. This is the complete set of operations that
+ * <p>Not a guess at what a UI toolkit might need. The first cut was the complete set of operations that
  * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and a screen between them
  * called on {@code GuiGraphics}, measured rather than recalled:
  * {@code fill}, {@code drawString}, {@code drawCenteredString}, {@code pose} + {@code renderItem},
@@ -32,12 +32,13 @@ import java.util.UUID;
  * instead of a fill mask. Thirty-odd fills, thirty-odd strings, one centred string, two icons, two
  * scissors and one texture.
  *
- * <p>The image canvas background added two more, and both are about a texture being an asset rather
- * than a sprite: {@link #textureSize} reads a file's real dimensions so a caller can preserve its
- * aspect without knowing them, and {@link #scaled} draws a chosen region of a file into a chosen
- * rectangle in a tint. They are the smallest pair that can tile or cover a rectangle with a PNG,
- * and they are here rather than in the artist because both are statements about the game's texture
- * pipeline — where a file's header lives, and how a blit is coloured.
+ * <p>Everything since has arrived the same way -- for a caller that needed it rather than for
+ * symmetry: the image canvas background's {@link #textureSize} and {@link #scaled}, which are about
+ * a texture being an asset rather than a sprite; the styled-run pair; a player's {@link #face}; the
+ * {@link #blur} a modal draws its card over; and {@link #batched}, which exists because the fill
+ * count is the draw-call count. {@code centredText} and the two {@link #clip} overloads are defaults
+ * rather than abstract members, so the figure that matters to an implementer -- and the one to keep
+ * in step with this list -- is the fifteen.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *

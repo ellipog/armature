@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client.ui;
 
 import dev.ellipog.armature.client.ArmatureTheme;
+import dev.ellipog.armature.client.ui.kit.Colour;
 import dev.ellipog.armature.client.ui.kit.Easing;
 import dev.ellipog.armature.client.ui.kit.Hover;
 import dev.ellipog.armature.client.ui.kit.Motion;
@@ -513,8 +514,17 @@ class ThemeTest {
         assertEquals("tome", ArmatureTheme.themeName());
     }
 
+    /**
+     * The kit's own yardstick, rather than a second one here.
+     *
+     * <p>This was a private sum of the three channels for two rounds, and the scrollbar's hover shade now
+     * needs exactly that question answered in production ({@code ArmatureScrollStyle} asks which of a
+     * theme's grip and groove is the lighter). Two implementations of one measurement agree until one of
+     * them is edited, so the test uses the one the code uses — and the assertions below then measure
+     * brightness the same way the rule they are checking does.
+     */
     private static int luminance(int argb) {
-        return ((argb >> 16) & 0xFF) + ((argb >> 8) & 0xFF) + (argb & 0xFF);
+        return Colour.luminance(argb);
     }
 
     private static String hex(int argb) {

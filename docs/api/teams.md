@@ -112,7 +112,8 @@ A value outside the range is clamped, a value of the wrong type takes its defaul
 build does not know is ignored — each with a line in the log naming the key and what was used
 instead. Nothing in the file is fatal: a server with a typo in it keeps its parties on the defaults,
 and a file that could not be parsed is reported and left exactly as it was found. The file is read at
-startup, so a change takes effect at the next restart.
+startup. Armature never re-reads it on its own: a second `install` — a consumer's own reload
+command — takes effect at the next check rather than at the next server.
 
 It applies to Armature's own stored parties, and only those. A server whose parties come from FTB
 Teams or Open Parties and Claims gets that mod's limits and its own defaults, and this file is not

@@ -169,6 +169,38 @@ public final class Colour {
         return (argb & 0xFF000000) | (r << 16) | (g << 8) | b;
     }
 
+    /**
+     * How bright a colour is, as the sum of its three channels. Alpha is ignored.
+     *
+     * <h2>Why this exists, and why it is not perceptual luminance</h2>
+     *
+     * <p>Because one question in this toolkit is "which of these two colours reads as the lighter
+     * one?", and it has to be answered from data rather than chosen by hand. The scrollbar is the
+     * caller: its hover and held states are derived from the thumb by {@link #shade}, and the
+     * <b>direction</b> of that shade has to be away from the track — a theme whose grip is dark on a
+     * light groove must be brightened by a hover, and one whose grip is light on a dark groove must be
+     * brightened too, in the sense that matters. Hand-picking per theme would be thirty values nobody
+     * can keep consistent; asking the two colours what their relationship is makes it one rule.
+     *
+     * <p>The weights are deliberately absent. A perceptual figure (0.2126 R + 0.7152 G + 0.0722 B)
+     * would be the right answer to "how bright does this look", and it is the wrong answer to the
+     * question here, which is only ever a comparison between two colours in one theme. A plain sum
+     * orders colours the same way a perceptual figure does for every pair this is asked about — a
+     * grey against a darker grey — and it has the property that matters for a rule like this one:
+     * it can be checked by reading it. {@code ThemeTest} used exactly this sum for its own yardstick
+     * before this method existed, and that is the strongest evidence that it is the right one: the
+     * test's claim and the production rule now measure brightness the same way instead of by two
+     * implementations that agree until one is changed.
+     *
+     * <p><b>Alpha is excluded, and the reason is the same as {@link #shade}'s.</b> "Lighter" is a
+     * statement about a colour, not about whether the thing is there; including alpha would make a
+     * translucent colour read as darker than the same colour opaque, and the scrollbar's own track is
+     * a wash in several themes.
+     */
+    public static int luminance(int argb) {
+        return ((argb >> 16) & 0xFF) + ((argb >> 8) & 0xFF) + (argb & 0xFF);
+    }
+
     private static float clamp01(float value) {
         return value < 0F ? 0F : (value > 1F ? 1F : value);
     }

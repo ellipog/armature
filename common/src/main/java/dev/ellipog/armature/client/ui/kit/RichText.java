@@ -19,8 +19,10 @@ import java.util.Objects;
  * <p><b>Inline</b>: {@code **bold**}, {@code *italic*} / {@code _italic_}, {@code `code`} and
  * {@code [text](url)}. One level of styling: markup inside a span is shown literally rather than interpreted,
  * which is stated because the alternative (a real inline grammar) is a much larger promise to keep.
- * A {@code \} escapes the character after it. An unmatched delimiter is left as itself, because a
- * description with one stray {@code *} in it should read as prose, not as a parse error.
+ * A {@code \} escapes the punctuation that would otherwise be markup -- a backslash, {@code *},
+ * {@code _}, a backtick, a bracket, a parenthesis, {@code #}, {@code -} or {@code +}. An unmatched
+ * delimiter is left as itself, because a description with one stray {@code *} in it should read as
+ * prose, not as a parse error.
  *
  * <p><b>The visible text is what everything else works on.</b> Markers are not part of it: the runs index
  * the text this file produces, which is what the layout measures, what is drawn, and what a link rectangle

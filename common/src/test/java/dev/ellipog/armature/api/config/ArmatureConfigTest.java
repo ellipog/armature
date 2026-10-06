@@ -117,6 +117,12 @@ class ArmatureConfigTest {
                 "the second file's value is in force, not the first's");
         assertEquals(5, ArmatureConfig.current().teams().maxMembers(),
                 "and the holder agrees with what install returned");
+
+        // And the same path, edited between two installs: a reload command re-installs a file it has
+        // already read once, so the second read has to be a read rather than a remembered answer.
+        write(first, "{\"teams\":{\"maxMembers\":4}}");
+        assertEquals(4, ArmatureConfig.install(first).teams().maxMembers(),
+                "an edited file at the same path is re-read, which is what a reload command asks for");
     }
 
     // ------------------------------------------------------------------

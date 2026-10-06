@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Themes read from {@code config/armature/themes/}: the file-based half of the catalogue.
+ * Themes read from the themes directory a mod hands it: the file-based half of the catalogue.
  *
  * <h2>Why files rather than a resource pack, and how this can change later</h2>
  *
@@ -78,7 +78,7 @@ public final class ThemeFiles {
     private ThemeFiles() {
     }
 
-    /** Under {@code config/armature/}. */
+    /** The subdirectory name a mod can hand {@link #reload} — the config directory is the mod's. */
     private static final String DIRECTORY = "themes";
 
     /**
@@ -324,7 +324,7 @@ public final class ThemeFiles {
         return problems;
     }
 
-    /** Whether any file was read at all. A picker can say "no themes in config/armature/themes". */
+    /** Whether any file was read at all. A picker can say "no themes in the mod's themes folder". */
     public static boolean isEmpty() {
         return loaded.isEmpty();
     }

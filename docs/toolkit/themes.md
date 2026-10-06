@@ -26,8 +26,9 @@ opposite by design — it is a diff, and everything it leaves out comes from the
 
 ## Theme files
 
-A theme can be written by hand, one file per theme, in `config/armature/themes/`. A file is a **diff**:
-it says what it changes, and the rest comes from the theme it names as its base.
+A theme can be written by hand, one file per theme, in the themes directory the mod hands `Look` —
+the library never chooses one. A file is a **diff**: it says what it changes, and the rest comes
+from the theme it names as its base.
 
 ```json
 {

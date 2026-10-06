@@ -81,7 +81,10 @@ import java.util.Map;
  */
 public final class Look {
 
-    /** Under {@code config/armature/}. Named for what it holds rather than for the mod. */
+    /**
+     * The file name a mod can hand {@link #load} — the directory is the mod's to choose. Named for
+     * what it holds rather than for the mod.
+     */
     private static final String FILE_NAME = "appearance.json";
 
     /** A look of somebody's own. The mod that draws owns one; nothing here is shared. */
@@ -420,9 +423,9 @@ public final class Look {
      * reachable from a hand-edited file, and the sensible reading of "cycle from a theme this build does
      * not have" is to start at the beginning.
      *
-     * <p>Over {@link Themes#everything()} rather than the built-ins, so a theme added in
-     * {@code config/armature/themes/} is reachable by clicking. An earlier version cycled the built-ins
-     * only, which meant a file-loaded theme could be set by editing a file and never selected in game.
+     * <p>Over {@link Themes#everything()} rather than the built-ins, so a theme added as a file is
+     * reachable by clicking. An earlier version cycled the built-ins only, which meant a file-loaded
+     * theme could be set by editing a file and never selected in game.
      *
      * <p>Compared by name rather than by {@code indexOf}, which looks like the longer way round and is the
      * shorter one: {@code Theme} is a record, so {@code equals} is component-wise, and two themes with the

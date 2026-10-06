@@ -49,11 +49,12 @@ A `DataProblem` is a record — `file`, `line`, `column`, `path`, `severity`, `m
 `render()` is the line every reader of these docs will see in a log:
 
 ```
-entries/01.json:14:9: error: unknown field "titl" (did you mean "title"?)
+entries/01.json:14:9: error: unknown field "titl" - did you mean "title"?
+    valid fields here: description, icon, id, title
 ```
 
-`renderWithPath()` adds the JSON path on a second line, for a caller that has room for it. Problems
-sort by file, then line, then column, so a log reads in source order.
+`renderWithPath()` adds the JSON path on a line of its own, after those, for a caller that has
+room for it. Problems sort by file, then line, then column, so a log reads in source order.
 
 ## Codec helpers
 

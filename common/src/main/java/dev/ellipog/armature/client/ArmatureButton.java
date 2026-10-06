@@ -243,7 +243,7 @@ public class ArmatureButton extends AbstractWidget {
      * A 16×16 item drawn before the label.
      *
      * <p>16 is the item's own size, not the slot's: the icon is scaled to the control's inner height,
-     * so passing an item here does not decide how big it is drawn. See {@link ArmatureTheme#drawIcon}.
+     * so passing an item here does not decide how big it is drawn. See {@link GuiRenderer#icon}.
      */
     public ArmatureButton icon(net.minecraft.world.item.ItemStack stack) {
         this.icon = stack == null || stack.isEmpty() ? null : stack;

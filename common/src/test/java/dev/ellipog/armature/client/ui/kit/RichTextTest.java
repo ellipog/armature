@@ -125,11 +125,14 @@ class RichTextTest {
     }
 
     @Test
-    @DisplayName("a backslash escapes the character after it, and is not shown")
+    @DisplayName("a backslash escapes the markup punctuation after it, and is not shown")
     void escapesHideThemselves() {
         RichText.Paragraph block = only("\\*not italic\\* and \\`not code\\`");
         assertEquals("*not italic* and `not code`", block.text());
         assertEquals(0, block.runs().size(), "nothing was marked, so nothing is styled");
+        // And the other half of the rule: a backslash before anything else is not an escape, which is
+        // why the prose sources name the characters it may hide rather than promising any.
+        assertEquals("\\a", only("\\a").text(), "a backslash before a letter stays a backslash");
     }
 
     @Test

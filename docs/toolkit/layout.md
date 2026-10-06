@@ -66,9 +66,51 @@ view.apply(layout, contentWidth);        // repositions every widget to its slot
 `put(key, widget[, shape])` names a widget into the layout; `apply(layout, contentWidth)` moves them
 after a layout pass and clamps the scroll against the new height — which is why a rebuild under a
 scrolled reader leaves the column where it was. `get(key)`, `size()`, `clear()`, `placedSlot(key)`,
-and the culling counts (`placed()`, `culled()`) round it out. It draws its own scrollbar with
-`drawScrollbar(renderer, trackColour, thumbColour)`, and exposes the track and thumb slots plus
-`beginThumbDrag`/`dragThumbTo`/`endThumbDrag` for a screen that wants to drive it directly.
+and the culling counts (`placed()`, `culled()`) round it out. Its bar is a `ScrollBar` — `bar()`, bound to
+the strip just outside the viewport — and drawing it is one call:
+`bar().draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now)`.
+
+> [!IMPORTANT]
+> **Every scroll re-places the widgets, and that is not something a caller arranges.** `ScrollView` sets
+> the bar's after-scroll hook to its own placement pass, so a wheel, a drag and a groove press all move
+> the children along with the offset. It is worth knowing *why* it is wired inside the constructor rather
+> than at a call site: the offset and the widgets are two things, and the first version of the bar moved
+> only one of them. A list whose rows are drawn from `scrollY()` every frame hid it; the two views whose
+> widgets are placed only during a rebuild did not, and showed a list scrolling under controls that stayed
+> still. `put` also hides a widget until a placement gives it somewhere to be, so a control that has not
+> been placed is never drawn at the origin.
+
+## `ScrollBar`: the bar as a control
+
+A scrollbar is not decoration: a bar beside a list is where the pointer goes when the list is long, and
+a bar that cannot be dragged is a picture of a scrollbar. One class owns the whole of it, for every list
+in a screen — the strip it is drawn in, the grip's geometry, the hit test, both gestures and the wheel:
+
+```java
+ScrollBar bar = new ScrollBar(viewport);          // one per list, kept across frames
+bar.strip(x, y, width, height);                   // per frame, like Viewport.bounds
+bar.pitch(rowHeight);                             // one row: what a notch moves, what a page keeps
+...
+if (bar.press(mouseX, mouseY, now)) { ... }       // grip → drag, groove → page and repeat
+bar.dragTo(mouseY);                               // the inverse of the grip's own formula
+bar.advance(now);                                 // the hold-repeat, once a frame
+bar.release();
+bar.wheel(scrollY);                               // fractions accumulate; refused mid-drag
+bar.draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now);
+```
+
+`thumb()`, `track()` and `hit()` are the geometry; `pageStep()` is one screen less a row. The four
+colours come from a `ScrollBar.Skin` rather than from the theme, so the kit stays theme-free —
+`ArmatureScrollStyle.skin()` builds it from the theme's two scrollbar tokens, deriving the hover and held
+shades *away from the track's own luminance*, which is what makes a light theme darken its grip on hover
+and a dark theme brighten it. The three states are distinguishable without a colour being chosen for
+them: the resting grip is the theme's thumb colour, a hovered one a shade of it, and a held one a longer
+shade plus a notch down its middle.
+
+> [!TIP]
+> The grip is held rather than widened. Every container that draws a bar reserved room for a three-pixel
+> one, so a hover that grew it would draw over content in any layout whose arithmetic was not re-derived
+> for it — and the state is legible without that.
 
 > [!TIP]
 > The viewport is the kit's rather than a canvas's on purpose: moving content under a fixed window and

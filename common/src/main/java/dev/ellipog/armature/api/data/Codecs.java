@@ -52,6 +52,52 @@ public final class Codecs {
     }
 
     /**
+     * A codec for a whole number that <b>clamps</b> an out-of-range value instead of refusing the file.
+     *
+     * <h2>Why this rather than {@code Codec.intRange}</h2>
+     *
+     * <p>Because the two behave oppositely on the one input a versioned file format always eventually
+     * meets: a number a later build considers out of range. {@code Codec.intRange} produces a
+     * {@code DataResult} error, and an error anywhere in a document means the whole document is
+     * refused — so one entry with an odd number in it costs the reader everything else in the file.
+     * This reads the same value as the nearest legal one, which is the choice that keeps a document
+     * loadable.
+     *
+     * <p>It is also the reading a lenient reader already gives such a value: a number that can still be
+     * drawn is drawn, clamped, rather than reported as a fault. A strict codec beside a lenient reader
+     * was two halves of one format disagreeing about one number.
+     *
+     * <p><b>Not for every number.</b> Clamping is right where an odd value is a presentation decision
+     * — a coordinate, a size, a scale, a tick count. It is wrong where the number <i>is</i> the
+     * meaning, and a caller that needs the document refused should keep {@code Codec.intRange}; the two
+     * exist side by side on purpose. Bounds still belong to the record that owns the field, so the
+     * codec and a validator cannot come to disagree about them.
+     *
+     * @param min the smallest value read as itself; anything below is read as this
+     * @param max the largest value read as itself; anything above is read as this
+     */
+    public static Codec<Integer> clampedInt(int min, int max) {
+        if (min > max) {
+            throw new IllegalArgumentException("clampedInt(" + min + ", " + max + "): min is above max");
+        }
+        return Codec.INT.flatXmap(
+                value -> DataResult.success(Math.max(min, Math.min(max, value))),
+                // Identity, so an in-range value encodes to exactly the bytes it always did. A
+                // clamping codec that also rewrote legal values would be a format change.
+                value -> DataResult.success(value));
+    }
+
+    /** The same, for a fraction: {@code iconScale} is the one field that is a share rather than a count. */
+    public static Codec<Double> clampedDouble(double min, double max) {
+        if (!(min <= max)) {
+            throw new IllegalArgumentException("clampedDouble(" + min + ", " + max + "): min is above max");
+        }
+        return Codec.DOUBLE.flatXmap(
+                value -> DataResult.success(Math.max(min, Math.min(max, value))),
+                value -> DataResult.success(value));
+    }
+
+    /**
      * A codec for a raw JSON object, carried exactly as it was written.
      *
      * <p>For a field whose contents belong to another system — a theme patch is validated and parsed by

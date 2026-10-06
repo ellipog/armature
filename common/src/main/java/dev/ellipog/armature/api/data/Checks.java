@@ -4,6 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.JsonOps;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +30,51 @@ import java.util.Set;
 public final class Checks {
 
     private Checks() {
+    }
+
+    // ------------------------------------------------------------------
+    // Running a codec, which is the one thing here that is not about shape
+    // ------------------------------------------------------------------
+
+    /**
+     * Runs a codec over an already-parsed value, <b>never letting it throw</b>.
+     *
+     * <h2>Why a boundary is needed at all</h2>
+     *
+     * <p>DFU reports through {@link DataResult}, so a codec is not <i>supposed</i> to throw — but the
+     * functions inside one are caller-supplied, and DFU does not catch what they throw.
+     * {@code Decoder.map} (what {@code xmap} builds on) contains no exception table at all, so an
+     * exception raised in an {@code xmap} or {@code comapFlatMap} function leaves the codec as a raw
+     * throwable rather than a {@code DataResult} error.
+     *
+     * <p>That is a mistake which has already happened here once, in a built-in codec, and its cost was
+     * not local: a loader that handles {@code DataResult} errors and has no try/catch lets the
+     * exception out of the whole load, so <b>one malformed value in one file took down every file</b>.
+     * A hand-written codec that forgets is an easy mistake to repeat — and this library's whole point
+     * is that other mods register their own, so the codec that throws may be one nobody here wrote.
+     *
+     * <p>So the code that turns a codec's outcome into a message is the right place to contain it: one
+     * boundary, and every caller of this method gets the guarantee rather than each of them having to
+     * remember. The exception is not swallowed — it becomes the error's message, so it reaches the
+     * author and the log exactly as a decode failure would.
+     *
+     * <p><b>{@code RuntimeException}, not {@code Throwable}.</b> An {@code Error} is a broken JVM rather
+     * than a broken file, and containing one would be pretending the process is healthy. The input is
+     * also bounded before it arrives: {@link JsonDocument} refuses a document nested more than 128
+     * levels deep, so codec recursion over a parsed document cannot exhaust the stack.
+     *
+     * @param codec the codec to run. Its own functions may throw; this method will not.
+     * @param input an already-parsed value, normally a {@link JsonDocument}'s root
+     */
+    public static <T> DataResult<T> parse(Codec<T> codec, JsonElement input) {
+        try {
+            return codec.parse(JsonOps.INSTANCE, input);
+        }
+        catch (RuntimeException e) {
+            return DataResult.error(() -> "this value made the codec throw rather than report a problem: "
+                    + e + "\n    (a codec's own functions must return a DataResult error instead of"
+                    + " throwing - this is a bug in whichever codec reads this field, not in the file)");
+        }
     }
 
     // ------------------------------------------------------------------

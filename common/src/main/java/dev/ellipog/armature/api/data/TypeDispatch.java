@@ -65,6 +65,44 @@ public final class TypeDispatch {
                                      String typeField,
                                      Function<? super T, ResourceLocation> idOf,
                                      Supplier<Collection<TypeSpec<T>>> specs) {
+        return codec(kind, typeField, idOf, specs, null);
+    }
+
+    /**
+     * The same dispatch, with a <b>placeholder</b> for a type this build has never heard of.
+     *
+     * <h2>What the strict form costs, and why this exists</h2>
+     *
+     * <p>The form above fails the decode for an unregistered type, and the failure is not local: a
+     * codec error anywhere in a document refuses the whole document. So one entry naming a type the
+     * reader does not have — a type from an addon that is not installed, from a newer build of the
+     * consumer, or registered on the server but not on the client — costs the author <b>every entry in
+     * the file</b>, not the one node. A document that adds a single third-party entry becomes
+     * unloadable the moment that provider is removed, which is the exact opposite of the additive
+     * compatibility the rest of a versioned format is built for.
+     *
+     * <p>With a placeholder the unknown node decodes to {@code unknown.apply(id)}: the type id survives,
+     * the document loads, and the node is visible and reported as unknown rather than silently absent.
+     * It is the same trade a lenient reader already makes for an unresolvable <i>reference</i> — the id
+     * is kept, the document loads, and the row says what is missing — and for the same reason: a
+     * provider being absent is usually temporary, and losing the author's document over it is not a
+     * recoverable mistake.
+     *
+     * <p><b>The raw payload is not lost.</b> It cannot be carried by the codec — a {@link MapCodec} sees
+     * a {@code MapLike}, not the underlying object — but it does not need to be: a caller that edits a
+     * document as a raw tree and writes that tree back preserves every field it never decoded, so what
+     * this build does not understand is still on disk afterwards. What the placeholder adds is that the
+     * document is now <i>readable</i> as well.
+     *
+     * @param unknown what an unregistered id decodes to. Must not be null; the caller that wants the
+     *                strict behaviour passes {@code null} — or calls the four-argument form, which is
+     *                the same thing spelled readably.
+     */
+    public static <T> Codec<T> codec(String kind,
+                                     String typeField,
+                                     Function<? super T, ResourceLocation> idOf,
+                                     Supplier<Collection<TypeSpec<T>>> specs,
+                                     Function<ResourceLocation, T> unknown) {
         return ResourceLocation.CODEC.dispatch(typeField, idOf, id -> {
             TypeSpec<T> spec = find(specs.get(), id);
             // Assigned to an explicitly typed local rather than returned per branch. Java cannot infer
@@ -72,12 +110,23 @@ public final class TypeDispatch {
             // methods, and reports it as "no instance(s) of type variable(s) T exist so that Codec<T>
             // conforms to MapCodec<? extends E>" — which reads like a mistake in the codecs and is
             // really just inference giving up. One typed local settles it.
-            MapCodec<T> chosen = spec == null
-                    ? TypeDispatch.<T>alwaysFails("unknown " + kind + " type \"" + id + "\"\n"
-                            + "    known types: " + names(specs.get()))
-                    // A MapCodec reads named fields straight out of the enclosing object, which is what
-                    // keeps a type's fields flat: a task says "count", not {"task": {"count": 1}}.
-                    : spec.codec();
+            MapCodec<T> chosen;
+            if (spec != null) {
+                // A MapCodec reads named fields straight out of the enclosing object, which is what
+                // keeps a type's fields flat: a task says "count", not {"task": {"count": 1}}.
+                chosen = spec.codec();
+            }
+            else if (unknown != null) {
+                // Reads nothing and yields the placeholder: the dispatch itself has already read and
+                // consumed the "type" field, so a map codec that reads no further keys decodes any
+                // remaining payload successfully and writes the type back on encode. That is what makes
+                // the failure local to this node.
+                chosen = MapCodec.unit(unknown.apply(id));
+            }
+            else {
+                chosen = TypeDispatch.<T>alwaysFails("unknown " + kind + " type \"" + id + "\"\n"
+                        + "    known types: " + names(specs.get()));
+            }
             return chosen;
         });
     }

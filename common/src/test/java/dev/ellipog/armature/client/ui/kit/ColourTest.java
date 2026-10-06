@@ -127,6 +127,27 @@ class ColourTest {
     }
 
     @Test
+    @DisplayName("luminance orders two colours by brightness and ignores the alpha")
+    void luminanceComparesBrightness() {
+        // The one question this answers is "which of these two reads as the lighter one?", and it is asked
+        // by exactly one caller: the scrollbar's hover and held shades go *away from the track*, so a dark
+        // theme brightens its grip and a light theme darkens it. A rule like that is either true of every
+        // theme or wrong in half of them, which is why it is derived from the colours rather than chosen.
+        assertEquals(0, Colour.luminance(0xFF000000));
+        assertEquals(765, Colour.luminance(0xFFFFFFFF));
+        assertEquals(255, Colour.luminance(0xFFFF0000), "one channel at full is a third of white");
+        assertTrue(Colour.luminance(0xFF808080) > Colour.luminance(0xFF404040),
+                "a grey is brighter than a darker grey");
+        assertTrue(Colour.luminance(0xFF9A8E76) < Colour.luminance(0xFFE2DACA),
+                "a pale theme's grip reads darker than the groove it runs in -- which is the case the "
+                        + "sign is taken from");
+
+        // Alpha excluded, for the same reason `shade` preserves it: "lighter" is a statement about a
+        // colour, not about whether the thing is there, and several themes' tracks are washes.
+        assertEquals(Colour.luminance(0xFFFF0000), Colour.luminance(0x40FF0000));
+    }
+
+    @Test
     @DisplayName("an invisible colour is identifiable, so a caller can skip the call")
     void invisibleIsDetectable() {
         // The six-digit form is the mistake this catches: 0xRRGGBB has an alpha of zero, so a colour

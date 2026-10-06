@@ -11,7 +11,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * A scrolled region: a {@link Viewport}, the widgets inside it, and the placement pass between them.
+ * A scrolled region: a {@link Viewport}, the widgets inside it, the placement pass between them, and
+ * the {@link ScrollBar} that scrolls it.
  *
  * <h2>Why the widgets live here rather than in the screen</h2>
  *
@@ -36,46 +37,44 @@ import java.util.Objects;
  *
  * <h2>The clip is pushed by the caller, deliberately</h2>
  *
- * <p>This class positions and hides; {@link Clip} narrows the drawing. They are separate because they
- * have different scopes: the clip must wrap <i>all</i> of the caller's drawing of the region — its
- * background, its rules, its text — while the cull is about the widgets alone. One class doing both
- * would have to own the drawing loop, and then a caller could not draw anything of its own inside its
- * own scroll region.
+ * <p>This class positions and hides; the renderer's {@code clip} narrows the drawing. They are separate
+ * because they have different scopes: the clip must wrap <i>all</i> the caller's drawing of the region
+ * — its background, its rules, its text — while the cull is about the widgets alone. One class doing
+ * both would have to own the drawing loop, and then a caller could not draw anything of its own inside
+ * its own scroll region.
  *
  * <p>So the usual shape at a call site is:
  *
  * <pre>
  * view.apply(layout, bodyWidth);
- * try (Clip clip = Clip.push(graphics, view.viewport())) {
- *     drawBackground(graphics);
+ * try (GuiRenderer.Scoped clip = renderer.clip(view.viewport())) {
+ *     drawBackground(renderer);
  *     super.render(graphics, mouseX, mouseY, partialTick);   // the widgets, now placed
  * }
- * view.drawScrollbar(graphics, trackColour, thumbColour);
+ * view.bar().draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now);
  * </pre>
  *
- * <h2>The scrollbar is a control, not decoration</h2>
+ * <h2>The bar is a separate object, and that is the newest thing about this class</h2>
  *
- * <p>This class used to draw the bar and offer nothing to press it with, on the reasoning that a
- * scrollbar is chrome. That is wrong in the way that matters: a bar beside a list is the thing a
- * pointer goes to when the list is long, and a bar that cannot be dragged is a picture of a
- * scrollbar. So the geometry is exposed — {@link #scrollbarTrack}, {@link #scrollbarThumb} — and the
- * drag is here beside it, {@link #beginThumbDrag} through {@link #endThumbDrag}.
+ * <p>It used to keep the bar's geometry, its hit test and its drag, and a full account of why a
+ * scrollbar is a control rather than decoration. All of that moved to {@link ScrollBar} when the other
+ * screens that draw a list needed the same four things — the arithmetic had been copied three times by
+ * then, and the copies had already begun to disagree (two different minimum grip heights, two
+ * different strip positions, and a hand-rolled thumb that was painted over the last three pixels of
+ * every row it described). What is left here is the part that is genuinely about <i>this</i> region: a
+ * viewport, the widgets in it, and a bar bound to the strip just outside it.
  *
- * <p>It lives in this class rather than in the screen because the mapping between a pointer's y and a
- * scroll offset is <b>the inverse of the drawing's own formula</b>. Split across two files, the
- * forward and inverse versions would agree on the day they were written and drift on the next edit —
- * and the symptom would be a thumb that slowly walks away from the pointer as you drag, which reads
- * as the list being over-sensitive rather than as an arithmetic fault.
- *
- * <p>What is deliberately <i>not</i> here is the colour. The bar is drawn in whatever the caller hands
- * over, because a colour is a theme's business; this class only says where and how big.
+ * <p>So the strip's position is the one piece of the bar this class still decides — {@code OFFSET}
+ * pixels past the viewport's right edge, where {@code BookGeometry.SIDEBAR_SCROLLBAR} reserves room for
+ * it — and {@link #bar()} binds it before answering, so a caller that hit-tests the bar and a pass that
+ * draws it cannot be looking at two rectangles.
  *
  * <h2>Fit and scroll are the same mechanism</h2>
  *
  * <p>{@link #apply} tells the viewport how tall the content is, which is what makes the offset clamp
- * and the scrollbar agree by construction. A caller cannot forget it, because it is not a separate
- * call: it is the same one that placed the widgets, and it takes the height from the same
- * {@link Layout} that produced the slots.
+ * and the bar agree by construction. A caller cannot forget it, because it is not a separate call: it
+ * is the same one that placed the widgets, and it takes the height from the same {@link Layout} that
+ * produced the slots.
  *
  * <h2>A widget with no slot is hidden, not left alone</h2>
  *
@@ -85,16 +84,18 @@ import java.util.Objects;
  * it. Adding a widget after the last {@code apply} leaves it hidden until the next one, which is the
  * safe direction for the same reason.
  *
- * <p><b>Names {@code AbstractWidget}, deliberately and by name, and no longer names the renderer.</b>
- * It places and culls real widgets, which is the price of controls that can take focus and be
- * narrated — there is no version of that which does not touch the game's widget type. What it no
- * longer does is draw: {@link #drawScrollbar} takes a {@link GuiRenderer}, so the drawing half of this
- * file went through the seam and only the widget half remains. That is the shape of the R4 work at
- * its best — an exception that shrank rather than one that was granted and kept.
+ * <p><b>Names {@code AbstractWidget}, deliberately and by name, and does not name the renderer's
+ * context.</b> It places and culls real widgets, which is the price of controls that can take focus and
+ * be narrated — there is no version of that which does not touch the game's widget type. What it does
+ * not do is draw: the bar is a {@link ScrollBar}, which takes a {@link GuiRenderer} and a
+ * {@link ScrollBar.Skin}, so this file is the only one in the kit that needs its exception and the
+ * drawing half of it went through the seam. That is the shape of the R4 work at its best — an exception
+ * that shrank rather than one that was granted and kept.
  */
 public final class ScrollView {
 
     private final Viewport viewport;
+    private final ScrollBar bar;
     private final Map<Object, AbstractWidget> children = new LinkedHashMap<>();
 
     /**
@@ -113,6 +114,12 @@ public final class ScrollView {
 
     private ScrollView(Viewport viewport) {
         this.viewport = viewport;
+        // The bar re-places these children after every offset it writes, and this is the one place that
+        // is set: `ScrollBar.onScrolled` runs after a drag, a page and a wheel, so a widget cannot be
+        // left at the position it held before the list moved. See that field's note for the fault this
+        // closes -- the tools panel's controls and the sidebar's rows stayed still while their lists
+        // scrolled, because both place their widgets only in a rebuild.
+        this.bar = new ScrollBar(viewport).onScrolled(this::place);
     }
 
     /** A scroll view over a viewport. The viewport's bounds are the region; its offset is the scroll. */
@@ -124,6 +131,17 @@ public final class ScrollView {
     /** The viewport this view scrolls within. */
     public Viewport viewport() {
         return viewport;
+    }
+
+    /**
+     * This view's scrollbar, with its strip bound to the viewport's current bounds.
+     *
+     * <p>Bound on the way out rather than assumed from the last {@link #apply}, because the blame for a
+     * stale rectangle is nobody's in particular: {@code render} and {@code mouseClicked} are not in an
+     * order a screen can rely on, and a resize is announced to neither. The call is four assignments.
+     */
+    public ScrollBar bar() {
+        return bar.stripOutsideViewport();
     }
 
     // ------------------------------------------------------------------
@@ -181,7 +199,14 @@ public final class ScrollView {
      */
     public ScrollView put(Object key, AbstractWidget widget, Shape shape) {
         Objects.requireNonNull(key, "key -- a widget with no key can never be matched to a slot");
-        children.put(key, Objects.requireNonNull(widget, "widget"));
+        AbstractWidget placed = Objects.requireNonNull(widget, "widget");
+        // Hidden until a placement gives it somewhere to be. The class note promises this -- "adding a
+        // widget after the last `apply` leaves it hidden until the next one, which is the safe direction"
+        // -- and it was not true: a widget is visible by default, so one registered and not yet placed was
+        // drawn at whatever rectangle it was constructed with, which for most controls is the origin. A
+        // test asserting the documented behaviour found it; the fix is to make the promise the code.
+        placed.visible = false;
+        children.put(key, placed);
         shapes.put(key, Objects.requireNonNull(shape, "shape"));
         return this;
     }
@@ -225,6 +250,7 @@ public final class ScrollView {
         Objects.requireNonNull(layout, "layout");
         this.layout = layout;
         viewport.setContentSize(Math.max(0, contentWidth), layout.height());
+        bar.stripOutsideViewport();
         place();
     }
 
@@ -361,107 +387,8 @@ public final class ScrollView {
     }
 
     // ------------------------------------------------------------------
-    // Drawing
+    // The bar
     // ------------------------------------------------------------------
-
-    /**
-     * The scrollbar, drawn only when there is something to scroll.
-     *
-     * <p>Here rather than in the caller because every number it needs comes from the viewport, and a
-     * second implementation at a call site is a second chance for the thumb and the offset to disagree
-     * — a thumb that stops short of the end is a scroll view that looks broken while working.
-     *
-     * <p>The thumb has a minimum height, because a scaled-to-proportion thumb on a very long document
-     * becomes a two-pixel line that reads as an artefact rather than as a control.
-     *
-     * <p>Takes a {@link GuiRenderer} rather than a graphics context, so this kit file no longer names
-     * the game — see the class note below, which used to be an exception and is now history.
-     *
-     * @param renderer     the target
-     * @param trackColour  the colour of the full-height track
-     * @param thumbColour  the colour of the grip
-     */
-    public void drawScrollbar(GuiRenderer renderer, int trackColour, int thumbColour) {
-        Objects.requireNonNull(renderer, "renderer");
-
-        Slot track = scrollbarTrack();
-        if (track == null) {
-            // Everything fits. A track with a full-height thumb in it says "there is more" and lies.
-            return;
-        }
-
-        Slot thumb = scrollbarThumb();
-        renderer.fill(track.x(), track.y(), track.right(), track.bottom(), trackColour);
-        renderer.fill(thumb.x(), thumb.y(), thumb.right(), thumb.bottom(), thumbColour);
-    }
-
-    // ------------------------------------------------------------------
-    // The scrollbar as a control
-    // ------------------------------------------------------------------
-
-    /**
-     * Where the scrollbar's bar is drawn: a three-pixel column four pixels right of the viewport.
-     *
-     * <p>Null when everything fits, which is the same condition {@link #drawScrollbar} returns early
-     * on. One condition, asked in one place — a hit test that accepted a press on a bar nobody drew
-     * would swallow a click in the margin of a list that does not scroll.
-     */
-    public Slot scrollbarTrack() {
-        if (viewport.maxScrollY() <= 0 || thumbHeight() <= 0) {
-            return null;
-        }
-        return new Slot(null, viewport.viewRight() + 4, viewport.originY(), BAR_WIDTH,
-                viewport.viewHeight());
-    }
-
-    /** Where the thumb is drawn, or null when everything fits. */
-    public Slot scrollbarThumb() {
-        Slot track = scrollbarTrack();
-        if (track == null) {
-            return null;
-        }
-        return new Slot(null, track.x(), thumbTop(), BAR_WIDTH, thumbHeight());
-    }
-
-    /**
-     * Whether a point should count as a press on the scrollbar.
-     *
-     * <h2>Why this is deliberately wider than the bar</h2>
-     *
-     * <p>The bar is three pixels. Three pixels is a target you miss, and a miss on a scrollbar lands on
-     * the list underneath — so the failure mode of an exact hit test is not "nothing happened", it is
-     * "I clicked the thing behind it". The band here runs from just past the viewport's right edge to
-     * the far side of the bar, which is about nine pixels: comfortably grabbable, and still outside
-     * the viewport, so it cannot steal a click from a row.
-     */
-    public boolean scrollbarHit(double screenX, double screenY) {
-        Slot track = scrollbarTrack();
-        if (track == null) {
-            return false;
-        }
-        return screenX >= viewport.viewRight() + 1
-                && screenX < track.right() + BAR_GRAB
-                && screenY >= track.y()
-                && screenY < track.bottom();
-    }
-
-    /**
-     * Starts a drag, remembering where inside the thumb the pointer landed.
-     *
-     * <h2>Why the grab offset is kept</h2>
-     *
-     * <p>Because grabbing a thumb's middle and having it jump so its <i>top</i> is under the pointer is
-     * the thing that makes a hand-rolled scrollbar feel wrong. The offset is the distance from the
-     * thumb's top to the press, and every later position is computed from it — so the thumb stays
-     * exactly where the pointer grabbed it for the whole drag.
-     */
-    public void beginThumbDrag(double screenY) {
-        if (scrollbarTrack() == null) {
-            return;
-        }
-        draggingThumb = true;
-        grabOffset = (int) screenY - thumbTop();
-    }
 
     /**
      * Shows only widgets that are <b>wholly</b> inside the viewport: a partly visible one is hidden.
@@ -480,76 +407,6 @@ public final class ScrollView {
     }
 
     private boolean whole;
-
-    /** Whether a drag is in progress. A caller routes move and release on this. */
-    public boolean draggingThumb() {
-        return draggingThumb;
-    }
-
-    /**
-     * Moves the thumb so the pointer still holds the same point on it, and scrolls to match.
-     *
-     * <p>The arithmetic is the inverse of the drawing's, and it is written as that inverse on purpose:
-     * {@link #thumbTop} computes {@code top} from {@code scrollY}, and this computes {@code scrollY}
-     * from a {@code top}. Two independent formulas that agree today would disagree after one edit, and
-     * the symptom would be a thumb that creeps away from the pointer the longer you drag.
-     *
-     * <p>Rounded rather than integer-divided. An integer division loses up to a pixel per event, and
-     * this is called on every mouse move — so a slow drag across a long list would arrive short of the
-     * bottom, which reads as the scroll range being wrong rather than as rounding.
-     */
-    public void dragThumbTo(double screenY) {
-        if (!draggingThumb) {
-            return;
-        }
-        Slot track = scrollbarTrack();
-        int travel = track.bottom() - thumbHeight() - track.y();
-        if (travel <= 0) {
-            // The thumb fills the track, so there is nowhere to drag it. Not an error: it is what a
-            // list one row taller than its viewport produces.
-            return;
-        }
-        int wanted = (int) screenY - grabOffset - track.y();
-        int max = viewport.maxScrollY();
-        scrollTo(Math.round(Math.max(0, Math.min(travel, wanted)) * (float) max / travel));
-    }
-
-    /** Always true on release, not a state change. Idempotent, so a doubled release is harmless. */
-    public boolean endThumbDrag() {
-        boolean was = draggingThumb;
-        draggingThumb = false;
-        grabOffset = 0;
-        return was;
-    }
-
-    /** Three pixels wide, which is what the drawing has always used. */
-    private static final int BAR_WIDTH = 3;
-
-    /** How far past the bar a press still counts. Six, so the whole band is about nine pixels. */
-    private static final int BAR_GRAB = 6;
-
-    private boolean draggingThumb;
-    private int grabOffset;
-
-    /** The thumb's drawn height, or 0 when there is no bar. */
-    private int thumbHeight() {
-        int trackHeight = viewport.viewHeight();
-        if (trackHeight <= 0 || viewport.maxScrollY() <= 0) {
-            return 0;
-        }
-        int content = Math.max(1, viewport.scaled(viewport.contentHeight()));
-        return Math.min(trackHeight, Math.max(16, trackHeight * trackHeight / content));
-    }
-
-    /** The thumb's drawn top. The forward formula; {@link #dragThumbTo} is its inverse. */
-    private int thumbTop() {
-        Slot track = scrollbarTrack();
-        int travel = track.bottom() - thumbHeight() - track.y();
-        if (travel <= 0) {
-            return track.y();
-        }
-        return track.y() + travel * viewport.scrollY() / Math.max(1, viewport.maxScrollY());
-    }
 
     @Override
     public String toString() {

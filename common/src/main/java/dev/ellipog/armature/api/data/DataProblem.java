@@ -27,8 +27,13 @@ public record DataProblem(String file, int line, int column, String path, Severi
     }
 
     /**
-     * One line, in the format a compiler uses and an editor can jump to:
-     * {@code entries/01.json:14:9: error: unknown field "titl" (did you mean "title"?)}
+     * One line, in the format a compiler uses and an editor can jump to, plus the second line a
+     * misspelled field name produces — see {@code Checks.rejectUnknown} for the producer:
+     *
+     * <pre>{@code
+     * entries/01.json:14:9: error: unknown field "titl" - did you mean "title"?
+     *     valid fields here: description, icon, id, title
+     * }</pre>
      */
     public String render() {
         return file + ":" + line + ":" + column + ": " + severity.label() + ": " + message;

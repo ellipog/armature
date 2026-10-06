@@ -30,7 +30,9 @@ installed on its own.
   stretch of drawing that would otherwise flush per fill on the unmanaged screen path. `render/
   GuiGraphicsRenderer` is its 1.21.1 implementation, and the toolkit draws through the interface.
 - **`ui.kit`** — layout (`Stack` to `Layout` to `Slot`, with measurement and hit-testing),
-  `Viewport` and `ScrollView` for pan, zoom, clamped scrolling and row culling, the text models
+  `Viewport` and `ScrollView` for pan, zoom, clamped scrolling and row culling, `ScrollBar` for the
+  bar itself (drag, groove paging with a hold-repeat, wheel accumulation and three drawn states), the
+  text models
   (`TextField`, `TextArea`, selection, undo/redo, wrapping, codepoint-safe movement, and markdown
   through `RichText`), and the visual vocabulary (`RoundedRect`, `NineSlice`, `Outline`, `Colour`,
   `Easing`, `Tween`, `Motion`, `Hover`).

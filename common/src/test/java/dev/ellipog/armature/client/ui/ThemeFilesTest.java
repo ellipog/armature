@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Themes read from {@code config/armature/themes/}: the file half of the catalogue.
+ * Themes read from the themes directory it is handed: the file half of the catalogue.
  *
  * <h2>Every failure here is a warning and never fatal, and that is worth testing explicitly</h2>
  *
