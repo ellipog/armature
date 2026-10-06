@@ -74,7 +74,7 @@ jobs:
 
       # A failed build's reason, in the run's own summary and annotations rather than only in a log
       # nobody opens. Gradle buries it: a few hundred lines of javadoc warnings around the two that
-      # matter, and the annotations are what make the fault readable from outside the web UI too.
+      # matter, and the annotations are the only part of a run that is readable without a token.
       - name: Report what the build said
         if: failure()
         run: |
@@ -89,9 +89,18 @@ jobs:
             tail -n 120 "$log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          grep -a -E "error:|FAILURE:|What went wrong|Caused by:|> Task .* FAILED|Could not resolve|Execution failed|tests? (completed|failed)" "$log" \
-            | head -n 25 | cut -c1-320 | sed 's/%/%25/g; s/\r//g' \
-            | while IFS= read -r line; do echo "::error::$line"; done
+          # Everything Gradle writes between these two markers is the fault: the build file or task
+          # that failed, the reason, and the cause. One annotation carries it whole -- newlines
+          # escaped, because the run UI keeps only the first ten annotations -- and the first few
+          # lines are repeated one per annotation so they are readable without expanding anything.
+          block="$(sed -n '/FAILURE: Build failed with an exception/,/^BUILD FAILED/p' "$log" | head -n 60 | cut -c1-500)"
+          if [ -z "$block" ]; then
+            block="$(tail -n 60 "$log" | cut -c1-500)"
+          fi
+          escaped="$(printf '%s\n' "$block" | sed 's/%/%25/g; s/\r//g' | awk '{ printf "%s%%0A", $0 }')"
+          echo "::error::Gradle said: ${escaped}"
+          printf '%s\n' "$block" | head -n 8 | cut -c1-320 | sed 's/%/%25/g; s/\r//g' \
+            | while IFS= read -r line; do if [ -n "$line" ]; then echo "::error::$line"; fi; done
           exit 0
 
       # The subprojects are named rather than found with `find . -path '*/build/libs/*.jar'`, which
