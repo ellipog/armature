@@ -99,6 +99,47 @@ jobs:
             esac
           done
 
+      # The credentials and the bucket, checked *before* the twenty-minute build rather than after it,
+      # with rclone's own words in the annotation. "Access Denied" reads the same for a wrong key, an
+      # absent key and a key with a typo in its name, and only the last of those is a one-minute fix.
+      - name: Check the upload credentials
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in RCLONE_CONFIG_R2_ACCESS_KEY_ID RCLONE_CONFIG_R2_SECRET_ACCESS_KEY RCLONE_CONFIG_R2_ENDPOINT; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is empty"
+              missing=1
+            fi
+          done
+          if [ "$missing" != 0 ]; then
+            echo "Set R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ACCOUNT_ID as repository secrets on ellipog/armature."
+            exit 1
+          fi
+          if ! command -v rclone >/dev/null; then
+            curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
+            unzip -q -o rclone.zip
+            sudo install -m 0755 rclone-*-linux-amd64/rclone /usr/local/bin/rclone
+          fi
+          # `sed -n 1p` rather than `head -n 1`: head closes the pipe and rclone dies of SIGPIPE, which
+          # pipefail turns into a failed step -- a one-line banner taking the whole release with it.
+          rclone version | sed -n 1p
+          rclone listremotes
+          # An object listing, not `lsd` (which needs account-level permission a bucket-scoped token
+          # does not have). An empty bucket lists nothing and succeeds, which is the expected state.
+          if ! out="$(rclone lsf R2:ellipog-maven 2>&1)"; then
+            escaped="$(printf '%s' "$out" | head -c 1200 | sed 's/%/%25/g; s/\r//g' | awk '{ printf "%s%%0A", $0 }')"
+            echo "::error::rclone could not list the bucket: ${escaped}"
+            exit 1
+          fi
+          echo "the bucket is reachable"
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
@@ -193,13 +234,9 @@ jobs:
           RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
         run: |
           set -euo pipefail
-          if ! command -v rclone >/dev/null; then
-            curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rclone.zip
-            unzip -q -o rclone.zip
-            sudo install -m 0755 rclone-*-linux-amd64/rclone /usr/local/bin/rclone
-          fi
-          rclone version | head -n 1
-
+          # rclone was installed by the credentials check above, which is why this does not install it
+          # a second time.
+          #
           # `copy`, never `sync`. Sync deletes whatever is at the destination and is not in the
           # source -- which here is every version ever published. One word, one command, and the
           # whole repository is gone.
@@ -207,12 +244,24 @@ jobs:
           # A published version can never change, so those files are cached for a year. The
           # `maven-metadata.xml` beside them *does* change -- it gains a version on every release --
           # so it is uploaded separately, with a short life, and excluded from the long one.
-          rclone copy build/repo R2:ellipog-maven \
-            --exclude "maven-metadata.xml*" \
+          #
+          # Output is captured rather than streamed so that a failure can carry rclone's own words
+          # into an annotation; a run's log is not readable from outside, and "exit code 1" is not
+          # something anybody can act on.
+          upload() {
+            local out
+            if ! out="$(rclone copy build/repo R2:ellipog-maven "$@" -v 2>&1)"; then
+              local escaped
+              escaped="$(printf '%s' "$out" | tail -c 2000 | sed 's/%/%25/g; s/\r//g' | awk '{ printf "%s%%0A", $0 }')"
+              echo "::error::rclone copy failed: ${escaped}"
+              exit 1
+            fi
+            echo "$out" | tail -n 5
+          }
+          upload --exclude "maven-metadata.xml*" \
             --header-upload "Cache-Control: public, max-age=31536000, immutable" \
             --no-traverse
-          rclone copy build/repo R2:ellipog-maven \
-            --include "maven-metadata.xml*" \
+          upload --include "maven-metadata.xml*" \
             --header-upload "Cache-Control: public, max-age=300" \
             --no-traverse
 
