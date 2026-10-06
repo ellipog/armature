@@ -250,7 +250,12 @@ jobs:
           # something anybody can act on.
           upload() {
             local out
-            if ! out="$(rclone copy build/repo R2:ellipog-maven "$@" -v 2>&1)"; then
+            # `--s3-no-check-bucket` is not optional here and is not a hack: rclone's S3 backend
+            # checks the bucket exists -- and creates it if not -- before an upload, and the token is
+            # deliberately scoped to one bucket's objects, so that check answers
+            # "S3: CreateBucket ... AccessDenied". Skipping a check that is asking about a bucket
+            # which demonstrably exists is the documented arrangement for a limited token.
+            if ! out="$(rclone copy build/repo R2:ellipog-maven --s3-no-check-bucket "$@" -v 2>&1)"; then
               local escaped
               escaped="$(printf '%s' "$out" | tail -c 2000 | sed 's/%/%25/g; s/\r//g' | awk '{ printf "%s%%0A", $0 }')"
               echo "::error::rclone copy failed: ${escaped}"
