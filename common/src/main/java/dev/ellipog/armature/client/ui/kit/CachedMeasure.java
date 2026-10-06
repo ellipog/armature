@@ -1,5 +1,7 @@
 package dev.ellipog.armature.client.ui.kit;
 
+import dev.ellipog.armature.client.ui.CacheHits;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -66,6 +68,11 @@ final class CachedMeasure implements Measure {
             stamped = true;
         }
         Integer hit = widths.get(text);
+        // Reported for both answers, and this is the cache where the ratio is most worth reading: a width
+        // is asked for per label per frame, so a rate near one is the memo doing its job and a rate near
+        // zero means every measurement is being redone -- which is exactly what an epoch that moves every
+        // frame would produce, and what nothing else could show. See CacheHits.
+        CacheHits.asked(WIDTH_CACHE, hit != null);
         if (hit != null) {
             return hit;
         }
@@ -76,6 +83,9 @@ final class CachedMeasure implements Measure {
         widths.put(text, measured);
         return measured;
     }
+
+    /** This memo's name in the hit/miss report. A constant, so a probe allocates nothing. */
+    private static final String WIDTH_CACHE = "widths";
 
     @Override
     public int lineHeight() {

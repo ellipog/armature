@@ -408,4 +408,44 @@ class CanvasBackgroundArtTest {
         assertEquals(64, source.textureWidth());
         assertEquals(32, source.textureHeight());
     }
+
+    @Test
+    @DisplayName("a replaced resource is re-read, and an unchanged one is not")
+    void aReplacedResourceIsReRead() {
+        // The one thing the size cache has to survive: the file behind an id changing while the id does
+        // not. A pack reload replaces the resource, so a wallpaper whose replacement has different
+        // dimensions would keep the old numbers — a tiled background at the wrong pitch, a covered one
+        // stretched to the wrong aspect, for the rest of the session, with nothing to notice it by.
+        //
+        // The stamp is how the entry learns that, and the assertion is on the *tiles drawn* rather than on
+        // the cache, because the cache is private and what matters is what reaches the screen.
+        RecordingRenderer r = RecordingRenderer.create();
+        r.putTextureSize(TILED, 24, 16);
+        CanvasBackground background = image(TILED, CanvasBackground.Fit.TILE,
+                CanvasBackground.Space.GRAPH, 12);
+
+        CanvasBackgroundArt.draw(r, view(100, 60), background, 0x33FF0000);
+        int before = r.textures().size();
+        assertTrue(before > 0, "the wallpaper drew something to begin with");
+
+        // The same resource: the size is remembered, so the same number of tiles comes back and no header
+        // is re-read. This is the half that says the cache is still a cache.
+        RecordingRenderer again = RecordingRenderer.create();
+        CanvasBackgroundArt.draw(again, view(100, 60), background, 0x33FF0000);
+        assertEquals(before, again.textures().size(),
+                "an unchanged resource tiles exactly as it did, from the remembered size");
+
+        // The resource is replaced with one of different dimensions. The old size would tile 12 by 8;
+        // the new one is 24 by 24, so the tile is square and the count changes.
+        r.bumpTextureStamp(TILED);
+        r.putTextureSize(TILED, 24, 24);
+        CanvasBackgroundArt.draw(r, view(100, 60), background, 0x33FF0000);
+
+        List<RecordingRenderer.Call> after = r.textures();
+        RecordingRenderer.Call tile = after.get(after.size() - 1);
+        assertEquals(tile.x2() - tile.x(), tile.y2() - tile.y(),
+                "the replacement's own aspect is used: a square texture tiles square, not at 24 by 16");
+        assertEquals(24, tile.source().sourceWidth(), "and the source is the replacement's width");
+        assertEquals(24, tile.source().sourceHeight(), "and its height");
+    }
 }

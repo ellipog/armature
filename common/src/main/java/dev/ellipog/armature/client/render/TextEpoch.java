@@ -35,12 +35,48 @@ public final class TextEpoch {
     private TextEpoch() {
     }
 
+    /**
+     * A stable serial per font object, so the epoch can name a face rather than guess at it.
+     *
+     * <h2>Why not {@code System.identityHashCode}</h2>
+     *
+     * <p>Because this number decides whether a memo of measured widths is thrown away, and an identity hash
+     * is not unique: two fonts can share one, and this used to fold the hash into the epoch as though it
+     * were an identity. A collision there is not a wrong colour — it is every width measured against the
+     * face the pack was reloaded away from being served for the new one, for the rest of the session, with
+     * nothing to notice it by. An identity hash is also not stable across a collection for an object that
+     * becomes unreachable, which is a second way for one to be reused.
+     *
+     * <p>Identity-keyed, so a font that is garbage-collected takes its serial with it and the map cannot
+     * grow with every reload a session sees. A font that is still reachable keeps the serial it was given,
+     * which is the property the epoch needs: the same face reads the same number, and a replacement reads a
+     * different one.
+     */
+    private static final java.util.Map<Object, Long> SERIALS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** The next serial to hand out. Monotonic, so a serial is never reused even after a collection. */
+    private static final java.util.concurrent.atomic.AtomicLong NEXT = new java.util.concurrent.atomic.AtomicLong();
+
+    private static long serialOf(Object font) {
+        Long held = SERIALS.get(font);
+        if (held != null) {
+            return held;
+        }
+        long assigned = NEXT.incrementAndGet();
+        SERIALS.put(font, assigned);
+        return assigned;
+    }
+
     /** The epoch as it stands. Equal to a previous reading exactly when nothing that changes a width has. */
     public static long now() {
         Minecraft minecraft = Minecraft.getInstance();
-        int font = minecraft == null || minecraft.font == null
-                ? 0
-                : System.identityHashCode(minecraft.font);
-        return (font * 31L) + Double.doubleToLongBits(TextScale.get());
+        Object font = minecraft == null ? null : minecraft.font;
+        long face = font == null ? 0L : serialOf(font);
+        // Mixed rather than added, so two readings that differ in either part differ in the whole. The
+        // scale is taken at full precision rather than rounded: a slider dragged to 1.01 is a different
+        // epoch from 1.0, because a layout measured at one and drawn at the other is text that no longer
+        // fits its column.
+        return face * 1_000_003L + Double.doubleToLongBits(TextScale.get());
     }
 }

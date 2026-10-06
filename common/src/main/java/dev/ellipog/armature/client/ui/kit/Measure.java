@@ -179,6 +179,49 @@ public interface Measure {
     }
 
     /**
+     * A measure over a renderer that may change between frames, with the widths remembered.
+     *
+     * <h2>Why this exists rather than each control building its own</h2>
+     *
+     * <p>Because a control that truncates a label every frame has to keep its measure across frames for the
+     * memo to be worth anything, and the renderer it measures with is the one that happens to be drawing —
+     * a screen redraws a control through its own renderer, a modal band redraws it through another, and a
+     * test drives it through a recording one. So the measure cannot close over a renderer; it has to read
+     * whichever is in force.
+     *
+     * <p>{@code width} is the delegate that does that reading. It is called on every miss, and only on a
+     * miss, so a control pays one lambda call per <i>new</i> string per epoch rather than per frame.
+     *
+     * <p>The line height comes from the renderer too, for the same reason: a measure that reported a
+     * constant would be right until a text scale moved it.
+     *
+     * @param width      reads the width from whichever renderer is in force
+     * @param lineHeight reads the line height from whichever renderer is in force
+     * @param epoch      a number that changes when a glyph's width can have changed
+     */
+    public static Measure cachedOver(WidthFn width, java.util.function.IntSupplier lineHeight,
+                                     java.util.function.LongSupplier epoch) {
+        Objects.requireNonNull(width, "width");
+        Objects.requireNonNull(lineHeight, "lineHeight");
+        return cached(new Measure() {
+            @Override
+            public int width(String text) {
+                return width.widthOf(text);
+            }
+
+            @Override
+            public int lineHeight() {
+                return lineHeight.getAsInt();
+            }
+
+            @Override
+            public String toString() {
+                return "Measure.cachedOver(...)";
+            }
+        }, epoch);
+    }
+
+    /**
      * A measure that answers a string it has already been asked about, until something changes a glyph.
      *
      * <h2>Why the memo belongs here rather than at a call site</h2>

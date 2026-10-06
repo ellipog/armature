@@ -236,8 +236,17 @@ public final class CanvasBackgroundArt {
     // Images
     // ------------------------------------------------------------------
 
-    /** The sizes read this session, so a wallpaper's header is not re-parsed every frame. */
-    private static final Map<ResourceLocation, GuiRenderer.TextureSize> TEXTURE_SIZES = new HashMap<>();
+    /**
+     * The sizes read this session, so a wallpaper's header is not re-parsed every frame.
+     *
+     * <p>Keyed with the resource stamp the size was read against — see {@link #textureSizeOf} for why the
+     * stamp is part of the entry rather than an invalidation hook.
+     */
+    private static final Map<ResourceLocation, Sized> TEXTURE_SIZES = new HashMap<>();
+
+    /** One remembered size, and the resource stamp it was read against. */
+    private record Sized(GuiRenderer.TextureSize size, long stamp) {
+    }
 
     private static void image(GuiRenderer r, CanvasBackground background, int ink,
                               int x0, int y0, int x1, int y1) {
@@ -264,17 +273,36 @@ public final class CanvasBackgroundArt {
     /**
      * The size of a texture, from this session's cache or from the renderer.
      *
-     * <p>Only hits are cached: a miss means "not loadable right now", and a resource pack that arrives
-     * later should be allowed to answer on the next frame rather than be remembered as absent forever.
+     * <h2>Two things a hit has to be true of</h2>
+     *
+     * <p>Only hits are cached, because a miss means "not loadable right now" and a resource pack that
+     * arrives later should be allowed to answer on the next frame rather than be remembered as absent
+     * forever.
+     *
+     * <p>And a hit is only a hit while the <b>resource behind it is the same one</b>. A pack reload
+     * replaces the file, and a wallpaper whose replacement has different dimensions would keep the old
+     * numbers — so a tiled background tiles at the wrong pitch and a covered one is stretched to the wrong
+     * aspect, for the rest of the session, with nothing to notice it by. The stamp is how the entry learns
+     * that, and it is one identity comparison rather than a re-read of the file: reading the header again
+     * every frame is exactly what this cache exists to avoid. See {@code GuiRenderer.textureStamp}.
+     *
+     * <p>A renderer that reports a constant stamp — a recording renderer, say — never invalidates, which is
+     * the right answer for one that reads no resource manager: nothing it reported can go stale.
      */
     private static GuiRenderer.TextureSize textureSizeOf(GuiRenderer r, ResourceLocation id) {
-        GuiRenderer.TextureSize cached = TEXTURE_SIZES.get(id);
-        if (cached != null) {
-            return cached;
+        long stamp = r.textureStamp(id);
+        Sized cached = TEXTURE_SIZES.get(id);
+        if (cached != null && cached.stamp() == stamp) {
+            return cached.size();
         }
         GuiRenderer.TextureSize read = r.textureSize(id).orElse(null);
         if (read != null) {
-            TEXTURE_SIZES.put(id, read);
+            TEXTURE_SIZES.put(id, new Sized(read, stamp));
+        }
+        else {
+            // A stamp that no longer matches means the file was replaced by something unreadable, so the
+            // stale entry goes rather than being kept for a frame that would draw it.
+            TEXTURE_SIZES.remove(id);
         }
         return read;
     }

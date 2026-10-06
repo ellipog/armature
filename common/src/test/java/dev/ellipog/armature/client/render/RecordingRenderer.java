@@ -291,6 +291,32 @@ public final class RecordingRenderer implements GuiRenderer {
         textureSizes.put(texture, new GuiRenderer.TextureSize(width, height));
     }
 
+    /** The stamp this recorder reports per texture; see {@link #putTextureSize} and {@link #textureStamp}. */
+    private final Map<ResourceLocation, Long> textureStamps = new HashMap<>();
+
+    /**
+     * Declares that a texture's resource has been replaced, the way a pack reload does.
+     *
+     * <p>For the one thing a caller caching a size has to survive: the file behind an id changing while
+     * the id does not. A recorder with no stamps answers a constant, which is the honest report for one
+     * that reads no resource manager — nothing it reported can go stale — so a test that wants the
+     * invalidation has to say the resource moved.
+     */
+    public void bumpTextureStamp(ResourceLocation texture) {
+        textureStamps.merge(texture, 1L, Long::sum);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Constant until {@link #bumpTextureStamp} says otherwise, which is what a caller that reads no
+     * resource manager should report.
+     */
+    @Override
+    public long textureStamp(ResourceLocation texture) {
+        return textureStamps.getOrDefault(texture, 0L);
+    }
+
     /**
      * {@inheritDoc}
      *

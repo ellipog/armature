@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.render.TextEpoch;
 import dev.ellipog.armature.client.ui.kit.Colour;
 import dev.ellipog.armature.client.ui.kit.TextArea;
 
@@ -73,9 +74,10 @@ public final class ArmatureTextArea extends AbstractWidget {
     /** Blank pixels before each paragraph after the first. See {@link #advance}. */
     private int paragraphGap;
 
-    /** The wrap cache: the text and width it was computed for, and its spans. */
+    /** The wrap cache: the text, width and text epoch it was computed for, and its spans. */
     private String wrappedValue;
     private int wrappedWidth = -1;
+    private long wrappedEpoch = Long.MIN_VALUE;
     private List<TextArea.Span> spans = List.of();
 
     /** Set while {@link #submit()} runs, for the same reason the field has one: rebuilds blur, blur submits. */
@@ -175,20 +177,38 @@ public final class ArmatureTextArea extends AbstractWidget {
      * {@code mouseClicked} too, where there is no renderer, and a second measure for those paths would
      * put the caret at a character the drawn text is not under. One function, {@link #textWidth}, is
      * the only width anything here asks for.
+     *
+     * <h2>Why the text epoch is part of the key</h2>
+     *
+     * <p>Because two things change a width without changing a string: a resource reload replacing the font,
+     * and the player moving the text scale. The key used to be the value and the box width alone, so a long
+     * description open in the editor kept the line breaks it was wrapped with before either moved — text
+     * laid out to a width it no longer has, and a caret that lands on the wrong character. This is the same
+     * epoch every other width memo in the toolkit is handed; see {@code TextEpoch} for what it is and is not.
      */
     private List<TextArea.Span> spans() {
         int width = Math.max(1, getWidth() - PAD * 2);
-        if (spans.isEmpty() || !model.value().equals(wrappedValue) || width != wrappedWidth) {
+        long epoch = TextEpoch.now();
+        if (spans.isEmpty() || !model.value().equals(wrappedValue) || width != wrappedWidth
+                || epoch != wrappedEpoch) {
             spans = TextArea.wrap(model.value(), width, ArmatureTextArea::textWidth);
             wrappedValue = model.value();
             wrappedWidth = width;
+            wrappedEpoch = epoch;
         }
         return spans;
     }
 
-    /** The one measure. The font, which is what the drawing draws with. */
+    /**
+     * The one measure. The font, which is what the drawing draws with — at the player's text scale.
+     *
+     * <p>The scale is applied here rather than left out, because every other measure in the toolkit applies
+     * it: {@code GuiGraphicsRenderer.textWidth} is {@code font.width(text) * TextScale.get()}, and a text
+     * area that wrapped against the unscaled font while the renderer drew it scaled would break its lines in
+     * places the drawn text does not.
+     */
     private static int textWidth(String text) {
-        return Minecraft.getInstance().font.width(text);
+        return TextScale.of(Minecraft.getInstance().font.width(text));
     }
 
     /** The pitch the lines are drawn at: the caller's, or the font's own when none was asked for. */

@@ -2,6 +2,7 @@ package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
 import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.render.TextEpoch;
 import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Slider;
 import dev.ellipog.armature.client.ui.kit.Tween;
@@ -109,6 +110,7 @@ public class ArmatureSlider extends AbstractWidget {
         if (!visible) {
             return;
         }
+        measuring = renderer;
         hoverTween.retarget(isHoveredOrFocused() && active ? 1F : 0F, nowMillis);
         float hover = hoverTween.value(nowMillis);
 
@@ -120,8 +122,7 @@ public class ArmatureSlider extends AbstractWidget {
         String label = getMessage().getString();
         int labelRoom = Math.max(0, trackLeft - TRACK_GAP - getX());
         if (labelRoom > 0 && !label.isEmpty()) {
-            Measure measure = Measure.of(renderer::textWidth, renderer.lineHeight());
-            renderer.text(Measure.truncate(label, labelRoom, measure), getX(),
+            renderer.text(Measure.truncate(label, labelRoom, measure()), getX(),
                     getY() + (height - renderer.lineHeight()) / 2,
                     ArmatureControlStyle.text(ArmatureControlStyle.Variant.PLAIN, active));
         }
@@ -141,6 +142,31 @@ public class ArmatureSlider extends AbstractWidget {
     }
 
     /** The track's width: half the control, never narrower than {@link #MIN_TRACK}. */
+    /** The renderer the measure in force is measuring with. See {@link #measure}. */
+    private GuiRenderer measuring;
+
+    /** The measure in force, built once and re-pointed at whichever renderer is drawing. */
+    private Measure measure;
+
+    /**
+     * The measure this slider truncates its label with, built once rather than per frame.
+     *
+     * <p>The same shape as {@code ArmatureButton.measure}, and for the same reason: the label is truncated
+     * every frame, {@code Measure.truncate} walks it a character at a time, and a measure built at the call
+     * site remembers nothing between frames. {@code Measure.cached} is what makes the widths survive, and
+     * {@code TextEpoch} is what empties them when the font or the text scale moves.
+     */
+    private Measure measure() {
+        if (measure == null) {
+            // The renderer's identity is part of the epoch; see `ArmatureButton.measure` for why that is
+            // load-bearing rather than tidy.
+            measure = Measure.cachedOver(text -> measuring.textWidth(text),
+                    () -> measuring.lineHeight(),
+                    () -> TextEpoch.now() * 31L + System.identityHashCode(measuring));
+        }
+        return measure;
+    }
+
     private int trackWidth() {
         return Math.max(MIN_TRACK, width / 2);
     }

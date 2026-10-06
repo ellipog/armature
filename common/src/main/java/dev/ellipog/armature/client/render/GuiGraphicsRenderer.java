@@ -534,6 +534,33 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         }
     }
 
+    /**
+     * The resource's identity, which is what changes when a pack reload replaces the file.
+     *
+     * <p>A reload builds a new resource manager, so the same id resolves to a different {@code Resource}
+     * object — and the object is what the stamp is taken from, rather than its contents. Reading the file
+     * to compare it would cost exactly what the caller's cache exists to avoid, and a modification time is
+     * not reliable enough across the file systems this runs on (the same reason {@code ParsedFiles} takes
+     * an explicit invalidation from the write path).
+     *
+     * <p>Empty resolution is a stamp of zero rather than an error: "there is nothing here" is a stable
+     * answer, and a caller that cached it will ask again the moment one arrives, because the stamp it
+     * holds no longer matches.
+     */
+    @Override
+    public long textureStamp(ResourceLocation texture) {
+        if (texture == null) {
+            return 0L;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return 0L;
+        }
+        return minecraft.getResourceManager().getResource(texture)
+                .map(resource -> (long) System.identityHashCode(resource))
+                .orElse(0L);
+    }
+
     private static boolean hasPngSignature(byte[] header) {
         for (int i = 0; i < PNG_SIGNATURE.length; i++) {
             if (header[i] != PNG_SIGNATURE[i]) {

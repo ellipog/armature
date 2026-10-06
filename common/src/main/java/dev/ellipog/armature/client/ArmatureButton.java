@@ -2,6 +2,7 @@ package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
 import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.render.TextEpoch;
 import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Tween;
 
@@ -399,6 +400,7 @@ public class ArmatureButton extends AbstractWidget {
         if (!visible) {
             return;
         }
+        measuring = renderer;
 
         // One source for the appearance, so this button and anything that draws it agree. The
         // precedence -- disabled, then selected, then held, then hovered -- is documented there.
@@ -493,8 +495,7 @@ public class ArmatureButton extends AbstractWidget {
         // `Measure.truncate` rather than a font call, so the truncation rule is testable and lives
         // beside the wrap rule it is a counterpart of. Both answer "what fits in this width", one by
         // breaking a paragraph and one by cutting a line.
-        String shown = Measure.truncate(label, Math.max(0, textWidth - 4),
-                Measure.of(renderer::textWidth, renderer.lineHeight()));
+        String shown = Measure.truncate(label, Math.max(0, textWidth - 4), measure(renderer));
         // Two pixels in from the left rather than flush against it. A label touching its own edge
         // reads as text that has overflowed rather than as text that has been placed, and the same
         // two pixels is what the centred branch leaves on the narrower side. See `alignLeft` for which
@@ -510,6 +511,53 @@ public class ArmatureButton extends AbstractWidget {
         // The label is the narration. A screen reader should say what the button does, and what it
         // does is what it says -- a separate narration field would be one more thing to keep in step.
         defaultButtonNarrationText(output);
+    }
+
+    /** The renderer the measure in force is measuring with. See {@link #measure}. */
+    private GuiRenderer measuring;
+
+    /** The measure in force, built once and re-pointed at whichever renderer is drawing. */
+    private Measure measure;
+
+    /**
+     * The measure this control truncates with, built once rather than per frame.
+     *
+     * <h2>Why a field, when the adapter is a lambda</h2>
+     *
+     * <p>Because the label is truncated every frame and {@code Measure.truncate} walks the string a
+     * character at a time asking how wide each prefix is — so the <i>measure</i> is what has to remember,
+     * and a measure built at the call site has nothing in it. This was {@code Measure.of(renderer::textWidth,
+     * renderer.lineHeight())} inline, which allocated an anonymous measure per button per frame and threw
+     * away every width it had already been asked for.
+     *
+     * <p>The measure outlives the frame and reads whichever renderer is in force, through
+     * {@link #measuring} — the same shape a screen's own cached measure uses, and for the same reason: a
+     * memo built per frame would have nothing in it, and the identity has to be stable across frames
+     * rather than within one.
+     *
+     * <p>{@code Measure.cached} rather than a bare adapter, so the widths are remembered and emptied when
+     * {@code TextEpoch} moves — a font reload or a text-scale change. A control cannot see either, and a
+     * width measured against the face the pack was reloaded away from is text laid out to a width it no
+     * longer has.
+     */
+    private Measure measure(GuiRenderer renderer) {
+        measuring = renderer;
+        if (measure == null) {
+            // Both methods read whichever renderer is in force, so the line height is the one the old
+            // inline adapter reported rather than a constant that happens to be right today.
+            //
+            // The epoch folds in the renderer's **identity**, and that is load-bearing rather than tidy:
+            // `TextEpoch` describes the font and the text scale, and neither of those changes when a
+            // control is redrawn through a different renderer — which happens, because a screen redraws its
+            // controls through its own, a modal band redraws them through another, and a test drives them
+            // through a recording one. Without the identity, the widths the first renderer gave would be
+            // handed to the second, and a control would draw its label at a width its own renderer never
+            // agreed to. `MeasureCacheTest.cachedOverFollowsTheRenderer` is the case that caught it.
+            measure = Measure.cachedOver(text -> measuring.textWidth(text),
+                    () -> measuring.lineHeight(),
+                    () -> TextEpoch.now() * 31L + System.identityHashCode(measuring));
+        }
+        return measure;
     }
 
     // ------------------------------------------------------------------

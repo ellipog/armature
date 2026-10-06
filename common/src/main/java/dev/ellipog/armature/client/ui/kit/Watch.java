@@ -38,14 +38,21 @@ public final class Watch {
      */
     public List<String> moved(Map<String, Long> now) {
         Objects.requireNonNull(now, "now");
-        List<String> moved = new ArrayList<>();
+        // The empty case is the frame's common case — a screen looking at data that has not moved — and it
+        // is worth not allocating for: `ArmatureLive` already refuses to build a fresh map when nothing
+        // has changed, so a list here would be the last per-frame allocation in the path that exists to
+        // avoid them. The shared instance is immutable and never handed to a caller that could add to it.
+        List<String> moved = null;
         for (Map.Entry<String, Long> each : now.entrySet()) {
             if (!each.getValue().equals(last.get(each.getKey()))) {
+                if (moved == null) {
+                    moved = new ArrayList<>();
+                }
                 moved.add(each.getKey());
             }
         }
         settle(now);
-        return List.copyOf(moved);
+        return moved == null ? List.of() : List.copyOf(moved);
     }
 
     /**
@@ -54,6 +61,12 @@ public final class Watch {
      * <p>For a caller that has just <i>built</i> from these numbers: what it holds is current by
      * construction, so the next look has nothing to report. Without it the first frame after every
      * rebuild would find everything moved, which is a rebuild per frame.
+     *
+     * <p>The copy stays, and it is worth saying why it is not the same trade as {@link #moved}'s. This
+     * runs on a <b>rebuild</b> — a handful of times a session — where {@code moved} runs every frame, so
+     * the copy costs nothing measurable and it is what keeps the class honest for a caller that hands in a
+     * map it goes on to change. The per-frame path is the one worth not allocating on, and it is the one
+     * that was changed.
      */
     public void settle(Map<String, Long> now) {
         last = Map.copyOf(Objects.requireNonNull(now, "now"));

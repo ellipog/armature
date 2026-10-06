@@ -124,6 +124,45 @@ class MeasureCacheTest {
     }
 
     @Test
+    @DisplayName("a measure over a changing renderer remembers, and reads whichever renderer is in force")
+    void cachedOverFollowsTheRenderer() {
+        // What `ArmatureButton` and `ArmatureSlider` use, and the reason it is not `Measure.of`: a control
+        // that truncates a label every frame has to keep its measure **across** frames for the memo to be
+        // worth anything, and the renderer it measures with is whichever one is drawing — a screen redraws
+        // it through its own, a modal band through another, a test through a recording one. So the measure
+        // cannot close over a renderer; it reads the one in force.
+        Counting first = new Counting(5);
+        Counting second = new Counting(3);
+        Counting[] inForce = { first };
+
+        // The epoch a control passes: the font's, folded with the renderer's identity. The identity is not
+        // decoration — this test failed without it, because `TextEpoch` describes the font and the text
+        // scale and neither changes when a control is redrawn through a different renderer.
+        Measure measure = Measure.cachedOver(text -> inForce[0].width(text),
+                () -> inForce[0].lineHeight(),
+                () -> epoch * 31L + System.identityHashCode(inForce[0]));
+
+        // The same string twice is measured once, which is the whole of the memo.
+        assertEquals(10, measure.width("ab"));
+        assertEquals(10, measure.width("ab"));
+        assertEquals(1, first.asks("ab"), "the second ask was answered from the memo");
+
+        // The line height follows the renderer in force rather than being fixed at construction.
+        assertEquals(9, measure.lineHeight());
+
+        // A different renderer reads a different width for the same string — and the memo must not answer
+        // the old one, or a control redrawn through another renderer draws its label at the wrong width.
+        inForce[0] = second;
+        assertEquals(6, measure.width("ab"), "the width is the renderer in force, not the one it was built with");
+        assertEquals(1, second.asks("ab"), "and the new renderer was asked");
+
+        // And the epoch still governs: a font reload forgets everything, whichever renderer is in force.
+        epoch++;
+        assertEquals(6, measure.width("ab"));
+        assertEquals(2, second.asks("ab"), "the epoch moving asks again");
+    }
+
+    @Test
     @DisplayName("the memo holds a bounded number of strings, and starts again rather than growing")
     void theMemoIsBounded() {
         Counting delegate = new Counting(1);

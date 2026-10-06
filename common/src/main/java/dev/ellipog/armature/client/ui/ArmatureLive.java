@@ -67,17 +67,55 @@ public final class ArmatureLive {
     /**
      * Every watched value, by name, as it stands now.
      *
-     * <p>Called once per frame per open screen, so it is a walk over a handful of suppliers and no
-     * allocation beyond the map itself — which is the price of not asking every screen to remember a
-     * list of its own.
+     * <h2>Why the answer is kept rather than rebuilt</h2>
+     *
+     * <p>This is called once per frame per open screen, and it used to build a {@code LinkedHashMap} and
+     * then an immutable copy of it every time — two maps and a boxed {@code Long} per source, per frame,
+     * to answer a question whose answer is almost always "exactly what it was last frame". The maps are
+     * cheap individually and this is not a frame's cost, but it is pure churn: nothing reads the result
+     * except to compare it with the same numbers a moment ago.
+     *
+     * <p>So the last answer is kept, keyed on the values it was made from. A frame where nothing has moved
+     * returns that same map — no map, no boxing, one comparison per source — and the caller's comparison
+     * then finds nothing moved, which is the whole point of asking.
+     *
+     * <p><b>The returned map must not be mutated or held.</b> It is the cached instance, shared with every
+     * later call until a source moves. The one caller reads it and immediately hands it back to
+     * {@code Watch}, which copies what it needs; a caller that stored it and expected it to stay still
+     * would be storing the live answer. That is stated here rather than enforced, because enforcing it
+     * would mean a copy per frame, which is the thing being removed.
      */
     public static Map<String, Long> revisions() {
-        Map<String, Long> now = new LinkedHashMap<>();
-        for (Source source : SOURCES) {
-            now.put(source.name(), source.revision().getAsLong());
+        // Read the sources once, into the array the cache is keyed on. An array rather than a list: this
+        // is the per-frame path and it must not allocate.
+        if (values.length != SOURCES.size()) {
+            values = new long[SOURCES.size()];
+            cached = null;
         }
-        return Map.copyOf(now);
+        boolean moved = cached == null;
+        for (int i = 0; i < SOURCES.size(); i++) {
+            long now = SOURCES.get(i).revision().getAsLong();
+            if (!moved && values[i] != now) {
+                moved = true;
+            }
+            values[i] = now;
+        }
+        if (!moved) {
+            return cached;
+        }
+        Map<String, Long> built = new LinkedHashMap<>();
+        for (int i = 0; i < SOURCES.size(); i++) {
+            built.put(SOURCES.get(i).name(), values[i]);
+        }
+        cached = Map.copyOf(built);
+        return cached;
     }
+
+    /** The source values {@link #cached} was built from, in source order. */
+    private static long[] values = new long[0];
+
+    /** The last answer, valid while the sources still read what {@link #values} holds. */
+    private static Map<String, Long> cached;
 
     /** The names being watched, for a log line that has to say what a screen is looking at. */
     public static List<String> watched() {

@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.ui.CacheHits;
 import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.Themes;
@@ -933,6 +934,11 @@ public final class ArmatureTheme {
     private static Plans.Plan surfacePlan(int width, int height, int radius, int corners) {
         SurfaceKey key = new SurfaceKey(width, height, radius, corners);
         Plans.Plan plan = SURFACES.get(key);
+        // Reported for both answers: see CacheHits, which exists because a table of this kind was once
+        // built and unreachable with nothing able to see it. The key is four ints, so a hit here says the
+        // same panel is being drawn at the same size again -- which is the normal case, and the whole
+        // reason the table exists.
+        CacheHits.asked(SURFACE_CACHE, plan != null);
         if (plan != null) {
             return plan;
         }
@@ -944,6 +950,9 @@ public final class ArmatureTheme {
         SURFACES.put(key, built);
         return built;
     }
+
+    /** This table's name in the hit/miss report. A constant, so a probe allocates nothing. */
+    private static final String SURFACE_CACHE = "surfaces";
 
     /**
      * A shape's border and its fill, in that order.

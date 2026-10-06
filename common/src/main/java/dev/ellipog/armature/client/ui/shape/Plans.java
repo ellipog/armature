@@ -1,5 +1,7 @@
 package dev.ellipog.armature.client.ui.shape;
 
+import dev.ellipog.armature.client.ui.CacheHits;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -93,6 +95,10 @@ public final class Plans {
         }
         ShapeKey key = new ShapeKey(shape, size);
         Plan plan = SHAPES.get(key);
+        // The probe is reported either way, and reporting only the hits would read as a perfect cache --
+        // see CacheHits, which exists because this table was once built and unreachable with nothing able
+        // to see it.
+        CacheHits.asked(PLAN_CACHE, plan != null);
         if (plan != null) {
             return plan;
         }
@@ -103,6 +109,9 @@ public final class Plans {
         SHAPES.put(key, built);
         return built;
     }
+
+    /** This table's name in the hit/miss report. A constant, so a probe allocates nothing. */
+    private static final String PLAN_CACHE = "plans";
 
     /**
      * The rectangles for any row-to-spans lookup, for a caller whose shape is not an object.

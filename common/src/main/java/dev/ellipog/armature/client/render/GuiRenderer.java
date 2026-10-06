@@ -311,6 +311,30 @@ public interface GuiRenderer {
     Optional<TextureSize> textureSize(ResourceLocation texture);
 
     /**
+     * A number that changes when the resource behind a texture does, for a caller that caches its size.
+     *
+     * <h2>Why a stamp rather than an invalidation hook</h2>
+     *
+     * <p>Because a texture's size is only wrong until somebody looks again, and the looking is already
+     * happening: a caller asks for the size once and remembers it, which is right, and then has no way to
+     * learn that a resource reload replaced the file underneath it. The two available answers are to
+     * register a reload listener — which means a loader-specific hook in a library that has none, and a
+     * second thing to keep in step with the pack system — or to let the cache check, cheaply, whether the
+     * answer it holds is still the current one. This is the second.
+     *
+     * <p><b>The default is constant</b>, and that is deliberate rather than a placeholder: a renderer that
+     * cannot say — a recording renderer in a test, or any implementation that does not read a resource
+     * manager — has nothing to invalidate, because nothing it reported can go stale. A caller caching
+     * against such a renderer is caching against a constant, which is what a test wants.
+     *
+     * <p>The number has no meaning of its own, exactly like {@code TextEpoch}: it is only ever asked "is
+     * this the same as last time".
+     */
+    default long textureStamp(ResourceLocation texture) {
+        return 0L;
+    }
+
+    /**
      * Draws a source region of a texture into a rectangle, in a tint.
      *
      * <h2>What the numbers mean</h2>
