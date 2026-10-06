@@ -1,6 +1,7 @@
 package dev.ellipog.armature.api.config;
 
 import dev.ellipog.armature.Constants;
+import dev.ellipog.armature.api.data.JsonWrite;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -126,8 +127,10 @@ public final class ArmatureConfig {
 
         current = DEFAULTS;
         try {
-            Files.createDirectories(directory);
-            Files.writeString(file, DEFAULTS.write(), StandardCharsets.UTF_8);
+            // Through JsonWrite, which creates the directory itself. The file it replaces is written
+            // once, on first run -- and that is exactly the run where a half-written file would leave a
+            // player with settings that neither parse nor exist. See JsonWrite.
+            JsonWrite.atomically(file, DEFAULTS.write());
             Constants.LOG.info("armature: wrote the default settings to {}", file);
         }
         catch (IOException e) {

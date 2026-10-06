@@ -40,11 +40,16 @@ import java.util.stream.Collectors;
  * no instance(s) of type variable(s) T exist so that Codec<T> conforms to MapCodec<? extends E>
  * }</pre>
  *
- * <p>{@code Codec.dispatch} takes a {@code Function<A, MapCodec<? extends E>>} in DataFixerUpper 6,
- * which is what ships with Minecraft 1.21.1. DataFixerUpper 7 changed it to accept a {@code Codec},
- * and most examples online are written against that. This is not a mistake to read past: it means
- * anything reaching past the documented codec API in this Minecraft version is a gamble, because the
- * bundled library is older than the current release and its API is not what the docs describe.
+ * <p>{@code Codec.dispatch} takes a {@code Function<A, MapCodec<? extends E>>} in DataFixerUpper
+ * <b>8.0.16</b>, which is what Minecraft 1.21.1 resolves — named here from the version manifest rather
+ * than from memory, because this paragraph previously had it exactly backwards and the mistake is the
+ * kind that costs an afternoon.
+ *
+ * <p>The earlier DataFixerUpper 6 line took a {@code Codec} in that position instead, and most examples
+ * online are written against that shape. So the trap is the <i>reverse</i> of the obvious guess: the
+ * bundled library is <b>newer</b> than the examples, not older, and a dispatch written from a tutorial
+ * will not compile here. That is worth knowing before concluding the signature is a generics puzzle of
+ * one's own making.
  *
  * <p>The failing codec is spelled out rather than thrown because a codec that cannot decode has to
  * say so through a {@code DataResult}. Throwing would surface as a crash while loading a data file

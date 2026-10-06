@@ -2,6 +2,7 @@ package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.ArmatureApi;
+import dev.ellipog.armature.api.data.JsonWrite;
 import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.Theme;
 import dev.ellipog.armature.client.ui.ThemeFiles;
@@ -575,8 +576,11 @@ public final class Look {
         root.addProperty("basedOn", settings.theme());
 
         try {
-            Files.createDirectories(directory);
-            Files.writeString(directory.resolve(clean + ".json"), root.toString(), StandardCharsets.UTF_8);
+            // JsonWrite creates the directory as well as writing by rename, so the explicit
+            // createDirectories this replaces is now redundant -- and it was the weaker of the two
+            // anyway, since it assumed the directory was the thing to create rather than the file's own
+            // parent. A half-written theme file would be a player's saved palette that no longer parses.
+            JsonWrite.atomically(directory.resolve(clean + ".json"), root.toString());
         }
         catch (IOException e) {
             Constants.LOG.warn("armature: the theme could not be written to {}", directory, e);
@@ -831,11 +835,9 @@ public final class Look {
             return;
         }
         try {
-            Path parent = file.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.writeString(file, write(settings), StandardCharsets.UTF_8);
+            // Through JsonWrite: a truncated appearance file reads as "no customisation", which is a
+            // silent loss of the player's own choices rather than an error anybody sees. See JsonWrite.
+            JsonWrite.atomically(file, write(settings));
         }
         catch (IOException e) {
             // Not fatal and not worth stopping a frame for. The setting is live either way; it just
