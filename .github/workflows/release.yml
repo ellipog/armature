@@ -1,0 +1,120 @@
+# Tagged releases and manual builds for Armature.
+#
+# Two triggers and nothing else, deliberately: no run on an ordinary push or a pull request. A
+# release is a decision (a tag) or a button press, not a side effect of committing. Everything is a
+# pre-release for now -- `prerelease: true` below is the single line to flip when a stable release
+# is wanted.
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # A test JVM that keeps a server thread alive would otherwise run to GitHub's 6-hour cap.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # The tag and the built version have to name the same version. A jar called
+      # `armature-fabric-1.21.1-0.1.0.jar` published under tag v0.1.1 is a release whose download
+      # does not match its name, and nothing else here would notice. Runs before the build, so a
+      # mismatch fails in seconds instead of after twenty minutes.
+      - name: Resolve the version and check it against the tag
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version=//p' gradle.properties | tr -d '\r' | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "::error::no version= line in gradle.properties"
+            exit 1
+          fi
+          tag="v$version"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "$tag" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match version=$version in gradle.properties"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # `build` includes `check` includes `test`, so the suite runs here without being named and a
+      # failing test stops the release -- the same rule the local deploy script follows.
+      - name: Build with Gradle
+        run: ./gradlew build --console=plain
+
+      # The subprojects are named rather than found with `find . -path '*/build/libs/*.jar'`, which
+      # also matches `buildSrc/build/libs/buildSrc.jar` -- a real file in this repo, and not
+      # something to attach to a release. Loom's unremapped dev jar lives in `build/devlibs`, which
+      # is never read here; the `-dev.jar` exclusion is kept as a guard for a loader that changes it.
+      - name: Collect the release jars
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          mkdir -p dist
+          for sub in common fabric neoforge; do
+            [ -d "$sub/build/libs" ] || continue
+            find "$sub/build/libs" -maxdepth 1 -type f -name '*.jar' \
+              ! -name '*-sources.jar' ! -name '*-dev.jar' ! -name '*-javadoc.jar' \
+              -exec cp {} dist/ \;
+          done
+          ls -la dist
+          jars=(dist/*.jar)
+          if [ ! -f "${jars[0]}" ]; then
+            echo "::error::no jars were collected"
+            exit 1
+          fi
+          for jar in "${jars[@]}"; do
+            case "$jar" in
+              *"-${version}.jar") ;;
+              *) echo "::error::unexpected jar in the release set: $jar"; exit 1 ;;
+            esac
+          done
+
+      - name: Upload the jars as a workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: armature-${{ steps.version.outputs.tag }}
+          path: dist/*.jar
+          if-no-files-found: error
+
+      - name: Publish the GitHub Pre-Release
+        uses: softprops/action-gh-release@v3
+        with:
+          token: ${{ github.token }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*.jar
+          body: |
+            Install `armature-fabric-*.jar` on Fabric, or `armature-neoforge-*.jar` on NeoForge.
+            `armature-common-*.jar` is the library artifact other mods compile against -- it is not
+            a mod, so do not put it in a `mods` folder.
