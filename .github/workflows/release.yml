@@ -65,9 +65,34 @@ jobs:
         run: chmod +x gradlew
 
       # `build` includes `check` includes `test`, so the suite runs here without being named and a
-      # failing test stops the release -- the same rule the local deploy script follows.
+      # failing test stops the release -- the same rule the local deploy script follows. The log is
+      # kept in a file as well as the console so the next step can read it.
       - name: Build with Gradle
-        run: ./gradlew build --console=plain
+        run: |
+          set -o pipefail
+          ./gradlew build --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+
+      # A failed build's reason, in the run's own summary and annotations rather than only in a log
+      # nobody opens. Gradle buries it: a few hundred lines of javadoc warnings around the two that
+      # matter, and the annotations are what make the fault readable from outside the web UI too.
+      - name: Report what the build said
+        if: failure()
+        run: |
+          log="$RUNNER_TEMP/gradle.log"
+          if [ ! -f "$log" ]; then
+            echo "::error::the build failed before Gradle produced any output"
+            exit 0
+          fi
+          {
+            echo '### The build failed, and Gradle said'
+            echo '```'
+            tail -n 120 "$log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -a -E "error:|FAILURE:|What went wrong|Caused by:|> Task .* FAILED|Could not resolve|Execution failed|tests? (completed|failed)" "$log" \
+            | head -n 25 | cut -c1-320 | sed 's/%/%25/g; s/\r//g' \
+            | while IFS= read -r line; do echo "::error::$line"; done
+          exit 0
 
       # The subprojects are named rather than found with `find . -path '*/build/libs/*.jar'`, which
       # also matches `buildSrc/build/libs/buildSrc.jar` -- a real file in this repo, and not
