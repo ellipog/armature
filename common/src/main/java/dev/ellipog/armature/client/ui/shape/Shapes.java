@@ -1,5 +1,6 @@
 package dev.ellipog.armature.client.ui.shape;
 
+import dev.ellipog.armature.client.ui.CacheHits;
 import dev.ellipog.armature.client.ui.kit.RoundedRect;
 
 import java.util.Arrays;
@@ -534,16 +535,104 @@ public final class Shapes {
      */
     public static Shape cached(Shape shape) {
         Objects.requireNonNull(shape, "shape");
-        return new Cached(shape);
+        return shape instanceof Memoised ? shape : new Memoised(shape);
     }
 
-    /** A shape behind a per-size table of its own rows. See {@link #cached}. */
-    private static final class Cached implements Shape {
+    /**
+     * Every shape's own memo, by identity — the map that makes {@link Shape#inner} stable.
+     *
+     * <h2>Why a map rather than a field</h2>
+     *
+     * <p>Because the memo has to be reached from a default method on an interface, and an interface cannot
+     * hold an instance field. The alternative — building the memo at the call site — is what was wrong
+     * before: {@code inner()} returned a <b>new</b> wrapper every call, so the per-inset memo inside it
+     * never survived to the next frame and every layer missed {@link Plans#of}, which is keyed on the
+     * shape's identity. The layer must be the same object on the next frame, so the memo must outlive the
+     * call.
+     *
+     * <p>Weak keys, because the map is keyed by the thing it wraps: a shape reachable only from here must
+     * not be kept alive by its own memo. Values hold their key (a memo's delegate is the shape), which is
+     * the documented shape for a weak-keyed cache; the entry is dropped once the shape is unreachable
+     * from anywhere else.
+     *
+     * <p>Writes are rare — once per distinct shape, and shapes are built at class-initialisation or per
+     * turned appearance — and reads are once per node layer per frame, so the synchronisation is a
+     * formality rather than a contention point. It is there because a turned shape can be built from a
+     * consumer's own {@code computeIfAbsent}, which may be entered from more than one thread.
+     */
+    private static final java.util.Map<Shape, Memoised> MEMOISED =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * The same shape, reached through its own persistent memo.
+     *
+     * <p>Idempotent per shape: asking twice returns the same memo, which is what makes {@code inner} and
+     * {@code outer} stable across frames. See {@link #MEMOISED} for why this cannot be a field.
+     *
+     * <p>Package-private rather than private, and that is the one concession the identity requirement
+     * forces: {@link Shape#inner(int)} is a default method on an interface, so this is the only way it can
+     * reach a memo that outlives the call.
+     */
+    static Shape memoised(Shape shape) {
+        if (shape instanceof Memoised) {
+            return shape;
+        }
+        Memoised held = MEMOISED.get(shape);
+        if (held != null) {
+            return held;
+        }
+        Memoised built = new Memoised(shape);
+        MEMOISED.put(shape, built);
+        return built;
+    }
+
+    /**
+     * The definition of {@link Shape#inner(int)}, as a static so that {@link Memoised} can build a layer
+     * without reaching the interface default — which routes back through {@link #cached} and would make a
+     * fresh wrapper each time, which is the whole fault this pair of methods exists to fix.
+     */
+    private static Shape eroded(Shape base, int inset) {
+        return new Memoised(Shapes.ofSpans((row, size) ->
+                Outlines.eroded(base::spans, size + inset * 2, inset).spansOf(row, size)));
+    }
+
+    /** The definition of {@link Shape#outer(int)}. See {@link #eroded}. */
+    private static Shape dilated(Shape base, int outset) {
+        return new Memoised(Shapes.ofSpans((row, size) ->
+                Outlines.dilated(base::spans, Math.max(0, size - outset * 2), outset).spansOf(row, size)));
+    }
+
+    /**
+     * A shape whose <b>layers</b> are remembered per inset, and whose rows are remembered per size.
+     *
+     * <h2>Why the memo has to live on the shape rather than in the default method</h2>
+     *
+     * <p>{@code Shape.inner} and {@code Shape.outer} used to return {@code Shapes.cached(Shapes.ofSpans(…))}
+     * — a <b>fresh wrapper every call</b>, because {@code cached} built one unconditionally. So the memo
+     * those two methods were written to provide was only ever real for the shapes that overrode them:
+     * {@code UnitShape} and {@code Turned} each kept their own per-inset map, and every other shape —
+     * anything built through {@link #ofSpans}, and every layer built from one — missed {@link Plans#of} and
+     * {@code ArmatureTheme}'s surface table on every call, because both are keyed on the shape's
+     * <b>identity</b>. The table was built and then unreachable.
+     *
+     * <p>So the memo is here, on the object, and both layer factories go through {@link #cached}: a layer
+     * asked for twice is one object, and a layer of a layer is memoised as well as a layer of a singleton.
+     *
+     * <h2>Two maps, and why the bounds are the same policy as the tables</h2>
+     *
+     * <p>One per direction, keyed by the inset. Unbounded they would be the largest cache in the toolkit
+     * for no reason — a shape has as many distinct insets as somebody asks for, and nothing bounds that —
+     * so they are emptied at {@link #SAMPLED_SIZES_REMEMBERED}, the same number and the same
+     * empty-rather-than-trim policy the span tables use.
+     */
+    private static final class Memoised implements Shape {
 
         private final Shape delegate;
         private final java.util.Map<Integer, int[][]> tables = new java.util.LinkedHashMap<>(4);
+        private final java.util.Map<Integer, Shape> inners = new java.util.HashMap<>(2);
+        private final java.util.Map<Integer, Shape> outers = new java.util.HashMap<>(2);
 
-        Cached(Shape delegate) {
+        Memoised(Shape delegate) {
             this.delegate = delegate;
         }
 
@@ -571,6 +660,38 @@ public final class Shapes {
             return table[row];
         }
 
+        /**
+         * This outline one pixel in, kept once per inset.
+         *
+         * <p>The whole point of the class: a node draws a ring, a panel and a wash every frame, so the
+         * layers it asks for are the same layers each time — and a layer that is a new object each frame
+         * is a layer whose plan is rebuilt each frame.
+         */
+        @Override
+        public Shape inner(int by) {
+            return kept(inners, by, true);
+        }
+
+        /** The same, for the ring. See {@link #inner(int)}. */
+        @Override
+        public Shape outer(int by) {
+            return kept(outers, by, false);
+        }
+
+        private Shape kept(java.util.Map<Integer, Shape> held, int by, boolean inward) {
+            int inset = Math.max(1, by);
+            Shape already = held.get(inset);
+            if (already != null) {
+                return already;
+            }
+            Shape built = inward ? eroded(delegate, inset) : dilated(delegate, inset);
+            if (held.size() >= SAMPLED_SIZES_REMEMBERED) {
+                held.clear();
+            }
+            held.put(inset, built);
+            return built;
+        }
+
         /** Forwarded, so a wrapped shape is still a shape rather than only an outline. */
         @Override
         public int[] iconAnchor(int size) {
@@ -579,7 +700,7 @@ public final class Shapes {
 
         @Override
         public String toString() {
-            return "cached " + delegate;
+            return "memoised " + delegate;
         }
     }
 
@@ -861,6 +982,9 @@ public final class Shapes {
     /** How many sizes a sampled shape remembers before it starts again. See {@link #unit}. */
     private static final int SAMPLED_SIZES_REMEMBERED = 8;
 
+    /** The span tables' name in the hit/miss report. A constant, so a probe allocates nothing. */
+    private static final String SPAN_CACHE = "spans";
+
     /** How many bisections an edge gets: six is under a hundredth of a pixel. */
     private static final int EDGE_BISECTIONS = 6;
 
@@ -904,8 +1028,6 @@ public final class Shapes {
         private final double anchorX;
         private final double anchorY;
         private final Tables tables = new Tables();
-        private final java.util.Map<Integer, Shape> inners = new java.util.HashMap<>(2);
-        private final java.util.Map<Integer, Shape> outers = new java.util.HashMap<>(2);
 
         UnitShape(Unit unit, double anchorX, double anchorY) {
             this.unit = unit;
@@ -930,26 +1052,6 @@ public final class Shapes {
         @Override
         public int[] spans(int row, int size) {
             return tables.spans(unit, row, size);
-        }
-
-        /**
-         * This outline one pixel in, kept once per inset rather than rebuilt per call.
-         *
-         * <p>See {@link Shape#inner(int)} for what it is; what matters here is that a node draws a ring,
-         * a panel and a wash every frame, so the layers it asks for are the same layers each time. The
-         * memo is per shape — a shape is a silhouette at an angle, which is the thing a caller with a
-         * canvas full of repeated nodes already keeps one of per appearance — so the table this builds
-         * is built once per appearance rather than once per drawing.
-         */
-        @Override
-        public Shape inner(int by) {
-            return inners.computeIfAbsent(Math.max(1, by), Shape.super::inner);
-        }
-
-        /** The same, for the ring. See {@link #inner}. */
-        @Override
-        public Shape outer(int by) {
-            return outers.computeIfAbsent(Math.max(1, by), Shape.super::outer);
         }
 
         @Override
@@ -979,8 +1081,6 @@ public final class Shapes {
         private final double sin;
         private final java.util.Map<Integer, Double> fits = new java.util.HashMap<>();
         private final Tables tables = new Tables();
-        private final java.util.Map<Integer, Shape> inners = new java.util.HashMap<>(2);
-        private final java.util.Map<Integer, Shape> outers = new java.util.HashMap<>(2);
 
         Turned(Shape base, double cos, double sin) {
             this.base = base;
@@ -998,18 +1098,6 @@ public final class Shapes {
         @Override
         public int[] spans(int row, int size) {
             return tables.spans(this::inside, row, size);
-        }
-
-        /** The same memo, per turned shape: see {@code UnitShape.inner}. */
-        @Override
-        public Shape inner(int by) {
-            return inners.computeIfAbsent(Math.max(1, by), Shape.super::inner);
-        }
-
-        /** The same, for the ring. */
-        @Override
-        public Shape outer(int by) {
-            return outers.computeIfAbsent(Math.max(1, by), Shape.super::outer);
         }
 
         @Override
@@ -1076,6 +1164,13 @@ public final class Shapes {
             }
             double reach = measure(size);
             double fit = reach <= 0.5 + FIT_SLACK ? 1.0 : 0.5 / (reach - FIT_SLACK);
+            // Bounded, and emptied rather than trimmed, on the same policy as the tables this feeds: a
+            // turned shape has as many distinct sizes as somebody zooms to, and nothing else bounds that.
+            // Dropping an entry costs one measurement, never a wrong answer -- the fit is a pure function
+            // of the size, and a rebuilt table is rebuilt from the same number.
+            if (fits.size() >= SAMPLED_SIZES_REMEMBERED) {
+                fits.clear();
+            }
             fits.put(size, fit);
             return fit;
         }
@@ -1160,6 +1255,10 @@ public final class Shapes {
         private int[][] table(java.util.Map<Integer, int[][]> tables, Unit unit, int size,
                               boolean sanitize) {
             int[][] table = tables.get(size);
+            // Reported for both answers, not only the hits: see CacheHits. The two tables a size has are
+            // one cache to a reader -- what is being asked is "does this shape's sampling happen once per
+            // size", and raw and clean are the same size being sampled.
+            CacheHits.asked(SPAN_CACHE, table != null);
             if (table == null) {
                 table = sample(unit, size, sanitize);
                 if (tables.size() >= SAMPLED_SIZES_REMEMBERED) {

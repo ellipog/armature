@@ -243,14 +243,24 @@ public interface Shape {
      * The same, {@code by} pixels in, for a layer drawn at {@code (x + by, y + by)} in a box
      * {@code 2 * by} smaller.
      *
+     * <h2>The layer is the same object every call, and that is the contract</h2>
+     *
+     * <p>It has to be, because everything downstream is keyed on a shape's <b>identity</b>:
+     * {@link Plans#of} and {@code ArmatureTheme}'s surface table both remember a shape's rectangles
+     * against the shape itself, so a layer that is a new object each frame is a layer whose plan is
+     * rebuilt each frame. {@link Shapes#cached} is what makes this one — it is idempotent, and it keeps
+     * the per-inset memo, so {@code inner()} twice is the same layer and a layer of a layer is memoised
+     * too.
+     *
+     * <p>This used to be true only for the shapes that overrode this method — {@code UnitShape} and
+     * {@code Turned} each kept their own per-inset map — so any shape built through {@link Shapes#ofSpans}
+     * silently missed every plan table. The memo lives in one place now.
+     *
      * @param by at least one; anything less is treated as one, since a layer of zero inset is this shape
      */
     default Shape inner(int by) {
-        int inset = Math.max(1, by);
-        // Wrapped in a table, because this is a *function* of a row: without it the erosion is recomputed
-        // for every row of every layer every time a node is drawn. See Shapes.cached.
-        return Shapes.cached(Shapes.ofSpans((row, size) ->
-                Outlines.eroded(this::spans, size + inset * 2, inset).spansOf(row, size)));
+        // Through the memoised view, so that asking twice is one object rather than two that agree.
+        return Shapes.memoised(this).inner(by);
     }
 
     /**
@@ -271,14 +281,14 @@ public interface Shape {
      * The same, {@code by} pixels out, for a ring drawn at {@code (x - by, y - by)} in a box
      * {@code 2 * by} larger.
      *
+     * <p>The same identity contract as {@link #inner(int)}: the ring is the same object every call, which
+     * is what its plan table is keyed on.
+     *
      * @param by at least one; anything less is treated as one, since a ring of zero outset is this shape
      */
     default Shape outer(int by) {
-        int outset = Math.max(1, by);
-        // Wrapped in a table, because this is a *function* of a row: without it the dilation is
-        // recomputed for every row of every layer every time a node is drawn. See Shapes.cached.
-        return Shapes.cached(Shapes.ofSpans((row, size) ->
-                Outlines.dilated(this::spans, Math.max(0, size - outset * 2), outset).spansOf(row, size)));
+        // Through the memoised view, like `inner`: the ring is one object per outset, not one per call.
+        return Shapes.memoised(this).outer(by);
     }
 
     /**

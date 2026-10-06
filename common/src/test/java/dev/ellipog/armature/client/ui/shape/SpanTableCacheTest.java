@@ -110,4 +110,36 @@ class SpanTableCacheTest {
         // than a rotation nobody applied.
         assertNotSame(upright.spans(0, 32), turned.spans(0, 32));
     }
+
+    @Test
+    @DisplayName("a layer of a shape with no override is a stable key too")
+    void aLayerOfAPlainShapeIsStable() {
+        // The case the old code was false for, and the reason this test exists.
+        //
+        // `inner`/`outer` used to return `Shapes.cached(Shapes.ofSpans(...))`, and `cached` built a new
+        // wrapper every call — so the memo they were written to provide was only real for the two shapes
+        // that overrode them, `UnitShape` and `Turned`. Every shape built through `Shapes.ofSpans` — and
+        // every *layer* of one, which is what `inner` returns — was a fresh object each call, and
+        // `Plans.of` and `ArmatureTheme`'s surface table are both keyed on the shape's **identity**. The
+        // plan was built and then unreachable, every frame, for every node.
+        //
+        // The existing assertions only covered singletons (`Shapes.CIRCLE`, `Shapes.GEAR`), which is
+        // exactly where the bug was not. This is where it was.
+        Shape plain = Shapes.ofSpans((row, size) -> row < size / 2 ? new int[] {0, size} : null);
+
+        assertSame(plain.inner(), plain.inner(), "a plain shape's fill is one object per inset");
+        assertSame(plain.outer(), plain.outer(), "and so is its ring");
+        assertSame(plain.inner(2), plain.inner(2), "and every other inset keeps its own");
+        assertNotSame(plain.inner(1), plain.inner(2), "two insets are two layers");
+
+        // And a layer of a layer, which is what a node's wash is: the same property has to hold one
+        // level down, or the outermost layer is stable and the one inside it is not.
+        Shape fill = plain.inner();
+        assertSame(fill.inner(), fill.inner(), "a layer of a layer is memoised as well");
+        assertSame(fill.outer(), fill.outer(), "in both directions");
+
+        // The rows behind a layer are remembered per size as well, which is the other half of the memo.
+        assertSame(plain.inner().spans(2, 32), plain.inner().spans(2, 32),
+                "and its rows are computed once per size");
+    }
 }
