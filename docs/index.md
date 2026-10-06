@@ -8,7 +8,7 @@ It is a standalone mod, and nothing in it is specific to any one consumer — a 
 without inheriting another mod's assumptions.
 
 > [!NOTE]
-> **Armature is at 0.1.1 — pre-1.0.** Everything these pages describe is built and in use, but the
+> **Armature is at 0.1.2 — pre-1.0.** Everything these pages describe is built and in use, but the
 > version is below 1.0 deliberately: a break in the API needs only a minor bump, so read the release
 > notes before upgrading rather than assuming the surface is frozen.
 
