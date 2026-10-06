@@ -101,3 +101,22 @@ tasks.register('deployAll') {
     description = 'Deploy to both the Fabric and the NeoForge test profile.'
     dependsOn 'deployFabric', 'deployNeoForge'
 }
+
+// ---------------------------------------------------------------------------
+// The Maven tree for the release workflow.
+//
+// `publishAllPublicationsToLocalRepoRepository` is the task Gradle generates for the `localRepo`
+// repository, once per subproject -- and that name is Gradle's spelling, not ours. This is the name
+// that says what it does, and it exists so the workflow does not have to know Gradle's.
+//
+// Every module, not `:common` alone: a dev run's `runtimeOnly` resolves armature-fabric and
+// armature-neoforge, and publishing only the common half is how those were once left behind at
+// whatever version was last pushed by hand.
+// ---------------------------------------------------------------------------
+tasks.register('publishToLocalRepo') {
+    group = 'publishing'
+    description = 'Publishes every module into build/repo, a Maven tree ready to upload.'
+    dependsOn {
+        subprojects.collect { "${it.path}:publishAllPublicationsToLocalRepoRepository" }
+    }
+}

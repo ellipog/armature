@@ -5,7 +5,7 @@ Shared library and UI toolkit for **Fabric** and **NeoForge**, for **Minecraft 1
 Armature is a standalone library mod. Nothing in it is specific to any one consumer, and it can be
 installed on its own.
 
-> **Status: 0.1.0 — pre-1.0, and not yet a stability promise.** The platform layer, the data and
+> **Status: 0.1.1 — pre-1.0, and not yet a stability promise.** The platform layer, the data and
 > validation helpers, the event, network and team APIs, and the UI toolkit are all built and in use,
 > but the version is below 1.0 on purpose: a break in the API needs only a minor bump, so read the
 > release notes before upgrading.
@@ -84,18 +84,42 @@ gradlew build
 ```
 
 Jars land in `fabric/build/libs` and `neoforge/build/libs`. Install the plain jar
-(`armature-fabric-1.21.1-0.1.0.jar`) — the `-sources` jars are not mods. The test
+(`armature-fabric-1.21.1-0.1.1.jar`) — the `-sources` jars are not mods. The test
 suite is JUnit 5, headless, and part of `gradlew build`; the kit's layout and text models are
 game-free by design, which is what lets them be asserted on without a running client.
 
 ### Using Armature as a library
 
-```cmd
-gradlew :common:publishToMavenLocal
+Armature's API is published to its own Maven repository, so a mod compiles against it with a
+repository line and a coordinate — no clone, and nothing to publish first:
+
+```groovy
+repositories {
+    maven { url = 'https://maven.ellipog.dev' }
+}
+
+dependencies {
+    // The API to compile against. `compileOnly`, because at runtime Armature is a separate mod jar
+    // sitting beside yours in the mods folder -- it is never bundled into a consumer's jar.
+    compileOnly 'dev.ellipog:armature-common-1.21.1:0.1.1'
+}
 ```
 
-publishes `dev.ellipog:armature-common-1.21.1:<version>` to the local Maven repository — which is
-how a consumer compiles against Armature. The optional teams mods are not in that POM.
+The coordinate carries the Minecraft version, so `armature-common-1.21.1` and `armature-common-1.20.1`
+are different artefacts and can never be confused. The `-fabric` and `-neoforge` siblings are on the
+same repository; they are the mod jars, for a dev run's `runtimeOnly`. The optional teams mods are in
+neither POM.
+
+Every tagged release publishes this automatically, and a published version is permanent — a fix is a
+new version, never a re-upload. To compile against an *unreleased* Armature instead:
+
+```cmd
+gradlew publishToMavenLocal
+```
+
+which puts `dev.ellipog:armature-common-1.21.1:<version>` in the local Maven repository, where a
+sibling checkout finds it first. `gradlew publishToLocalRepo` writes the same thing to `build/repo`
+as a Maven tree, which is what the release workflow uploads.
 
 ## Deploying to a local test profile
 
