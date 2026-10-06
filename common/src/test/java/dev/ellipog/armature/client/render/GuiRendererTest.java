@@ -329,7 +329,7 @@ class GuiRendererTest {
         // Same argument as the rectangle panel: the border is the shape at full size and the fill is a
         // two-pixel-smaller copy inset by one. Reversed, the fill covers the border entirely and the
         // node loses its state colour -- which reads as the palette being wrong.
-        ArmatureTheme.Spans square = (row, size) -> new int[] {0, size};
+        Shape square = Shapes.RECT;
 
         RecordingRenderer r = RecordingRenderer.create();
         ArmatureTheme.shapePanel(r, 0, 0, 10, 0xFF111111, 0xFF222222, square);
@@ -352,7 +352,7 @@ class GuiRendererTest {
         // `size > 2` guards the inset, because at 2 or below the inner shape would be zero or negative
         // -- and a negative size passed to a span lookup produces spans that run backwards, which a
         // renderer draws as a rectangle going the other way. Reachable by dragging a window to nothing.
-        ArmatureTheme.Spans square = (row, size) -> new int[] {0, size};
+        Shape square = Shapes.RECT;
 
         for (int size : new int[] {0, 1, 2}) {
             RecordingRenderer r = RecordingRenderer.create();
@@ -365,6 +365,9 @@ class GuiRendererTest {
         }
 
         RecordingRenderer zero = RecordingRenderer.create();
+        // `fillShape` takes the shape, not a row lookup: a shape's rectangles are remembered by the shape
+        // and the size, so the shape is what makes them findable again — see Plans. A bare lookup still has
+        // an overload, and it is what a shape with no object behind it uses.
         ArmatureTheme.fillShape(zero, 0, 0, 0, 0xFFFFFFFF, square);
         assertTrue(zero.fills().isEmpty(), "a zero-sized shape should draw nothing at all");
     }
@@ -568,6 +571,77 @@ class GuiRendererTest {
         assertTrue(r.clipsBalanced(), "and a batch does not disturb the clip accounting");
     }
 
+    @Test
+    @DisplayName("a batch does not reorder what is drawn inside it, whatever the render types")
+    void aBatchKeepsTheOrderOfItsDrawing() {
+        // The claim the controls now rest on. A button, a switch and a slider draw themselves inside a
+        // batched region, and what that buys is the fills between their text runs arriving as one
+        // submission rather than one each. What it must *not* do is move anything: the panel, the rule,
+        // the label and the icon are drawn in one order for a reason -- a fill that lands after the
+        // label covers it -- and deferring the flush is the one thing that could quietly change it.
+        //
+        // Verified against the 1.21.1 sources first: `fill` and `drawString` both end in
+        // `flushIfUnmanaged`, so an unmanaged context pays one `endBatch` per rectangle and a managed one
+        // pays none; text is `RenderType.text` where a fill is `RenderType.gui`, so a label still ends
+        // the run of fills around it. That is why this asserts *order* rather than "one submission".
+        RecordingRenderer r = RecordingRenderer.create();
+
+        r.batched(() -> {
+            r.fill(0, 0, 10, 10, 0xFF112233);
+            r.fill(0, 10, 10, 20, 0xFF112233);
+            r.text("label", 2, 2, 0xFFFFFFFF);
+            r.fill(0, 20, 10, 30, 0xFF112233);
+            r.fill(0, 30, 10, 40, 0xFF112233);
+            return null;
+        });
+
+        List<RecordingRenderer.Op> inside = r.calls().stream()
+                .map(RecordingRenderer.Call::op)
+                .filter(op -> op != RecordingRenderer.Op.BATCH && op != RecordingRenderer.Op.END_BATCH)
+                .toList();
+        assertEquals(List.of(RecordingRenderer.Op.FILL, RecordingRenderer.Op.FILL,
+                        RecordingRenderer.Op.TEXT, RecordingRenderer.Op.FILL, RecordingRenderer.Op.FILL),
+                inside, "the drawing comes out in the order it was asked for -- the label in the middle "
+                        + "of the panel's rows, where a control puts it");
+
+        assertFalse(inside.contains(RecordingRenderer.Op.FLUSH),
+                "and nothing inside the region flushes it early: a flush between the panel and its label "
+                        + "is the submission this change exists to remove");
+        assertFalse(inside.contains(RecordingRenderer.Op.CLIP),
+                "and no clip opens inside it, which is the rule that keeps a deferred flush under the "
+                        + "right scissor -- see GuiRenderer.batched");
+    }
+
+    @Test
+    @DisplayName("the context's own region call is not re-entrant, which is why the adapter counts depth")
+    void theContextsRegionIsNotReentrant() {
+        // This asserts the **model**, and the model is where the hazard belongs. `RecordingRenderer` mirrors
+        // `GuiGraphics.drawManaged`, which sets the managed flag false on the way out whatever it was on the
+        // way in — it is not re-entrant — so a region opened inside another one *ends the outer one*. A
+        // frame-wide region would then be worth nothing from the first control that batched inside it, and
+        // silently: the frame keeps drawing, and keeps paying a submission per fill.
+        //
+        // The guard for that is `GuiGraphicsRenderer.batched`'s depth count, and it cannot be asserted here
+        // at all — it needs a real `GuiGraphics`, and this project has no headless one. So the split is
+        // deliberate: the hazard is pinned on the model, and the guard is verified by reading the version's
+        // own source (GuiGraphics.drawManaged) rather than by a test that would only be testing itself.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        r.batched(() -> {
+            r.fill(0, 0, 10, 10, 0xFF112233);
+            r.batched(() -> {
+                r.fill(0, 10, 10, 20, 0xFF112233);
+                return null;
+            });
+            r.fill(0, 20, 10, 30, 0xFF112233);
+            return null;
+        });
+
+        assertEquals(2, r.batches(),
+                "two nested calls are two regions on the context itself — which is exactly what the "
+                        + "adapter's depth count exists to prevent");
+    }
+
     // ------------------------------------------------------------------
     // The layers, as drawn
     // ------------------------------------------------------------------
@@ -612,9 +686,9 @@ class GuiRendererTest {
                 Shape ring = shape.outer();
                 RecordingRenderer r = RecordingRenderer.create();
                 // The node as it is drawn: the halo, the panel's own outline over it, then the panel.
-                ArmatureTheme.fillShape(r, -1, -1, size + 2, 0xFF333333, ring::spans);
-                ArmatureTheme.fillShape(r, 0, 0, size, 0xFF111111, shape::spans);
-                ArmatureTheme.shapePanel(r, 0, 0, size, 0xFF111111, 0xFF222222, shape::spans);
+                ArmatureTheme.fillShape(r, -1, -1, size + 2, 0xFF333333, ring);
+                ArmatureTheme.fillShape(r, 0, 0, size, 0xFF111111, shape);
+                ArmatureTheme.shapePanel(r, 0, 0, size, 0xFF111111, 0xFF222222, shape);
 
                 // The last fill over each pixel is what the player sees, so that is what is compared.
                 int reach = size + 4;

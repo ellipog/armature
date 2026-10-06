@@ -75,8 +75,14 @@ public class ArmatureSwitch extends AbstractWidget {
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // The one forced signature, wrapped and delegated exactly as ArmatureButton does — see the
-        // seam note there. Everything below is expressed in fill and shape.
-        draw(new GuiGraphicsRenderer(graphics), net.minecraft.Util.getMillis());
+        // seam note there, including why the drawing is batched: a switch is a track, a knob and a
+        // shadow, and unmanaged each of those fills is its own submission.
+        GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
+        long now = net.minecraft.Util.getMillis();
+        renderer.batched(() -> {
+            draw(renderer, now);
+            return null;
+        });
     }
 
     /** Draws this switch at the current time. The modal redraw pass and a preview both use it. */

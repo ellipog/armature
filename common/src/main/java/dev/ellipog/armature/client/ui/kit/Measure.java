@@ -45,18 +45,6 @@ public interface Measure {
      * <p>Deliberately the simplest possible metric rather than something proportional: a wrap test
      * that asserts "this breaks after five characters" is readable, and one that asserts a pixel count
      * produced by a system font is not. It also makes the arithmetic in a test checkable by hand,
-     * which is the property that catches a broken wrap rule -- a proportional fake would let a
-     * wrong-by-one break hide behind a plausible-looking width.
-     *
-     * @param charWidth  width of every character
-     * @param lineHeight height of a line
-     */
-    /**
-     * Every character the same width. A stand-in for a real font, for tests and for the preview.
-     *
-     * <p>Deliberately the simplest possible metric rather than something proportional: a wrap test
-     * that asserts "this breaks after five characters" is readable, and one that asserts a pixel count
-     * produced by a system font is not. It also makes the arithmetic in a test checkable by hand,
      * which is the property that catches a broken wrap rule — a proportional fake would let a
      * wrong-by-one break hide behind a plausible-looking width.
      *
@@ -188,5 +176,39 @@ public interface Measure {
     @FunctionalInterface
     public interface WidthFn {
         int widthOf(String text);
+    }
+
+    /**
+     * A measure that answers a string it has already been asked about, until something changes a glyph.
+     *
+     * <h2>Why the memo belongs here rather than at a call site</h2>
+     *
+     * <p>Because the expensive pattern is not one call, it is the one {@link #truncate} makes: it walks a
+     * string a character at a time asking how wide each prefix is, so measuring one label once is a
+     * handful of font lookups in the best case and a few dozen in the worst — and a label that is drawn
+     * every frame asks the same questions every frame, in the same order, for the same answers. Caching
+     * the <b>width</b> rather than a caller's truncated result is what makes that free without any
+     * caller knowing: the rules above stay the rules, every site that measures text pays less, and the
+     * same applies to {@code TextWrap}, which walks a paragraph the same way.
+     *
+     * <h2>The epoch is the caller's, and it is not optional</h2>
+     *
+     * <p>A measured width is only valid while the thing that produced it is the same. Two things can
+     * change it without any string changing: the player's text scale, and a resource reload replacing
+     * the font. Neither is visible from here — this package names no game class — so the caller supplies
+     * a number that changes when either does, and the memo empties itself when that number moves. A
+     * caller that passed a constant would be caching widths across a font change, which shows up as text
+     * laid out to a width it no longer has.
+     *
+     * <p>Bounded, and emptied rather than trimmed when it fills: the same policy
+     * {@code shape.Shapes.Tables} uses, and for the same reason — this is probe data for a frame, the
+     * bound is what stops it being a leak, and a size check on every insert would cost more than the
+     * occasional refill.
+     *
+     * @param delegate what actually measures; asked once per distinct string per epoch
+     * @param epoch    a number that changes when a glyph's width can have changed
+     */
+    public static Measure cached(Measure delegate, java.util.function.LongSupplier epoch) {
+        return new CachedMeasure(delegate, epoch);
     }
 }

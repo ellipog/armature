@@ -73,7 +73,28 @@ public interface Shape {
         if (size <= 0 || row < 0 || row >= size) {
             return null;
         }
-        int[] raw = spansOf(row, size);
+        return sanitize(spansOf(row, size), size);
+    }
+
+    /**
+     * One row's raw spans, clamped, dropped, ordered, merged and widened — the whole of what
+     * {@link #spans} promises, as a function of the raw answer.
+     *
+     * <h2>Why it is its own method</h2>
+     *
+     * <p>Because it allocates, and the shape that has a cached span table wants to do it <b>once per
+     * size</b> rather than once per row per call. A node's panel walks its own rows and then walks them
+     * again looking for runs to merge, so this ran a hundred times per <i>layer</i> per node per frame —
+     * three arrays each time, for an answer that cannot change while the size does not. See
+     * {@code Shapes.Tables}, which calls this as it samples and hands back what it stored.
+     *
+     * <p>It is a pure function of the raw row and the size, which is what makes that safe: nothing here
+     * reads the shape.
+     *
+     * @param raw  the shape's own arithmetic for one row, possibly out of range or overlapping
+     * @param size the square's side, which the clamp is against
+     */
+    static int[] sanitize(int[] raw, int size) {
         if (raw == null || raw.length < 2) {
             return null;
         }
@@ -226,8 +247,10 @@ public interface Shape {
      */
     default Shape inner(int by) {
         int inset = Math.max(1, by);
-        return Shapes.ofSpans((row, size) ->
-                Outlines.eroded(this::spans, size + inset * 2, inset).spansOf(row, size));
+        // Wrapped in a table, because this is a *function* of a row: without it the erosion is recomputed
+        // for every row of every layer every time a node is drawn. See Shapes.cached.
+        return Shapes.cached(Shapes.ofSpans((row, size) ->
+                Outlines.eroded(this::spans, size + inset * 2, inset).spansOf(row, size)));
     }
 
     /**
@@ -252,8 +275,10 @@ public interface Shape {
      */
     default Shape outer(int by) {
         int outset = Math.max(1, by);
-        return Shapes.ofSpans((row, size) ->
-                Outlines.dilated(this::spans, Math.max(0, size - outset * 2), outset).spansOf(row, size));
+        // Wrapped in a table, because this is a *function* of a row: without it the dilation is
+        // recomputed for every row of every layer every time a node is drawn. See Shapes.cached.
+        return Shapes.cached(Shapes.ofSpans((row, size) ->
+                Outlines.dilated(this::spans, Math.max(0, size - outset * 2), outset).spansOf(row, size)));
     }
 
     /**

@@ -5,10 +5,14 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import dev.ellipog.armature.client.TextScale;
+import dev.ellipog.armature.client.ui.kit.Measure;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.Component;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
@@ -16,10 +20,12 @@ import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -105,15 +111,57 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      *
      * <p>The supplier's value is captured through an array because {@code drawManaged} takes a
      * {@code Runnable}: the context's signature cannot return what the caller drew, and this wrapper can.
+     *
+     * <h2>Regions nest, and they have to</h2>
+     *
+     * <p>{@code drawManaged} is <b>not</b> re-entrant: it sets the managed flag false on the way out
+     * whatever it was on the way in, so a region opened inside another one <i>ends the outer one</i> — the
+     * rest of the frame would then pay a flush per fill again, silently, and a whole-frame region would be
+     * worth nothing the moment anything inside it batched. Since that is now exactly the arrangement (a
+     * frame-wide region with the canvas's and the controls' regions inside it), the depth is counted here:
+     * only the outermost region touches the context, and an inner one is just the supplier's call.
+     *
+     * <h2>Why the count is static, on a record</h2>
+     *
+     * <p>Because that is the only place it can live that is <i>right</i>. A record has no instance fields,
+     * and an instance field would be wrong anyway: the flag this counter guards lives in the
+     * {@code GuiGraphics}, and a screen holds two renderers over one context — the plain one and the
+     * counting one wrapped around it — so a per-instance count would let the inner wrapper open a second
+     * region inside the outer one, which is the exact fault this prevents. One context is drawn at a time
+     * on the client thread, so one counter is the honest model of it.
+     *
+     * <p>And it is <b>not covered by a test</b>, which is worth saying rather than leaving to be assumed:
+     * the guard needs a real {@code GuiGraphics}, and this project has no headless one. What is pinned is
+     * the hazard — {@code GuiRendererTest.theContextsRegionIsNotReentrant} asserts that the seam's model of
+     * the context is not re-entrant, so the reason for this code cannot quietly disappear — and the guard
+     * itself is verified by reading the version's own {@code drawManaged}.
      */
     @Override
     public <T> T batched(java.util.function.Supplier<T> draw) {
-        Object[] result = new Object[1];
-        graphics.drawManaged(() -> result[0] = draw.get());
-        @SuppressWarnings("unchecked")
-        T typed = (T) result[0];
-        return typed;
+        if (batchDepth++ > 0) {
+            try {
+                return draw.get();
+            }
+            finally {
+                batchDepth--;
+            }
+        }
+        try {
+            Object[] result = new Object[1];
+            graphics.drawManaged(() -> result[0] = draw.get());
+            @SuppressWarnings("unchecked")
+            T typed = (T) result[0];
+            return typed;
+        }
+        finally {
+            // Counted down even if the supplier threw, so one bad frame cannot leave every later frame
+            // believing it is inside a region that no longer exists.
+            batchDepth--;
+        }
     }
+
+    /** How many batch regions are open, so an inner one is a no-op rather than a fault. See {@link #batched}. */
+    private static int batchDepth;
 
     // ------------------------------------------------------------------
     // Text
@@ -206,8 +254,32 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
 
     @Override
     public int textWidth(String text) {
-        return (int) Math.round(font().width(text) * TextScale.get());
+        // Memoized here rather than at the call sites, and there are a hundred and forty-five of them: the
+        // screen alone asks this ~185 times a frame with an editor card open, every one a walk of the
+        // string's glyphs through the font, and the same handful of strings come back every frame.
+        //
+        // Here rather than in a caller because *this* is where the answer can be invalidated correctly: the
+        // font and the player's text scale are the only things that change a width without changing a
+        // string, and TextEpoch is the one definition of when they have. See CachedMeasure for the bound.
+        //
+        // `styledWidth` is deliberately not memoized beside it: its answer depends on three more inputs
+        // (bold, italic, scale), so it needs a key this memo cannot express, and it is called for the few
+        // strings that carry runs rather than for every label in a panel.
+        return WIDTHS.width(text);
     }
+
+    /**
+     * The widths this client's font has already answered.
+     *
+     * <p>Static because a record cannot hold instance state, and correct because there is one font: two
+     * renderers over the same {@code GuiGraphics} are two views of one client. The line height passed in is
+     * never read — a width memo is asked how wide a string is and nothing else — but the interface needs a
+     * number for the question, and nine is the font's own at a scale of one.
+     */
+    private static final Measure WIDTHS = Measure.cached(
+            Measure.of(text -> (int) Math.round(
+                    Minecraft.getInstance().font.width(text) * TextScale.get()), 9),
+            TextEpoch::now);
 
     @Override
     public int lineHeight() {
@@ -230,6 +302,42 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
             return false;
         }
 
+        // Most items are one textured quad, and the pipeline is a great deal of work to draw one: see
+        // IconPlan for the rule and for the accessors that decide it. The box is not part of it -- a
+        // caller that wants less detail asks for it by asking for a smaller icon, which is the canvas's
+        // own decision rather than this one's.
+        BakedModel model = minecraft.getItemRenderer().getModel(stack, minecraft.level, minecraft.player, 0);
+        IconPlan plan = IconPlan.of(factsOf(minecraft, model, stack));
+        IconPlan.counted(plan);
+        if (plan == IconPlan.FLAT) {
+            // The flat path is **off by default**, and this is why: as written it drew nothing at all on
+            // screen while returning {@code true}, so every node whose item took it rendered as an empty
+            // panel — the icons simply vanished. The decision is still *counted* above, so the counters go
+            // on reporting what would have been flat, and the drawing goes through the pipeline below,
+            // which is the code that shipped for months.
+            //
+            // `IconPlan.arm()` is the experiment that identifies the mechanism, one arm per launch:
+            // 1 the plain blit, 2 the blit that writes a per-vertex colour, 3 the blit with a flush either
+            // side so it is submitted immediately, as `renderItem` gets for free. Whichever arm draws the
+            // icons names the cause; none of them is the default, and the whole experiment goes away with
+            // the reason recorded. See the notes in TESTING.md for what has already been ruled out.
+            int arm = IconPlan.arm();
+            if (arm == 1) {
+                graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon());
+                return true;
+            }
+            if (arm == 2) {
+                graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon(), 1F, 1F, 1F, 1F);
+                return true;
+            }
+            if (arm == 3) {
+                graphics.flush();
+                graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon());
+                graphics.flush();
+                return true;
+            }
+        }
+
         float scale = box / 16.0F;
         PoseStack pose = graphics.pose();
         pose.pushPose();
@@ -240,6 +348,54 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         graphics.renderItem(stack, 0, 0);
         pose.popPose();
         return true;
+    }
+
+    /**
+     * What the plan decides from, read off the model — the whole of this file's knowledge about the item
+     * pipeline, in one place.
+     *
+     * <h2>The tint question, asked the way the pipeline asks it</h2>
+     *
+     * <p>{@code BakedQuad.isTinted()} is <b>not</b> a question about colour, and reading it as one is what
+     * kept every item on the pipeline: {@code ItemModelGenerator} passes the <i>layer number</i> as the tint
+     * index, so every quad of every {@code item/generated} item carries index 0 and reads as tinted. A stick
+     * is "tinted at index 0 with no colour". What decides is whether {@code ItemColors} has a colour for
+     * this stack at that index — which is `ItemRenderer`'s own line,
+     * `this.itemColors.getColor(itemStack, bakedquad.getTintIndex())`, and it answers −1 when there is none.
+     *
+     * <p>So the colour is asked for, and the two facts that need it live here rather than in the plan: the
+     * plan takes booleans, which is what keeps it testable.
+     *
+     * <h2>And the sprite, which the first version of this missed</h2>
+     *
+     * <p>A blit draws the particle icon and nothing else, so a model whose quads do not all use that one
+     * sprite would be drawn wrong: a two-layer item — a base plus an overlay — would lose the overlay. That
+     * is not a tint, it is a missing layer, so it is its own gate.
+     */
+    private static IconPlan.Facts factsOf(Minecraft minecraft, BakedModel model, ItemStack stack) {
+        List<BakedQuad> quads = model.getQuads(null, null, RandomSource.create(42L));
+        TextureAtlasSprite icon = model.getParticleIcon();
+
+        boolean tinted = false;
+        boolean oneSprite = !quads.isEmpty();
+        for (BakedQuad quad : quads) {
+            // No early break: the sprite gate has to see every quad, and the list is a handful.
+            if (!tinted && quad.isTinted()
+                    && minecraft.itemColors.getColor(stack, quad.getTintIndex()) != -1) {
+                tinted = true;
+            }
+            if (icon == null || quad.getSprite() != icon) {
+                oneSprite = false;
+            }
+        }
+        return new IconPlan.Facts(
+                model.isCustomRenderer(),
+                model.isGui3d(),
+                model.usesBlockLight(),
+                tinted,
+                minecraft.getModelManager().getMissingModel() == model,
+                icon != null,
+                oneSprite);
     }
 
     /**

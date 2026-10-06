@@ -89,8 +89,14 @@ public class ArmatureSlider extends AbstractWidget {
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // The one forced signature, wrapped and delegated exactly as ArmatureSwitch does — see the
-        // seam note there. Everything below is expressed in fill and shape.
-        draw(new GuiGraphicsRenderer(graphics), net.minecraft.Util.getMillis());
+        // seam note there, including why the drawing is batched: a slider is a track, a fill and a
+        // handle, each a run of rows, and unmanaged each row's fill is its own submission.
+        GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
+        long now = net.minecraft.Util.getMillis();
+        renderer.batched(() -> {
+            draw(renderer, now);
+            return null;
+        });
     }
 
     /** Draws this slider at the current time. The modal redraw pass and a preview both use it. */

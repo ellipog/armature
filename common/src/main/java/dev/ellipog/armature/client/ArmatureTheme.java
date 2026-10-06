@@ -7,10 +7,14 @@ import dev.ellipog.armature.client.ui.Themes;
 import dev.ellipog.armature.client.ui.kit.Motion;
 import dev.ellipog.armature.client.ui.kit.RoundedRect;
 import dev.ellipog.armature.client.ui.shape.Outlines;
+import dev.ellipog.armature.client.ui.shape.Plans;
+import dev.ellipog.armature.client.ui.shape.Shape;
 import dev.ellipog.armature.client.ui.shape.Shapes;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -804,8 +808,7 @@ public final class ArmatureTheme {
             renderer.fill(left, top, left + width, top + height, colour);
             return;
         }
-        fillShape(renderer, left, top, height, colour,
-                (row, size) -> roundedSpan(row, width, height, radius, corners));
+        emit(renderer, left, top, colour, surfacePlan(width, height, radius, corners));
     }
 
     /**
@@ -881,30 +884,65 @@ public final class ArmatureTheme {
         if (size <= 0) {
             return;
         }
+        emit(renderer, x, y, colour, Plans.merge(spans::spans, size));
+    }
 
-        int row = 0;
-        while (row < size) {
-            int[] span = spans.spans(row, size);
-            if (span == null) {
-                row++;
-                continue;
-            }
-
-            // Extend while the spans are unchanged, so a rectangle is one call.
-            int end = row + 1;
-            while (end < size) {
-                int[] next = spans.spans(end, size);
-                if (!java.util.Arrays.equals(next, span)) {
-                    break;
-                }
-                end++;
-            }
-
-            for (int i = 0; i < span.length; i += 2) {
-                renderer.fill(x + span[i], y + row, x + span[i + 1], y + end, colour);
-            }
-            row = end;
+    /**
+     * The same, for a caller that has the shape itself — which is every hot one.
+     *
+     * <p>A shape's rows are merged once per shape and size instead of once per call, so a node's four layers
+     * cost four plan lookups and their rectangles rather than two hundred table reads and comparisons. The
+     * fills are unchanged and unchanged in number: a circle is still one fill per distinct row, because
+     * merging them further would change the pixels. See {@link Plans}.
+     *
+     * <p>The key is the shape object and the size, and that works because the layers a node draws are stable
+     * objects: the built-ins are singletons, and {@code inner}/{@code outer} memoise their own results per
+     * inset. A shape built at the call site would miss every frame — {@code Shapes.cached} is how to make one
+     * that does not.
+     */
+    public static void fillShape(GuiRenderer renderer, int x, int y, int size, int colour, Shape shape) {
+        if (size <= 0) {
+            return;
         }
+        emit(renderer, x, y, colour, Plans.of(shape, size));
+    }
+
+    /** One plan's rectangles at an origin: the single place a plan becomes fills. */
+    private static void emit(GuiRenderer renderer, int x, int y, int colour, Plans.Plan plan) {
+        for (int i = 0; i < plan.count(); i++) {
+            renderer.fill(x + plan.x1(i), y + plan.y1(i), x + plan.x2(i), y + plan.y2(i), colour);
+        }
+    }
+
+    /** How many rounded-rectangle plans are remembered, and the four numbers they are keyed by. */
+    private static final int SURFACE_PLAN_LIMIT = 256;
+
+    private record SurfaceKey(int width, int height, int radius, int corners) {
+    }
+
+    private static final Map<SurfaceKey, Plans.Plan> SURFACES = new HashMap<>();
+
+    /**
+     * A rounded rectangle's rectangles, remembered by its own four numbers.
+     *
+     * <p>{@code fillSurface} used to hand {@code fillShape} a lambda built at the call site, so the merge
+     * ran per call and nothing could be keyed on it — every panel and every control in the toolkit paid it
+     * every frame. The four numbers are the whole of what the spans depend on, so they are the whole of the
+     * key.
+     */
+    private static Plans.Plan surfacePlan(int width, int height, int radius, int corners) {
+        SurfaceKey key = new SurfaceKey(width, height, radius, corners);
+        Plans.Plan plan = SURFACES.get(key);
+        if (plan != null) {
+            return plan;
+        }
+        Plans.Plan built = Plans.merge(
+                (row, size) -> roundedSpan(row, width, height, radius, corners), height);
+        if (SURFACES.size() >= SURFACE_PLAN_LIMIT) {
+            SURFACES.clear();
+        }
+        SURFACES.put(key, built);
+        return built;
     }
 
     /**
@@ -925,11 +963,16 @@ public final class ArmatureTheme {
      * turned node as much as an upright one. See {@link Outlines}.
      */
     public static void shapePanel(GuiRenderer renderer, int x, int y, int size, int fill, int border,
-                                  Spans spans) {
-        fillShape(renderer, x, y, size, border, spans);
+                                  Shape shape) {
+        fillShape(renderer, x, y, size, border, shape);
         if (size > 2) {
-            Shapes.SpansOf inner = Outlines.eroded(spans::spans, size, 1);
-            fillShape(renderer, x + 1, y + 1, size - 2, fill, inner::spansOf);
+            // The shape's own eroded layer rather than one built here, and that is the difference
+            // between an erosion per node per frame and an erosion per shape: `inner` is a table once
+            // it has been asked for a size — see Shape.inner and Shapes.cached. The caller has to be
+            // the thing that holds the shape for that to be worth anything, which is why this takes
+            // one rather than a bare row lookup. It is also what makes the fill plan findable: the same
+            // layer object comes back every frame, so its rectangles are worked out once.
+            fillShape(renderer, x + 1, y + 1, size - 2, fill, shape.inner());
         }
     }
 }

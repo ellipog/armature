@@ -1,0 +1,14 @@
+accessWidener v2 named
+
+# The item colours, which the flat-icon decision has to ask about.
+#
+# `BakedQuad.isTinted()` is not a question about colour: `ItemModelGenerator` passes the *layer number* as
+# the tint index, so every quad of every `item/generated` item carries index 0 and reads as tinted. What
+# decides is whether `ItemColors` has a colour for that stack at that index — `ItemRenderer` asks exactly
+# that (`this.itemColors.getColor(itemStack, bakedquad.getTintIndex())`) and answers -1 when there is none.
+# The field is private with no accessor on either `Minecraft` or `ItemRenderer`, so the seam that has to
+# answer it is widened here rather than guessed at with a second colour table of our own.
+#
+# NeoForge has the same widening in `META-INF/accesstransformer.cfg` beside this file; the two are one
+# decision written twice because each loader spells it differently.
+accessible field net/minecraft/client/Minecraft itemColors Lnet/minecraft/client/color/item/ItemColors;

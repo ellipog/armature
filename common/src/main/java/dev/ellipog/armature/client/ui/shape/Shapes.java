@@ -515,6 +515,75 @@ public final class Shapes {
     }
 
     /**
+     * Any shape, with its rows remembered per size.
+     *
+     * <h2>Why a shape made of a function needs this</h2>
+     *
+     * <p>The built-in shapes carry their own tables — they are point tests, and sampling one is a walk of
+     * its square. A shape made by {@link #ofSpans} is a <b>function</b>, and the ones this project builds
+     * that way are the layers: {@link Shape#inner} and {@link Shape#outer} evaluate an erosion or a
+     * dilation per row, per call. That is the most expensive shape there is and it is asked for once a
+     * frame per node, which is what this exists to stop.
+     *
+     * <p>Wrapping rather than building in, because the wrapper is the general answer: anything whose rows
+     * are worth remembering can be handed one, and the layer factories are only its first callers.
+     *
+     * <p>The whole table is built on the first row asked for rather than row by row, because the callers
+     * this is for walk every row of it — a fill does — and an entry-at-a-time cache would pay the same
+     * cost with more bookkeeping.
+     */
+    public static Shape cached(Shape shape) {
+        Objects.requireNonNull(shape, "shape");
+        return new Cached(shape);
+    }
+
+    /** A shape behind a per-size table of its own rows. See {@link #cached}. */
+    private static final class Cached implements Shape {
+
+        private final Shape delegate;
+        private final java.util.Map<Integer, int[][]> tables = new java.util.LinkedHashMap<>(4);
+
+        Cached(Shape delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public int[] spansOf(int row, int size) {
+            return delegate.spansOf(row, size);
+        }
+
+        @Override
+        public int[] spans(int row, int size) {
+            if (size <= 0 || row < 0 || row >= size) {
+                return null;
+            }
+            int[][] table = tables.get(size);
+            if (table == null) {
+                table = new int[size][];
+                for (int each = 0; each < size; each++) {
+                    table[each] = delegate.spans(each, size);
+                }
+                if (tables.size() >= SAMPLED_SIZES_REMEMBERED) {
+                    tables.clear();
+                }
+                tables.put(size, table);
+            }
+            return table[row];
+        }
+
+        /** Forwarded, so a wrapped shape is still a shape rather than only an outline. */
+        @Override
+        public int[] iconAnchor(int size) {
+            return delegate.iconAnchor(size);
+        }
+
+        @Override
+        public String toString() {
+            return "cached " + delegate;
+        }
+    }
+
+    /**
      * A shape defined by a point test in the unit square — the way every built-in here is written.
      *
      * <p>Coordinates are the node's width and height as one unit, so the same arithmetic draws at 12
@@ -835,6 +904,8 @@ public final class Shapes {
         private final double anchorX;
         private final double anchorY;
         private final Tables tables = new Tables();
+        private final java.util.Map<Integer, Shape> inners = new java.util.HashMap<>(2);
+        private final java.util.Map<Integer, Shape> outers = new java.util.HashMap<>(2);
 
         UnitShape(Unit unit, double anchorX, double anchorY) {
             this.unit = unit;
@@ -844,7 +915,41 @@ public final class Shapes {
 
         @Override
         public int[] spansOf(int row, int size) {
+            return tables.spansOf(unit, row, size);
+        }
+
+        /**
+         * The clamped, merged row, straight out of the cached table.
+         *
+         * <p>An override rather than the interface's default, and that is the whole of this round's
+         * saving: the default clamps, sorts and merges on every call, which is three arrays per row per
+         * caller — and a node's panel walks its own rows twice, so a screen of nodes allocated hundreds
+         * of thousands of arrays a frame to compute answers that cannot change while the size does not.
+         * The table is built once per size, and what is stored in it is already this row's answer.
+         */
+        @Override
+        public int[] spans(int row, int size) {
             return tables.spans(unit, row, size);
+        }
+
+        /**
+         * This outline one pixel in, kept once per inset rather than rebuilt per call.
+         *
+         * <p>See {@link Shape#inner(int)} for what it is; what matters here is that a node draws a ring,
+         * a panel and a wash every frame, so the layers it asks for are the same layers each time. The
+         * memo is per shape — a shape is a silhouette at an angle, which is the thing a caller with a
+         * canvas full of repeated nodes already keeps one of per appearance — so the table this builds
+         * is built once per appearance rather than once per drawing.
+         */
+        @Override
+        public Shape inner(int by) {
+            return inners.computeIfAbsent(Math.max(1, by), Shape.super::inner);
+        }
+
+        /** The same, for the ring. See {@link #inner}. */
+        @Override
+        public Shape outer(int by) {
+            return outers.computeIfAbsent(Math.max(1, by), Shape.super::outer);
         }
 
         @Override
@@ -874,6 +979,8 @@ public final class Shapes {
         private final double sin;
         private final java.util.Map<Integer, Double> fits = new java.util.HashMap<>();
         private final Tables tables = new Tables();
+        private final java.util.Map<Integer, Shape> inners = new java.util.HashMap<>(2);
+        private final java.util.Map<Integer, Shape> outers = new java.util.HashMap<>(2);
 
         Turned(Shape base, double cos, double sin) {
             this.base = base;
@@ -884,7 +991,25 @@ public final class Shapes {
 
         @Override
         public int[] spansOf(int row, int size) {
+            return tables.spansOf(this::inside, row, size);
+        }
+
+        /** The same memo the direct shapes have; see {@code UnitShape.spans}. */
+        @Override
+        public int[] spans(int row, int size) {
             return tables.spans(this::inside, row, size);
+        }
+
+        /** The same memo, per turned shape: see {@code UnitShape.inner}. */
+        @Override
+        public Shape inner(int by) {
+            return inners.computeIfAbsent(Math.max(1, by), Shape.super::inner);
+        }
+
+        /** The same, for the ring. */
+        @Override
+        public Shape outer(int by) {
+            return outers.computeIfAbsent(Math.max(1, by), Shape.super::outer);
         }
 
         @Override
@@ -990,37 +1115,68 @@ public final class Shapes {
     }
 
     /**
-     * The span table for a point test, built a size at a time and remembered.
+     * The span tables for a point test, built a size at a time and remembered.
      *
      * <p>Sampling is O(size²) and a node is drawn at the same size for as long as the zoom holds still,
      * so a table is built once per size and kept. The memory is bounded — a handful of sizes — and this
      * is not thread-safe by design: shapes are drawn on the client's render thread, and a lock on the
      * frame path would cost more than the table.
+     *
+     * <p><b>Two tables per size</b>, raw and clean, because the two accessors promise different things
+     * and both are read: {@code spansOf} is the shape's own arithmetic, which {@code Outlines} walks,
+     * and {@code spans} is that arithmetic clamped and merged, which the drawing and the hit test walk.
+     * Building the clean one is the point of this pair — it is what turns "three arrays per row per
+     * caller" into "three arrays per row per size".
      */
     private static final class Tables {
 
-        private final java.util.Map<Integer, int[][]> tables = new java.util.LinkedHashMap<>(4);
+        private final java.util.Map<Integer, int[][]> raw = new java.util.LinkedHashMap<>(4);
+        private final java.util.Map<Integer, int[][]> clean = new java.util.LinkedHashMap<>(4);
 
+        int[] spansOf(Unit unit, int row, int size) {
+            if (size <= 0 || row < 0 || row >= size) {
+                return null;
+            }
+            int[][] table = table(raw, unit, size, false);
+            return table[row];
+        }
+
+        /**
+         * The same row after the clamp, the sort and the merge — what {@link Shape#spans} promises.
+         *
+         * <p>Two tables rather than one, and the reason is the contract: {@code spansOf} is documented
+         * to answer the shape's <b>own arithmetic</b>, possibly out of range, and {@code Outlines} reads
+         * it that way. Sanitising the one table would quietly change what those callers are given, so
+         * the clean rows are built alongside the raw ones and the two are asked for by name.
+         */
         int[] spans(Unit unit, int row, int size) {
             if (size <= 0 || row < 0 || row >= size) {
                 return null;
             }
+            int[][] table = table(clean, unit, size, true);
+            return table[row];
+        }
+
+        private int[][] table(java.util.Map<Integer, int[][]> tables, Unit unit, int size,
+                              boolean sanitize) {
             int[][] table = tables.get(size);
             if (table == null) {
-                table = sample(unit, size);
+                table = sample(unit, size, sanitize);
                 if (tables.size() >= SAMPLED_SIZES_REMEMBERED) {
                     tables.clear();
                 }
                 tables.put(size, table);
             }
-            return table[row];
+            return table;
         }
 
         /** The whole span table for one size: one entry per row, possibly empty or null. */
-        private int[][] sample(Unit unit, int size) {
+        private int[][] sample(Unit unit, int size, boolean sanitize) {
             int[][] table = new int[size][];
             for (int row = 0; row < size; row++) {
-                table[row] = sampleRow(unit, row, size);
+                // Sanitised once, here, rather than once per row per caller: see Shape.sanitize.
+                int[] one = sampleRow(unit, row, size);
+                table[row] = sanitize ? Shape.sanitize(one, size) : one;
             }
             return table;
         }

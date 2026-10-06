@@ -362,7 +362,20 @@ public class ArmatureButton extends AbstractWidget {
         // That is the whole shape of the seam at a call site: one line here, and everything below is
         // expressed in terms of fill, text and icon. `.utils/check_seam.py` counts these files, so a
         // third one cannot appear without somebody writing down why.
-        draw(new GuiGraphicsRenderer(graphics));
+        //
+        // And it is drawn inside a **batch**, which is the one thing this wrapper does beyond
+        // delegating. A control's own drawing is a panel — the border's whole footprint and then a fill
+        // inset by a pixel, each a run of rows — plus a rule, a label and maybe an icon, and every fill
+        // in that would be its own GPU submission on its own: `GuiGraphics.fill` ends in
+        // `flushIfUnmanaged`, so an unmanaged context pays one `endBatch` per rectangle. Verified from
+        // the 1.21.1 sources rather than assumed -- `fill` and `drawString` both flush when unmanaged,
+        // and text is a different render type from a fill, which is why the label still costs a
+        // boundary inside the batch and the panel no longer costs one per row.
+        GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
+        renderer.batched(() -> {
+            draw(renderer);
+            return null;
+        });
     }
 
     /**
