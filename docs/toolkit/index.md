@@ -1,9 +1,11 @@
 # The client toolkit
 
-Armature's other half is a UI toolkit, and it is built on one decision: **everything draws through a
-game-free interface.** `GuiRenderer` knows about fills, text, item icons, player faces, blur and
-scissor rectangles — and nothing about Minecraft. `render/GuiGraphicsRenderer` is its 1.21.1
-implementation, and no widget in the toolkit names a game class.
+Armature's other half is a UI toolkit, and it is built on one decision: **every draw call goes through
+one interface.** `GuiRenderer` knows about fills, text, item icons, player faces, blur and scissor
+rectangles — and the only game types it names are the item stack and the texture id a caller already
+holds. `render/GuiGraphicsRenderer` is its 1.21.1 implementation, and no drawing call in the toolkit
+names the graphics context: the controls are ordinary `AbstractWidget`s, for the input and narration
+the game already gives them, and what they draw they draw through the seam.
 
 That is what makes the toolkit testable at all: the layout engine, the text models and the shapes are
 arithmetic over rectangles and strings, so they are asserted in milliseconds without a client, a font

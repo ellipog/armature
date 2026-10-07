@@ -39,7 +39,7 @@ rather than one per row. Two things follow that are worth knowing:
   beyond it, and a test that said true at any distance would have no reach to measure.
 
 A few shapes are drawn on the pixel grid rather than at the pixel centre — the rounded rectangle, the
-diamond, the octagon, the shield and the tome — because their arithmetic has always used the row's own
+diamond, the octagon, the hexagon and the tome — because their arithmetic has always used the row's own
 grid line. `gridV` moves the sampler's centre half a pixel toward the nearer edge for those, and below
 four pixels it does not move it at all, where a row's edge is a quarter of the node away and stops
 meaning anything.
@@ -120,7 +120,7 @@ Three methods answer "where does the item go", and they are one decision rather 
   spans, so it cannot disagree with what is drawn.
 - `iconBox(nodeX, nodeY, size, scale)` returns `{x, y, box}`: `scale` is a fraction of the **node**,
   capped by what the outline can host at the anchored position, centred, and then moved by the anchor.
-- `iconAnchor(size)` is that anchor: a vector in the shape's own frame that moves the item two to four
+- `iconAnchor(size)` is that anchor: a vector in the shape's own frame that moves the item two to three
   percent of the node toward the shape's visual centre of mass, for the shapes whose mass is not their
-  middle (the heart, the shield and the tome). It turns with the shape, so a heart at 180 degrees still
-  carries its item above the outline.
+  middle (the heart, the pentagon and the tome). It turns with the shape, so a heart at 180 degrees
+  still carries its item above the outline.

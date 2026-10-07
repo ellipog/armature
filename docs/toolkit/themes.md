@@ -6,7 +6,7 @@ a static class rather than something passed through every call.
 
 A `Theme` is a record of colour tokens, plus the corner radius, the motion duration and the easing
 curve. Tokens are read as **fields** by code — a record has fields the compiler knows, so a theme is
-checked — and addressed **by name** by anything outside code: a theme file, a chapter naming a palette.
+checked — and addressed **by name** by anything outside code: a theme file, a pack naming a palette.
 `ThemeToken` groups the names: surfaces, text, progression, graph, rows and labels, scrollbar, tooltips
 and controls. A token's name is what the code reads it for: a node's border is one of the four
 `nodeEdge*` tokens, so a theme can give its borders a colour apart from its progress inks.
@@ -76,10 +76,10 @@ tolerance:
 - `size` — the edge of a dot or speck and the thickness of a line or hatch step, 1..4 pixels.
 - `density` — speckle only: one cell in this many carries a mark, 2..16.
 - `direction` — hatch only: `slash` or `backslash`.
-- `canvasPattern` — the ink, a colour token like any other, so it can be set under `colours` and is
-  listed in the in-game colour panel. **Its alpha is the pattern's strength**: `#33` is a hint, `#80`
-  is a blueprint. For an image the ink's RGB is ignored — the texture draws in its own colours and
-  only the alpha comes through, so a dark `canvasPattern` cannot crush a coloured texture.
+- `canvasPattern` — the ink, a colour token like any other, so it can be set under `colours` and listed
+  by anything that enumerates the tokens. **Its alpha is the pattern's strength**: `#33` is a hint,
+  `#80` is a blueprint. For an image the ink's RGB is ignored — the texture draws in its own colours
+  and only the alpha comes through, so a dark `canvasPattern` cannot crush a coloured texture.
 
 `spacing` is clamped to 6..256, and a pattern fades out rather than shimmering when its repeats fall
 closer than a few screen pixels, or when drawing it would overrun the frame's fill budget. A pattern
@@ -99,13 +99,15 @@ An `image` is a texture the pack ships:
 - `fit` — `tile` repeats the texture at `tile` pixels wide (4..256, aspect-preserving), and the
   lattice steps by the drawn size, so rows and columns abut with no spacing knob and no seams.
   `cover` draws it once, scaled to fill the rectangle and centre-cropped to the rectangle's aspect.
-- A texture that cannot be resolved draws nothing — the painter will not guess — and the in-game
-  editor refuses an id that names no file, with the resolved path in the message.
+- A texture that cannot be resolved draws nothing — the painter will not guess — and an id that is not a
+  texture id at all is `canonicalTexture`'s empty string, so a caller's own editor can refuse it with
+  the resolved path in the message.
 
-A chapter can resurface its own canvas through its `themePatch`, exactly as it can override colours:
+A patch that carries only a surface is a valid patch, so one region can be resurfaced without its
+colours being touched — the same object a theme file parses, and the same merge:
 
 ```json
-{ "themePatch": { "canvasBackground": { "pattern": "speckle", "spacing": 18 } } }
+{ "canvasBackground": { "pattern": "speckle", "spacing": 18 } }
 ```
 
 Three built-ins carry a surface as part of what they are — `tome` a parchment speckle, `paper` a
@@ -127,7 +129,7 @@ look.apply();                        // push the settings into the palette every
 `settings()`, `main()`, `radius()` (0–12), `motion()`, `chosen()`, `serverDefault()`, `custom()`,
 `clearRadius()`, `background()` and `setBackground(...)`. The `Settings` record it exposes is what a
 consumer stores — on the server for a default, or wherever its own config lives. `Settings.patch()` is
-the same settings as a `ThemePatch`, which is what makes "a chapter asks for a palette" and "a player
+the same settings as a `ThemePatch`, which is what makes "a pack suggests a palette" and "a player
 picked one" the same merge.
 
 **Choosing a theme clears the per-token overrides, the radius and the canvas background with it** — a
@@ -156,7 +158,7 @@ return:
 
 ```java
 try (var ignored = ArmatureTheme.scopeOf("nether")) {
-    drawChapterHeader(r);
+    drawHeader(r);
 }
 ```
 

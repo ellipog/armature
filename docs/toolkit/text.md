@@ -11,9 +11,9 @@ are the widgets that draw and key them.
 
 ```java
 TextField field = TextField.of(64).setValue("my_pack");
-field.insert(":");                 // typing
+field.insert(':');                 // typing
 field.backspace();                 // deleting
-field.left();                      // the widget calls selectTo instead when shift is held
+field.left();                      // the caret moves one code point
 field.selectAll().copyText();
 ```
 
@@ -21,7 +21,9 @@ Both answer `value()`, `caret()`, `length()`, `isEmpty()`, `hasSelection()`, `se
 `selectionEnd()` and `selectedText()`, and both offer `selectAll()`, `selectTo(position)` and
 `selectWordAt(position)` (the field), with `copyText()`, `cutText()` and `pasteText(text)`.
 `TextArea` adds the line dimension — a newline moves the caret to the next line's start — through the
-same operations.
+same operations. There is no shift-arrow: a selection is made by dragging or by `selectAll`, and the
+field's own keys are Left, Right, Home, End, Backspace and Delete, with Ctrl+C, Ctrl+V and Ctrl+X for
+the clipboard.
 
 Three pieces underneath, each written once:
 

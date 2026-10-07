@@ -13,14 +13,16 @@ compiler's.
 
 ```java
 JsonDocument document = JsonDocument.parse(fileName, source);   // throws JsonParseException
-Optional<JsonElement> title = document.get("title");
-JsonLocation where = document.nearestLocation("tasks[2].count");
+Optional<JsonElement> title = document.get("$.title");
+JsonLocation where = document.nearestLocation("$.tasks[2].count");
 ```
 
 `parse` records a line and column for every path as it goes. The methods after that are the questions
 a reader asks: `get(path)`, `has(path)`, `location(path)` (exact), `nearestLocation(path)` (where it
 *would* have been, for a missing field), `lineText(line)` (the source line, for showing it), and
-`locationCount()`.
+`locationCount()`. **A path is rooted at `$`** — `$.title`, `$.tasks[2].count` — and one that is not is
+not a path this reader knows: it answers empty rather than guessing, so a path written without the root
+reads as a field that is simply missing.
 
 ## `Checks`
 
@@ -29,15 +31,15 @@ than throwing, and returns the value when it was there:
 
 ```java
 var problems = new Problems();
-Optional<String> id = Checks.string(document, "id", problems);
-OptionalInt count = Checks.optionalInt(document, "count", problems);
-List<String> chapters = Checks.stringList(document, "chapters", problems);
+Optional<String> id = Checks.string(document, "$.id", problems);
+OptionalInt count = Checks.optionalInt(document, "$.count", problems);
+List<String> tags = Checks.stringList(document, "$.tags", problems);
 ```
 
 `string`/`optionalString`, `integer`/`optionalInt`, `optionalBool`, `object`/`optionalObject`,
-`array`/`optionalArray`, `stringList`/`optionalStringList`, `exists`, and `nameOf` — the last is what
-suggests a spelling when a field is wrong, which is why it is public. The path syntax is the obvious
-one: `tasks[2].count`.
+`array`/`optionalArray`, `stringList`/`optionalStringList`, `exists`, and `nameOf` — the last takes the
+field name off the end of a path, which is how a "missing required field" message can say *which* field.
+The path syntax is the same one throughout: `$.tasks[2].count`.
 
 ## `Problems` and `DataProblem`
 
@@ -58,8 +60,9 @@ room for it. Problems sort by file, then line, then column, so a log reads in so
 
 ## Codec helpers
 
-`Codecs.enumByName(MyEnum.class)` is a codec for an enum spelled by its name in the file — enum
-constants as written, with no second vocabulary to keep in step.
+`Codecs.enumByName(MyEnum.class)` is a codec for an enum spelled by its name in the file — the name
+lowercased on both sides, so a file may write `QUAD_OUT` or `quad_out` and mean the same constant, with
+no second vocabulary to keep in step.
 
 ## Type-tagged objects
 

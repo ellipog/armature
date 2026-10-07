@@ -8,7 +8,7 @@ It is a standalone mod, and nothing in it is specific to any one consumer — a 
 without inheriting another mod's assumptions.
 
 > [!NOTE]
-> **Armature is at 0.1.2 — pre-1.0.** Everything these pages describe is built and in use, but the
+> **Armature is at 0.1.3 — pre-1.0.** Everything these pages describe is built and in use, but the
 > version is below 1.0 deliberately: a break in the API needs only a minor bump, so read the release
 > notes before upgrading rather than assuming the surface is frozen.
 
@@ -46,4 +46,5 @@ team mods are `compileOnly` and are deliberately not in that POM — a consumer 
 dependency on a mod it may not run.
 
 Installing it beside a consumer is a normal mod install: drop the jar in `mods/`, on whichever loader.
-Both metadata files declare nothing beyond the loader itself, so there is nothing to install first.
+Neither metadata file names a third-party mod — the loader, and Fabric API on Fabric, is the whole of
+what they ask for — so there is nothing else to install first.

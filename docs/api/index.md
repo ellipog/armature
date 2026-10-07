@@ -1,8 +1,9 @@
 # The API
 
-Everything a mod's own code calls is reached from one class, `ArmatureApi`, and everything under
-`api/` is the public surface. The `impl/` packages behind it are free to change; nothing here names
-them.
+Everything a mod's own code calls is under `api/`, reached from a handful of static entry points —
+`ArmatureApi` for the platform and the registries, `ArmatureEvents`, `ArmatureNetwork`, and
+`Teams.of(server)`. Nothing under `api/` *imports* `impl/`: the one reference is a class name resolved
+once, which is what leaves the packages behind the surface free to change.
 
 ```java
 ArmaturePlatform platform = ArmatureApi.platform();

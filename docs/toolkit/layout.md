@@ -95,7 +95,7 @@ if (bar.press(mouseX, mouseY, now)) { ... }       // grip → drag, groove → p
 bar.dragTo(mouseY);                               // the inverse of the grip's own formula
 bar.advance(now);                                 // the hold-repeat, once a frame
 bar.release();
-bar.wheel(scrollY);                               // fractions accumulate; refused mid-drag
+bar.wheel(wheelDelta);                            // a delta, in notches; the fraction is carried
 bar.draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now);
 ```
 

@@ -45,16 +45,20 @@ if (teams.supports(TeamFeature.RENAME)) { /* offer the pencil */ }
 ```
 
 `TeamFeature` names them: `RENAME`, `TRANSFER`, `POLICY`, `OPEN_JOIN`, `INVITE_DECLINE`,
-`INVITE_CANCEL`. The stored manager supports all of them; Open Parties and Claims writes membership
-but has no party rename, transfer or policy, and FTB Teams is read-only here. A panel hides the
-control rather than drawing a button whose only possible outcome is the refusal message.
+`INVITE_CANCEL`. The stored manager supports all six. **Both foreign sources answer `false` for every
+one of them** — Open Parties and Claims writes membership through its own API rather than through
+this one, and FTB Teams is read-only here — so a panel asks rather than assumes, and hides the control
+rather than drawing a button whose only possible outcome is the refusal message.
 
 - `invite(actor, team, player)` is the actor-aware form: the permission is `Team.canInvite`, which
   `TeamPolicy.membersCanInvite` feeds, and enforcing it needs to know who is asking.
 - `acceptInvite(player, team)` accepts one specific invitation. A player can hold several, and a
   panel's Accept button sits on one row and must mean *that* one.
-- `rename`, `transferOwnership`, `setPolicy`, `joinPublic`, `declineInvite` and `cancelInvite` each
-  refuse with a named reason rather than throwing on a source that cannot.
+- `rename`, `transferOwnership`, `setPolicy`, `joinPublic`, `declineInvite` and `cancelInvite` are the
+  six a source may not have: each is a default that throws an `UnsupportedOperationException` naming
+  the manager and the operation rather than silently doing nothing, and `supports(...)` is what a
+  caller asks *before* offering the control. Not throwing would be the worse failure — a panel would
+  report success for an edit that never happened.
 - `memberLimit()` answers the configured cap for the stored manager — eight unless the server's
   settings say otherwise — and **zero** for a source that cannot say, so a header writes `3/8` rather
   than inventing a cap.
@@ -63,9 +67,10 @@ control rather than drawing a button whose only possible outcome is the refusal 
 than a set of ids, so an invitation row can show who asked and how long ago (a foreign source stores
 the owner and zero — see `TeamInvite` on why zero is the honest unknown), and `policy` holds the two
 switches. `TeamPolicy.DEFAULT` is invite-only with member invitations **on**, which is what version 1
-files migrate to and what a solo team carries. `Team.limits`' rules — `canActOn`, `canInvite`,
-`canTransfer` — live on the record so the manager enforcing them, the command explaining a refusal and
-the panel deciding whether to draw a control are one answer.
+files migrate to and what a solo team carries. The permission rules — `canActOn`, `canInvite`,
+`canTransfer` — are methods on the record, and the numbers they read live in `TeamLimits`, so the
+manager enforcing them, the command explaining a refusal and the panel deciding whether to draw a
+control are one answer.
 
 ## Where the parties come from
 
@@ -117,11 +122,13 @@ command — takes effect at the next check rather than at the next server.
 
 It applies to Armature's own stored parties, and only those. A server whose parties come from FTB
 Teams or Open Parties and Claims gets that mod's limits and its own defaults, and this file is not
-consulted for them. The effective number travels to a client with the party snapshot, so a panel's
-`3/8` header and the server's refusal are one number rather than two expressions that agree today.
+consulted for them. A consumer that sends the effective number to its clients gets a panel whose `3/8`
+header and the server's refusal come from one number rather than two expressions that agree today:
+`memberLimit()` is that number, and `PartyRoster.fromParts(..., memberLimit)` is where it lands.
 
 ## Events
 
-`TeamEvents` publishes `TEAM_CREATED`, `MEMBER_JOINED`, `MEMBER_LEFT` and `TEAM_DISBANDED`, each a
-one-method listener over a small event object. A source that can announce a change is often the only
-way to find out one happened, which is why the events are part of the API rather than an extra.
+`TeamEvents` publishes eight: `TEAM_CREATED`, `MEMBER_JOINED`, `MEMBER_LEFT`, `TEAM_DISBANDED`,
+`TEAM_RENAMED`, `OWNER_TRANSFERRED`, `POLICY_CHANGED` and `INVITE_CHANGED`, each a one-method
+listener over a small event object. A source that can announce a change is often the only way to find
+out one happened, which is why the events are part of the API rather than an extra.

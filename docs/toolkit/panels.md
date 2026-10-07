@@ -85,9 +85,9 @@ for (PartyRoster.Member m : roster.members()) {
 
 A `Member` carries the id, name, role, and five facts a panel would otherwise re-derive — `self`,
 `owner`, `canRemove` and `canTransfer` (the same rules the server will apply) and `online`. One of
-those is worth calling out: `isReal()` distinguishes "a party of one you just created" from "you are
-alone", which a panel inferring it from `size() == 1` would get wrong for the ten seconds after the
-party is made.
+those is worth calling out: `isReal()` — a question asked of the **roster** rather than of a member —
+distinguishes "a party of one you just created" from "you are alone", which a panel inferring it from
+`size() == 1` would get wrong for the ten seconds after the party is made.
 
 Each row reserves `PartyRoster.actionStrip()` on its right — room for Transfer and Remove, laid out by
 `transferSlot` and `removeSlot` from the row's own slot. It is reserved on **every** row, including
