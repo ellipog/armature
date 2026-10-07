@@ -13,6 +13,14 @@
         "sources": "https://github.com/ellipog/armature",
         "issues": "https://github.com/ellipog/armature/issues"
     },
+    "custom": {
+        "modmenu": {
+            "links": {
+                "modmenu.wiki": "https://ellipog.dev/docs/armature/",
+                "modmenu.discord": "https://discord.gg/nA6pm9JHd6"
+            }
+        }
+    },
     "license": "${license}",
     "environment": "*",
     "accessWidener": "armature.accesswidener",
