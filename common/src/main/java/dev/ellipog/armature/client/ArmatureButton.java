@@ -104,6 +104,20 @@ public class ArmatureButton extends AbstractWidget {
     /** A 16×16 item drawn before the label. The size is the control's, not this. */
     private net.minecraft.world.item.ItemStack icon;
 
+    /**
+     * How far the icon sits inside the control's own edge, on every side.
+     *
+     * <h2>Why this is a field rather than the two numbers it was</h2>
+     *
+     * <p>The box was {@code height - 6} and the left edge was {@code getX() + 3}: the same 3 written
+     * twice, so a control could not say "this sprite is two pixels in" without both numbers moving
+     * together and nothing saying they had to. One inset gives one rule — <b>the sprite is inset by this
+     * much on all four sides</b> — because the box is the height less twice the inset and the vertical
+     * placement centres exactly that box. Three is what every control in both mods drew before this was
+     * a field, so nothing already on a screen moves.
+     */
+    private int iconInset = 3;
+
     private boolean accent;
     private boolean selected;
     private boolean flat;
@@ -244,7 +258,8 @@ public class ArmatureButton extends AbstractWidget {
      * A 16×16 item drawn before the label.
      *
      * <p>16 is the item's own size, not the slot's: the icon is scaled to the control's inner height,
-     * so passing an item here does not decide how big it is drawn. See {@link GuiRenderer#icon}.
+     * less the inset on each side ({@link #iconInset}), so passing an item here does not decide how big
+     * it is drawn. See {@link GuiRenderer#icon}.
      */
     public ArmatureButton icon(net.minecraft.world.item.ItemStack stack) {
         this.icon = stack == null || stack.isEmpty() ? null : stack;
@@ -253,6 +268,18 @@ public class ArmatureButton extends AbstractWidget {
 
     public ArmatureButton icon(net.minecraft.world.item.Item item) {
         return icon(new net.minecraft.world.item.ItemStack(item));
+    }
+
+    /**
+     * How far the sprite sits inside this control's edge, on every side. Three by default.
+     *
+     * <p>For a control whose icon is the whole of it — a HUD element drawn at the size it is in the
+     * game, say — the inset is what decides how much of the box the sprite fills, and the caller that
+     * owns the box is the one that knows. See {@link #iconInset} for why the rule is one number.
+     */
+    public ArmatureButton iconInset(int value) {
+        this.iconInset = Math.max(0, value);
+        return this;
     }
 
     public ArmatureButton tooltip(Component line) {
@@ -477,11 +504,12 @@ public class ArmatureButton extends AbstractWidget {
         // The icon is the inner height of the control, so it is the size of the space it is in rather
         // than a fixed 16px in a 20px button with 4px of padding somewhere. The slot the text starts
         // after is derived from that same number, so a row of controls with and without icons still
-        // lines its labels up.
-        int iconBox = Math.max(8, height - 6);
+        // lines its labels up. Both numbers come from the one inset -- see `iconInset` -- so a control
+        // can say "two pixels in" and get two pixels on all four sides rather than three on the left.
+        int iconBox = Math.max(8, height - iconInset * 2);
         int iconSlot = icon != null ? iconBox + 4 : 0;
         if (icon != null) {
-            renderer.icon(icon, getX() + 3, getY() + (height - iconBox) / 2, iconBox);
+            renderer.icon(icon, getX() + iconInset, getY() + (height - iconBox) / 2, iconBox);
         }
 
         int textLeft = getX() + iconSlot;
