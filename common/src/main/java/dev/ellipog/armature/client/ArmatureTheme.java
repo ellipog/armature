@@ -773,6 +773,16 @@ public final class ArmatureTheme {
     public static final int CORNERS_LEFT = TOP_LEFT | BOTTOM_LEFT;
 
     /**
+     * None of them, for a surface that touches no edge of its container: a band across the middle.
+     *
+     * <p>The third case {@link #fillSurface}'s own note lists, and the value it was waiting for: a strip
+     * between two other strips has four interior edges, so every corner of it is square. Zero is what the
+     * mask means -- "round none of them" -- and it is named because a bare {@code 0} at a call site says
+     * nothing about why, next to four neighbouring rows that each name their mask.
+     */
+    public static final int CORNERS_NONE = 0;
+
+    /**
      * A fill whose specified corners are rounded to {@code radius} and whose others are square.
      *
      * <h2>Why a mask rather than "round all four"</h2>
