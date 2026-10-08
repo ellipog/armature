@@ -55,8 +55,11 @@ entries/01.json:14:9: error: unknown field "titl" - did you mean "title"?
     valid fields here: description, icon, id, title
 ```
 
-`renderWithPath()` adds the JSON path on a line of its own, after those, for a caller that has
-room for it. Problems sort by file, then line, then column, so a log reads in source order.
+Problems sort by file, then line, then column, so a log reads in source order. The `path` field is the
+JSON path the fault sits at, and it is carried rather than rendered: `render()` is the one line a
+caller gets, because every reader of it — a log, a panel, a toast — shows one line per problem, and a
+second line reading `at $.tasks[2]` became a card of its own in the one of those that has no room for
+a continuation.
 
 ## Codec helpers
 

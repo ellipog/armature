@@ -39,10 +39,6 @@ public record DataProblem(String file, int line, int column, String path, Severi
         return file + ":" + line + ":" + column + ": " + severity.label() + ": " + message;
     }
 
-    public String renderWithPath() {
-        return render() + "\n    at " + path;
-    }
-
     @Override
     public int compareTo(DataProblem other) {
         int byFile = file.compareTo(other.file);
