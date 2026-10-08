@@ -61,7 +61,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * rectangle" compares numbers from two lists. Six types would be six visitors.
      */
     public record Call(Op op, int x, int y, int x2, int y2, int argb, String text,
-                       java.util.List<GuiRenderer.StyledRun> runs, Source source) {
+                       java.util.List<GuiRenderer.StyledRun> runs, Source source, Amount amount) {
 
         /**
          * Where a scaled texture draw read from, in the texture's own pixels.
@@ -75,15 +75,46 @@ public final class RecordingRenderer implements GuiRenderer {
                              int textureWidth, int textureHeight) {
         }
 
-        /** A call with no runs and no source: every op but styled text and scaled texture. */
-        public Call(Op op, int x, int y, int x2, int y2, int argb, String text) {
-            this(op, x, y, x2, y2, argb, text, java.util.List.of(), null);
+        /**
+         * The one number an operation carries that is not geometry.
+         *
+         * <p>Two operations have one, and they are different kinds of number: a turn's angle in degrees, and
+         * a shadowed line's size as a factor. One field rather than two, because no call is ever both — and
+         * because a record with a field per operation would be a record that grows every time this seam does.
+         * It is a {@code float} for the same reason both of those are: a turn can be fractional, and a size
+         * almost always is.
+         */
+        public record Amount(float value) {
         }
 
-        /** A call with runs but no source: styled text, which is the only one that carries them. */
+        /** A call with no runs, no source and no number: every op but styled text, a scaled texture, a turn
+         * and a shadowed label. */
+        public Call(Op op, int x, int y, int x2, int y2, int argb, String text) {
+            this(op, x, y, x2, y2, argb, text, java.util.List.of(), null, null);
+        }
+
+        /** A call with runs but nothing else: styled text, which is the only one that carries them. */
         public Call(Op op, int x, int y, int x2, int y2, int argb, String text,
                     java.util.List<GuiRenderer.StyledRun> runs) {
-            this(op, x, y, x2, y2, argb, text, runs, null);
+            this(op, x, y, x2, y2, argb, text, runs, null, null);
+        }
+
+        /** A call that read from a texture: the scaled blit, whose source region is its own data. */
+        public Call(Op op, int x, int y, int x2, int y2, int argb, String text,
+                    java.util.List<GuiRenderer.StyledRun> runs, Source source) {
+            this(op, x, y, x2, y2, argb, text, runs, source, null);
+        }
+
+        /** A turn: the pivot is the coordinates and the angle is its own number. */
+        public static Call turn(Op op, int pivotX, int pivotY, float degrees) {
+            return new Call(op, pivotX, pivotY, 0, 0, 0, "", java.util.List.of(), null,
+                    new Amount(degrees));
+        }
+
+        /** A shadowed line: the position, the colour and the text are the call, and the size is its number. */
+        public static Call shadowed(int x, int y, int argb, String text, float scale) {
+            return new Call(Op.SHADOWED_TEXT, x, y, 0, 0, argb, text, java.util.List.of(), null,
+                    new Amount(scale));
         }
 
         /** Whether this call is a filled rectangle covering the given point. */
@@ -96,11 +127,16 @@ public final class RecordingRenderer implements GuiRenderer {
             return switch (op) {
                 case FILL -> "fill(" + x + "," + y + " -> " + x2 + "," + y2 + ", " + hex(argb) + ")";
                 case TEXT -> "text(\"" + text + "\" at " + x + "," + y + ", " + hex(argb) + ")";
+                case SHADOWED_TEXT -> "shadowedText(\"" + text + "\" at " + x + "," + y + ")";
                 case STYLED_TEXT -> "styledText(\"" + text + "\" in " + runs.size() + " run(s) at "
                         + x + "," + y + ")";
                 case ICON -> "icon(" + x + "," + y + " " + x2 + "px)";
                 case FACE -> "face(" + text + " at " + x + "," + y + " " + x2 + "px)";
                 case TEXTURE -> "texture(" + text + " at " + x + "," + y + " -> " + x2 + "," + y2 + ")";
+                case SPRITE -> "sprite(" + text + " at " + x + "," + y + " -> " + x2 + "," + y2 + ")";
+                case TURN -> "turn(about " + x + "," + y + " by "
+                        + (amount == null ? "?" : amount.value() + "\u00b0") + ")";
+                case UNTURN -> "unturn";
                 case BLUR -> "blur(yes)";
                 case CLIP -> "clip(" + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case UNCLIP -> "unclip";
@@ -116,7 +152,10 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /** What a recorded call was. */
-    public enum Op { FILL, TEXT, STYLED_TEXT, ICON, FACE, TEXTURE, BLUR, CLIP, UNCLIP, FLUSH, BATCH, END_BATCH }
+    public enum Op {
+        FILL, TEXT, SHADOWED_TEXT, STYLED_TEXT, ICON, FACE, TEXTURE, SPRITE,
+        TURN, UNTURN, BLUR, CLIP, UNCLIP, FLUSH, BATCH, END_BATCH
+    }
 
     private final List<Call> calls = new ArrayList<>();
     private final int charWidth;
@@ -128,6 +167,18 @@ public final class RecordingRenderer implements GuiRenderer {
     private int deepestClip;
     private int clippedAfterStop;
     private int batches;
+
+    /**
+     * Open turns, and the same three numbers a clip keeps.
+     *
+     * <p>A leaked turn is not the same fault as a leaked clip and is worth its own count: a clip left open
+     * hides drawing that was meant to be seen, and a turn left open <b>turns</b> everything after it, which
+     * presents as a whole frame drawn at an angle from one bad picture. Both are checked for the same reason
+     * — a scope's contract is the thing a recorder can hold and a screenshot cannot.
+     */
+    private int openTurns;
+    private int deepestTurn;
+    private int strayTurnPops;
 
     private RecordingRenderer(int charWidth, int lineHeight, boolean iconsDraw) {
         this.charWidth = charWidth;
@@ -215,6 +266,20 @@ public final class RecordingRenderer implements GuiRenderer {
         calls.add(new Call(Op.TEXT, x, y, 0, 0, argb, text));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Its own op rather than a fourth field on {@link Op#TEXT}, because the two are different pictures and
+     * the difference is the whole reason the method exists: a test asserting that a label floating over a
+     * canvas asked for vanilla's shadow, and one asserting that every other label did <i>not</i>, are both
+     * reading this distinction. A recorder that folded them together could not tell a caller that stopped
+     * asking for a shadow from one that started.
+     */
+    @Override
+    public void shadowedText(String text, int x, int y, int argb, float scale) {
+        calls.add(Call.shadowed(x, y, argb, text, scale));
+    }
+
     @Override
     public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
         StringBuilder whole = new StringBuilder();
@@ -278,6 +343,24 @@ public final class RecordingRenderer implements GuiRenderer {
         calls.add(new Call(Op.TEXTURE, x, y, x + width, y + height, argb, texture.toString(),
                 java.util.List.of(), new Call.Source(u, v, sourceWidth, sourceHeight,
                         textureWidth, textureHeight)));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Its own op, recorded with the sprite's <b>id</b> in the text field and the tint in {@code argb} —
+     * which is everything a caller chooses, and therefore everything a test can be wrong about. Kept apart
+     * from {@link Op#TEXTURE} deliberately: the two lookup paths fail differently (an absent file draws
+     * nothing, an unknown sprite draws the game's marker), so a test that could not tell which one a picture
+     * element asked for could not hold either behaviour.
+     */
+    @Override
+    public void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb) {
+        if (atlasSprite == null) {
+            calls.add(new Call(Op.SPRITE, x, y, x + width, y + height, argb, ""));
+            return;
+        }
+        calls.add(new Call(Op.SPRITE, x, y, x + width, y + height, argb, atlasSprite.toString()));
     }
 
     /**
@@ -377,6 +460,42 @@ public final class RecordingRenderer implements GuiRenderer {
         };
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Recorded as an opening and a closing marker around whatever the supplier draws, exactly as a batch
+     * and a clip are, and for the same reason: the assertion worth having is not "a turn happened" but "the
+     * picture landed <i>inside</i> the turn". The supplier runs for real, because a recorder that skipped it
+     * would record an empty turn and could not answer the question.
+     *
+     * <p>The same double-close guard {@link #clip} has, and it is not symmetry: a second pop here would
+     * remove a frame the caller pushed, so a recorder that counted it twice would report a balanced stack for
+     * an unbalanced one.
+     */
+    @Override
+    public Scoped turned(int pivotX, int pivotY, float degrees) {
+        calls.add(Call.turn(Op.TURN, pivotX, pivotY, degrees));
+        openTurns++;
+        deepestTurn = Math.max(deepestTurn, openTurns);
+        return new Scoped() {
+            private boolean closed;
+
+            @Override
+            public void close() {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                calls.add(new Call(Op.UNTURN, 0, 0, 0, 0, 0, ""));
+                openTurns--;
+                if (openTurns < 0) {
+                    strayTurnPops++;
+                    openTurns = 0;
+                }
+            }
+        };
+    }
+
     // ------------------------------------------------------------------
     // Reading it back
     // ------------------------------------------------------------------
@@ -394,6 +513,21 @@ public final class RecordingRenderer implements GuiRenderer {
     /** The text, in order. */
     public List<Call> texts() {
         return calls.stream().filter(call -> call.op() == Op.TEXT).toList();
+    }
+
+    /** The shadowed lines, in order. The other half of the distinction {@link Op#SHADOWED_TEXT} keeps. */
+    public List<Call> shadowedTexts() {
+        return calls.stream().filter(call -> call.op() == Op.SHADOWED_TEXT).toList();
+    }
+
+    /** The sprites, in order, each carrying the sprite's own id. */
+    public List<Call> sprites() {
+        return calls.stream().filter(call -> call.op() == Op.SPRITE).toList();
+    }
+
+    /** The turns, in order, each carrying its pivot and its angle. */
+    public List<Call> turns() {
+        return calls.stream().filter(call -> call.op() == Op.TURN).toList();
     }
 
     /** The styled lines, in order, with the runs each carried. */
@@ -492,6 +626,33 @@ public final class RecordingRenderer implements GuiRenderer {
         return deepestClip;
     }
 
+    /**
+     * Whether every turn was closed exactly once.
+     *
+     * <p>The same assertion {@link #clipsBalanced} makes, and worth having for a stronger reason: a clip left
+     * open hides what follows it, and a turn left open <b>rotates</b> it. A test that draws a turned picture
+     * and then asserts the next thing drawn was upright is only meaningful if the scope really closed, and
+     * that is this.
+     */
+    public boolean turnsBalanced() {
+        return openTurns == 0 && strayTurnPops == 0;
+    }
+
+    /** How many turns were still open when this recorder was last read. */
+    public int unclosedTurns() {
+        return openTurns;
+    }
+
+    /** How many turn-scopes were closed with nothing open. */
+    public int strayTurnPops() {
+        return strayTurnPops;
+    }
+
+    /** How deep the turn nesting went, so a test can tell a turn inside a turn from two in a row. */
+    public int deepestTurn() {
+        return deepestTurn;
+    }
+
     /** Whether any text was drawn with the given string. */
     public boolean drewText(String text) {
         return calls.stream().anyMatch(call -> call.op() == Op.TEXT && text.equals(call.text()));
@@ -515,6 +676,9 @@ public final class RecordingRenderer implements GuiRenderer {
         deepestClip = 0;
         clippedAfterStop = 0;
         batches = 0;
+        openTurns = 0;
+        deepestTurn = 0;
+        strayTurnPops = 0;
     }
 
     @Override

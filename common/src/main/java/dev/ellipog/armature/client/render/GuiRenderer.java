@@ -22,7 +22,7 @@ import java.util.UUID;
  * unchanged. Without it, it is every draw call in a toolkit and a screen, twice, with no way to tell
  * which were missed.
  *
- * <h2>Fifteen abstract methods and three defaults, because that is what was actually being used</h2>
+ * <h2>Eighteen abstract methods and four defaults, because that is what was actually being used</h2>
  *
  * <p>Not a guess at what a UI toolkit might need. The first cut was the complete set of operations that
  * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and a screen between them
@@ -34,11 +34,14 @@ import java.util.UUID;
  *
  * <p>Everything since has arrived the same way -- for a caller that needed it rather than for
  * symmetry: the image canvas background's {@link #textureSize} and {@link #scaled}, which are about
- * a texture being an asset rather than a sprite; the styled-run pair; a player's {@link #face}; the
+ * a texture being a file rather than a sprite; the styled-run pair; a player's {@link #face}; the
  * {@link #blur} a modal draws its card over; and {@link #batched}, which exists because the fill
- * count is the draw-call count. {@code centredText} and the two {@link #clip} overloads are defaults
+ * count is the draw-call count. The last three arrivals are one free-placed picture each, and they
+ * came together because a single caller needed all three: {@link #sprite} for a region of a stitched
+ * sheet, {@link #turned} for a picture that is not axis-aligned, and {@link #shadowedText} for a label
+ * with no backdrop behind it. {@code centredText} and the two {@link #clip} overloads are defaults
  * rather than abstract members, so the figure that matters to an implementer -- and the one to keep
- * in step with this list -- is the fifteen.
+ * in step with this list -- is the eighteen.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -54,6 +57,13 @@ import java.util.UUID;
  * the knowledge that an item is 16 units square until something scales it lives in exactly one place
  * instead of being rediscovered by whoever writes the next icon box.
  *
+ * <p><b>{@link #turned} is the one thing that looks like an exception and is not.</b> What is refused
+ * above is a matrix in a caller's hands — something to push, compose and forget to pop. A turn is
+ * neither: the caller names a pivot and an angle, the scope places and removes the transform itself on
+ * every path, and the two numbers are what the caller always had in mind anyway. An axis-aligned blit
+ * cannot express a picture placed at an angle, and no amount of span arithmetic can rotate a texture,
+ * so the choice was this or the feature. See that method for what was checked before believing it.
+ *
  * <p><b>Styling exists, and it is this seam's own type; {@code Component} still does not cross.</b> This
  * paragraph used to say that no text was styled anywhere, which was true when it was written and is not
  * any more: an entry description is markdown, and emphasis is not emphasis if it is not drawn differently.
@@ -63,11 +73,14 @@ import java.util.UUID;
  * {@link #styledWidth} measures one. A {@code Component} would carry far more than that (events, fonts,
  * colours, hover) and would tie every caller to the game to say "bold".
  *
- * <p><b>No {@code renderItemDecorations}, no gradients, no nine-slice, no sprite atlas.</b> R5's
- * work. {@link #texture} draws a caller's own file by path — a stitched sheet's sprite coordinates
- * are exactly the guessing this seam exists to avoid. This interface is what today's code needs and
- * nothing more, which is what makes it small enough that a second implementation is a real thing to
- * write rather than a project.
+ * <p><b>No {@code renderItemDecorations}, no gradients, no nine-slice, and no atlas coordinates.</b>
+ * R5's work. {@link #texture} draws a caller's own file by path, and {@link #sprite} draws a region of
+ * a stitched sheet — but it takes the sprite's <b>id</b>, not a {@code u}/{@code v} pair, so which
+ * sheet it lives in and where it landed in it stay inside the implementation. That distinction is the
+ * whole of it: a caller that has a sprite's name has said everything it knows, and a caller that has
+ * sheet coordinates has already gone looking for something this seam exists to keep out of its hands.
+ * This interface is what today's code needs and nothing more, which is what makes it small enough that
+ * a second implementation is a real thing to write rather than a project.
  *
  * <h2>Why it is an interface with a test double, rather than an abstraction</h2>
  *
@@ -130,6 +143,36 @@ public interface GuiRenderer {
 
     /** Draws one line of text with the top-left of its first glyph at {@code x}, {@code y}. */
     void text(String text, int x, int y, int argb);
+
+    /**
+     * Draws one line of text with the game's own drop shadow under it, at a size of the caller's choosing.
+     *
+     * <h2>Why this is its own method rather than a boolean on {@link #text}</h2>
+     *
+     * <p>Because the two are not one label with an option: until now every label this toolkit drew had an
+     * <b>opaque backdrop</b> behind it, and a shadow over a backdrop is a smudge — which is the note the
+     * implementation has carried since before anything wanted one. A caller asking for a shadow is saying
+     * the opposite thing about its own surface: that it floats over something it does not control, where no
+     * backdrop is available and legibility has to come from the glyph itself.
+     *
+     * <p>So the choice is not a flag. It is the one bit that separates two kinds of label, it is never
+     * toggled at a call site, and a {@code boolean} parameter on {@code text} would put it within reach of
+     * every one of the hundred-odd existing callers — each of which would then be one keystroke away from
+     * drawing a smudge.
+     *
+     * <h2>Why the size is here and not only on {@link StyledRun}</h2>
+     *
+     * <p>Because a shadow is <b>not a second call</b>. Vanilla's shadow is a baked glyph — the same shape in
+     * a darker sprite, drawn one pixel down and right <i>before</i> the line it belongs to — so a caller that
+     * wanted a bigger shadowed line could not get one by drawing the plain line twice, at any colour: the
+     * second pass would be a full-brightness double-strike, not a shadow. A scaled run therefore has to reach
+     * the same call that asks for the shadow, and this is that call. It is the one place the two styling
+     * mechanisms overlap, and the alternative — a shadowed line that silently came out at the font's own size
+     * — is a label that ignores the size its author set.
+     *
+     * @param scale multiplies the font's own size, and the player's text-scale setting on top of it
+     */
+    void shadowedText(String text, int x, int y, int argb, float scale);
 
     /**
      * One run of a styled line: its text, and the two things a font can actually do with it.
@@ -370,6 +413,69 @@ public interface GuiRenderer {
      * game reports as missing rather than a silent wrong picture.
      */
     void texture(ResourceLocation texture, int x, int y, int width, int height);
+
+    /**
+     * Draws a stitched-atlas sprite into a rectangle, in a tint.
+     *
+     * <h2>Why a sprite is not a {@link #texture}</h2>
+     *
+     * <p>Because the two name different things. {@link #texture} takes a file's own path and blits that file;
+     * a sprite is a region of a sheet the game assembled at load time, and where it landed in that sheet does
+     * not exist until the sheet has been stitched. A caller holding only {@code texture} could not draw one
+     * at all, and a caller handing over sheet coordinates is doing exactly the guessing this seam exists to
+     * keep out of its hands — so the id is the sprite's, and which sheet to look it up in stays in the
+     * implementation (the block atlas, which is where a model's textures live whether the model belongs to a
+     * block or to an item).
+     *
+     * <p>The whole sprite is drawn, stretched to fill the destination. There is no source region, because a
+     * sprite's own bounds are the only region that means anything.
+     *
+     * <p><b>An id the atlas does not hold draws the game's missing-texture marker</b>, which is what a
+     * missing item or block texture draws and which this seam deliberately does not suppress. Read from the
+     * version rather than assumed: {@code TextureAtlas.getSprite} answers an unknown id with its own
+     * {@code missingSprite} rather than null, so "draw nothing" was never available here without naming the
+     * marker and second-guessing it. It is also the better of the two, honestly: a decoration that silently
+     * draws nothing is a bug report with no evidence in it, where the marker names itself on screen. Note
+     * that this differs from {@link #scaled}, where an absent <i>file</i> draws nothing — the two arms of
+     * "there is no picture" fail differently, and each fails the way its own lookup does.
+     *
+     * @param argb the tint, multiplied channel by channel as {@link #scaled}'s is; white means untouched
+     */
+    void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb);
+
+    // ------------------------------------------------------------------
+    // Turning
+    // ------------------------------------------------------------------
+
+    /**
+     * Draws everything the supplier draws, turned about a point, and returns what it returned.
+     *
+     * <h2>Why this is a scope rather than the transform stack the class note refuses</h2>
+     *
+     * <p>What is refused there is a <b>matrix in a caller's hands</b>: something to push, to compose with
+     * something else, and to forget to pop. This is neither. The caller names a pivot and an angle — the two
+     * numbers it had in mind anyway — and the scope places and removes the transform itself, on every path
+     * including an exception. Two of these nested is a turn inside a turn, which is a thing a caller can
+     * mean; there is no way to leave one open, because there is nothing to leave open.
+     *
+     * <p>The alternative was not a smaller feature, it was no feature: an axis-aligned blit cannot express a
+     * picture placed at an angle, and a texture cannot be approximated with spans the way a rotated
+     * <i>shape</i> can, because there is no per-pixel test to make — the pixels come from the sheet.
+     *
+     * <h2>What was checked before believing it, and it is the whole method</h2>
+     *
+     * <p>A scope is worthless if the drawing inside it ignores the transform. This version's
+     * {@code GuiGraphics.innerBlit} reads {@code pose.last().pose()} and builds all four of its vertices with
+     * that matrix, so a turn set before a blit turns the blit. The same reading settles the one hazard it
+     * would otherwise have: a vertex is baked when it is <i>queued</i> rather than when it is submitted, so a
+     * tint change inside this scope — and the flush that comes with it — cannot submit anything under the
+     * wrong angle.
+     *
+     * @param pivotX  the point the turn is about, in screen pixels
+     * @param pivotY  the same, vertically
+     * @param degrees clockwise on screen, where y grows downward; any value, whole or fractional
+     */
+    Scoped turned(int pivotX, int pivotY, float degrees);
 
     // ------------------------------------------------------------------
     // Clipping

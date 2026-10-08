@@ -8,6 +8,8 @@ import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
+import net.minecraft.resources.ResourceLocation;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -759,5 +761,123 @@ class GuiRendererTest {
         assertTrue(r.covered(10, 10), "and the middle is still filled");
 
         ArmatureTheme.resetCurrent();
+    }
+
+    // ------------------------------------------------------------------
+    // A sprite, a turn and a shadowed label
+    // ------------------------------------------------------------------
+    //
+    // The three arrived together, for one caller that puts a freely-placed picture on a canvas. Each is
+    // here rather than in that caller because each is a claim about *this* seam: that an atlas region and
+    // a file are different lookups, that a scope really wraps what it is handed, and that a shadowed label
+    // and a backed one are different calls.
+
+    @Test
+    @DisplayName("a shadowed label is its own call, so a label that stopped asking for a shadow is visible")
+    void shadowedTextIsItsOwnOp() {
+        // The distinction the method exists for. A shadow is what makes a label legible with nothing behind
+        // it, and every label this toolkit drew before it had an opaque backdrop — over which a shadow is a
+        // smudge. So the two kinds of label have to be tellable apart in a recording, or a label that
+        // quietly gained a shadow over a backdrop would read as a palette problem.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        r.text("on a backdrop", 0, 0, 0xFFFFFFFF);
+        r.shadowedText("over a chapter", 10, 20, 0xFFA0A0A0, 1.5F);
+
+        assertEquals(1, r.texts().size(), "the plain label is a plain call");
+        assertEquals(1, r.shadowedTexts().size(), "and the shadowed one is not");
+        assertEquals("over a chapter", r.shadowedTexts().get(0).text());
+        assertEquals(10, r.shadowedTexts().get(0).x());
+        assertEquals(20, r.shadowedTexts().get(0).y());
+        assertEquals(0xFFA0A0A0, r.shadowedTexts().get(0).argb());
+        assertNotNull(r.shadowedTexts().get(0).amount(), "and it carries its size");
+        assertEquals(1.5F, r.shadowedTexts().get(0).amount().value(),
+                "the size is on this call rather than on a run, because a shadow is a baked glyph: a"
+                        + " second pass at an offset would be a double-strike, not a shadow");
+    }
+
+    @Test
+    @DisplayName("a sprite is recorded by its own id, and is not a file's path")
+    void aSpriteIsItsOwnCall() {
+        // Two lookup paths that fail differently, read from the version rather than assumed: an absent file
+        // draws nothing, where an id the atlas does not hold draws the game's own missing-texture marker. A
+        // recording that folded the two together could hold neither behaviour, and the marker-versus-nothing
+        // difference is exactly what a caller deciding whether to pre-check an id needs to know.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        r.texture(ResourceLocation.fromNamespaceAndPath("pack", "textures/gui/star.png"), 0, 0, 8, 8);
+        r.sprite(ResourceLocation.fromNamespaceAndPath("minecraft", "block/sculk"), 20, 30, 16, 24,
+                0x80FFFFFF);
+
+        assertEquals(1, r.sprites().size(), "one sprite, one call");
+        assertEquals(1, r.textures().size(), "and the file is still a texture call of its own");
+
+        RecordingRenderer.Call sprite = r.sprites().get(0);
+        assertEquals("minecraft:block/sculk", sprite.text(), "the id is the sprite's, not a sheet's");
+        assertEquals(20, sprite.x());
+        assertEquals(30, sprite.y());
+        assertEquals(36, sprite.x2(), "the destination is the box the caller asked for");
+        assertEquals(54, sprite.y2());
+        assertEquals(0x80FFFFFF, sprite.argb(), "and the tint travels, because a scaled blit's does");
+    }
+
+    @Test
+    @DisplayName("a turn records its pivot and its angle, and wraps only what is drawn inside it")
+    void aTurnWrapsItsDrawing() {
+        // Every other operation on this seam is a leaf, so a turn is the one where the *order* against its
+        // own markers is part of the claim: a caller that drew before opening the scope, or after closing
+        // it, produces a picture with one element at the wrong angle and nothing else wrong with it.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        try (GuiRenderer.Scoped turn = r.turned(100, 50, -90F)) {
+            r.sprite(ResourceLocation.fromNamespaceAndPath("minecraft", "block/sculk"), 0, 0, 8, 8,
+                    0xFFFFFFFF);
+        }
+        r.fill(0, 0, 1, 1, 0xFF000000);
+
+        assertEquals(1, r.turns().size(), "one scope, one recorded turn");
+        RecordingRenderer.Call turn = r.turns().get(0);
+        assertEquals(100, turn.x(), "the pivot is where the caller put it");
+        assertEquals(50, turn.y());
+        assertNotNull(turn.amount(), "a turn with no angle recorded could be any picture at all");
+        assertEquals(-90F, turn.amount().value(),
+                "the angle is recorded exactly as it was asked for: normalising a signed angle belongs to a "
+                        + "file's codec, and doing it here would hide which spelling reached the renderer");
+        assertTrue(r.turnsBalanced(), "the scope did not close: " + r);
+
+        int open = r.firstIndex(RecordingRenderer.Op.TURN);
+        int drawn = r.firstIndex(RecordingRenderer.Op.SPRITE);
+        int close = r.firstIndex(RecordingRenderer.Op.UNTURN);
+        int after = r.firstIndex(RecordingRenderer.Op.FILL);
+        assertTrue(open < drawn && drawn < close,
+                "the sprite is not inside the scope: open=" + open + " sprite=" + drawn + " close=" + close);
+        assertTrue(close < after, "and what follows it is outside, which is the other half of the claim");
+    }
+
+    @Test
+    @DisplayName("a turn shares the clip's contract and its own accounting")
+    void turnsShareTheClipContract() {
+        // Same contract as a clip, and the double close matters more here: a second pop removes a frame the
+        // *caller* pushed, which is a fault one level up rather than a harmless imbalance. Counted apart from
+        // the clips as well, so a leaked turn is not reported as a leaked scissor.
+        RecordingRenderer r = RecordingRenderer.create();
+
+        GuiRenderer.Scoped turn = r.turned(0, 0, 45F);
+        turn.close();
+        turn.close();
+
+        assertTrue(r.turnsBalanced(), "a double close unbalanced the poses: " + r);
+        assertEquals(0, r.unclosedTurns());
+        assertEquals(0, r.strayTurnPops(), "the second close popped something it did not push");
+        assertTrue(r.clipsBalanced(), "and a turn is not a clip");
+
+        try (GuiRenderer.Scoped clip = r.clip(0, 0, 10, 10)) {
+            try (GuiRenderer.Scoped inner = r.turned(5, 5, 180F)) {
+                assertEquals(1, r.deepestTurn(), "the turn did not nest inside the clip");
+            }
+        }
+
+        assertTrue(r.clipsBalanced());
+        assertTrue(r.turnsBalanced());
     }
 }

@@ -3,6 +3,7 @@ package dev.ellipog.armature.client.render;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 
 import dev.ellipog.armature.client.TextScale;
 import dev.ellipog.armature.client.ui.kit.Measure;
@@ -21,6 +22,7 @@ import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
@@ -169,12 +171,39 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
 
     @Override
     public void text(String text, int x, int y, int argb) {
-        // The shadow argument is always false, and that is not a simplification: a drop shadow is what
-        // makes vanilla's text legible against vanilla's background, and this UI draws an opaque
-        // backdrop behind every label instead. Both at once reads as a smudged label.
-        double scale = TextScale.get();
-        if (scale == TextScale.DEFAULT) {
-            graphics.drawString(font(), text, x, y, argb, false);
+        drawAt(text, x, y, argb, false, 1F);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The only differences from {@link #text} are the flag this class has always passed as false and the
+     * size — so all three go through one private method rather than two copies of the pose arithmetic. A
+     * shadow changes neither where a line is drawn nor how a scale is applied, and two bodies would be two
+     * places for that to stop being true.
+     */
+    @Override
+    public void shadowedText(String text, int x, int y, int argb, float scale) {
+        drawAt(text, x, y, argb, true, scale);
+    }
+
+    /**
+     * One line, at the player's text scale times the caller's, with or without the font's own shadow.
+     *
+     * <h2>Why the flag is false for everything but {@link #shadowedText}</h2>
+     *
+     * <p>A drop shadow is what makes vanilla's text legible against vanilla's background, and this toolkit
+     * draws an opaque backdrop behind its labels instead. Both at once reads as a smudged label — which is why
+     * the flag lives here, decided by the callers that know what kind of surface they are drawing on, rather
+     * than being offered to every caller as a parameter.
+     *
+     * <p>The two factors multiply rather than one winning, and the order is the caller's size first: a heading
+     * on a client whose player has turned text up is bigger by both, which is what each of them asked for.
+     */
+    private void drawAt(String text, int x, int y, int argb, boolean shadow, float scale) {
+        double effective = scale * TextScale.get();
+        if (effective == TextScale.DEFAULT) {
+            graphics.drawString(font(), text, x, y, argb, shadow);
             return;
         }
         // Scaled about the string's own top-left, so the text grows right and down from where the
@@ -182,8 +211,8 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         // factor, which is what keeps a layout that measured the string and the string it draws in step.
         graphics.pose().pushPose();
         graphics.pose().translate(x, y, 0F);
-        graphics.pose().scale((float) scale, (float) scale, 1F);
-        graphics.drawString(font(), text, 0, 0, argb, false);
+        graphics.pose().scale((float) effective, (float) effective, 1F);
+        graphics.drawString(font(), text, 0, 0, argb, shadow);
         graphics.pose().popPose();
     }
 
@@ -621,6 +650,89 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     @Override
     public void texture(ResourceLocation texture, int x, int y, int width, int height) {
         graphics.blit(texture, x, y, width, height, 0F, 0F, width, height, width, height);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <h2>The atlas, and why this class picks it rather than the caller</h2>
+     *
+     * <p>{@code InventoryMenu.BLOCK_ATLAS} is the sheet a model's textures are stitched into, whether the
+     * model belongs to a block or to an item — so it is the one sheet that holds every sprite a picture
+     * element could name. Which sheet to ask is a fact about this version's resource pipeline, which is
+     * exactly the kind of fact this file exists to own.
+     *
+     * <p>No null guard on the sprite, and that is read rather than assumed: this version's
+     * {@code TextureAtlas.getSprite} answers an unknown id with its own {@code missingSprite} and throws
+     * only when the atlas is not initialized — which cannot be true while a screen is drawing, and which a
+     * guard here could not fix anyway.
+     */
+    @Override
+    public void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb) {
+        if (atlasSprite == null || width <= 0 || height <= 0) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return;
+        }
+        TextureAtlasSprite sprite = minecraft.getModelManager()
+                .getAtlas(InventoryMenu.BLOCK_ATLAS)
+                .getSprite(atlasSprite);
+        // The same tint path `scaled` uses, in the same order: set the shader colour, blit, put white back.
+        // A sprite is drawn through the block atlas' own render type rather than through the gui one, and the
+        // shader colour is the thing both read.
+        float alpha = ((argb >>> 24) & 0xFF) / 255F;
+        float red = ((argb >> 16) & 0xFF) / 255F;
+        float green = ((argb >> 8) & 0xFF) / 255F;
+        float blue = (argb & 0xFF) / 255F;
+        graphics.setColor(red, green, blue, alpha);
+        try {
+            graphics.blit(x, y, 0, width, height, sprite);
+        }
+        finally {
+            graphics.setColor(1F, 1F, 1F, 1F);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Turning
+    // ------------------------------------------------------------------
+
+    /**
+     * {@inheritDoc}
+     *
+     * <h2>The order of the three pose calls, which is the whole of it</h2>
+     *
+     * <p>Translate to the pivot, turn, translate back. The first translate is what makes the pivot the point
+     * that stays still; the second says that what follows is measured from the pivot again rather than from
+     * the corner of the screen. Swapping the last two would turn the picture about the origin of the frame,
+     * which is a different picture at the same angle — the kind of mistake that looks like a coordinate bug
+     * in the caller.
+     *
+     * <p>The pop is in a {@code finally}, and the guard against a second close is not symmetry with
+     * {@link #clip}: a second pop here would remove a frame <b>the caller</b> pushed, which is a fault that
+     * surfaces somewhere else entirely. Same reason, one level up.
+     */
+    @Override
+    public Scoped turned(int pivotX, int pivotY, float degrees) {
+        PoseStack pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(pivotX, pivotY, 0F);
+        pose.mulPose(Axis.ZP.rotationDegrees(degrees));
+        pose.translate(-pivotX, -pivotY, 0F);
+        return new Scoped() {
+            private boolean closed;
+
+            @Override
+            public void close() {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                pose.popPose();
+            }
+        };
     }
 
     // ------------------------------------------------------------------

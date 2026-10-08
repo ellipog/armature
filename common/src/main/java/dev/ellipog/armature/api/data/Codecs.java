@@ -98,6 +98,40 @@ public final class Codecs {
     }
 
     /**
+     * A codec for a whole number that <b>wraps</b> into {@code 0..modulus-1} instead of clamping or refusing.
+     *
+     * <h2>Why an angle is not a clamped number</h2>
+     *
+     * <p>Because clamping and wrapping are different answers to "what did the author mean", and for an angle
+     * only one of them is right. A rotation is a direction, so every spelling of the same direction means the
+     * same thing: {@code -90}, {@code 270} and {@code 630} are one quarter turn to the same place, and a
+     * reader that clamps reads the first two of those as different pictures — {@code -90} clamped to
+     * {@code 0} is <i>no</i> turn, which is not a near miss but the opposite of what the file says. A file
+     * written by another tool, or by hand, or by an author thinking in signed degrees, is therefore read
+     * correctly rather than read as zero.
+     *
+     * <p>Clamping stays right for everything {@link #clampedInt} argues about: a size, a count, a coordinate
+     * outside a sane range has no second spelling, and the nearest legal one is the honest reading.
+     *
+     * <p>Negative inputs are wrapped rather than floored, so the result of this codec is always in range and a
+     * caller may index with it. {@code modulus} must be positive: a zero or negative one is a caller's
+     * mistake, not an author's, and is refused here rather than producing a nonsense answer per value.
+     *
+     * @param modulus the size of the circle, e.g. 360 for degrees
+     */
+    public static Codec<Integer> wrappedInt(int modulus) {
+        if (modulus <= 0) {
+            throw new IllegalArgumentException("wrappedInt(" + modulus + "): the modulus must be positive");
+        }
+        return Codec.INT.flatXmap(
+                // `%` alone keeps the sign of the dividend, so the second term is what makes -90 read as 270
+                // rather than as -90 or as 0. Written out rather than via floorMod so it does not depend on a
+                // library's sign convention.
+                value -> DataResult.success(((value % modulus) + modulus) % modulus),
+                value -> DataResult.success(value));
+    }
+
+    /**
      * A codec for a raw JSON object, carried exactly as it was written.
      *
      * <p>For a field whose contents belong to another system — a theme patch is validated and parsed by
