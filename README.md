@@ -9,6 +9,14 @@ beside any mod that needs it.
 > **Before its first stable release.** The API may still break, so read the release
 > notes before upgrading.
 
+## Why Armature
+
+- **[One game-free renderer seam](docs/toolkit/index.md).** Every draw call goes through `GuiRenderer`, so UI is unit-tested in milliseconds instead of eyeballed in screenshots.
+- **[Layout, text, and shapes without a client](docs/toolkit/index.md).** Headless-tested arithmetic over rectangles and strings — pan, zoom, wrapping, hit-testing that agrees with drawing by construction.
+- **[Strict JSON with did-you-mean](docs/api/data.md).** Line and column per path, presence and type checks with suggestions, and problem reports a mod's own format can reuse.
+- **[Teams resolve in order](docs/api/teams.md).** `Teams.of(server)` reads an explicit provider, then FTB Teams, then Open Parties and Claims, then the built-in stored fallback.
+- **[Per-mod appearance](docs/toolkit/themes.md).** Each mod owns its `Look`, so two mods never share one player's theme file.
+
 ## Using it
 
 Drop the jar in `mods/`, on either loader. Fabric also needs Fabric API. See the
