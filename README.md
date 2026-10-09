@@ -1,14 +1,18 @@
 # Armature
 
-Shared library and UI toolkit for **Fabric** and **NeoForge**, for **Minecraft 1.21.1**.
+The shared library and UI toolkit beneath the modern ecosystem, for Fabric and NeoForge.
 
-Armature is a standalone library mod. Nothing in it is specific to any one consumer, and it can be
-installed on its own.
+Armature is a standalone library mod: a loader seam, a strict JSON reader, event,
+network, and team APIs, plus a client toolkit — layout, scrolling, text models, shapes,
+themes, widgets, and the machinery behind a property editor — all drawn through one
+game-free renderer seam.
 
-> **Status: 0.1.5 — pre-1.0, and not yet a stability promise.** The platform layer, the data and
-> validation helpers, the event, network and team APIs, and the UI toolkit are all built and in use,
-> but the version is below 1.0 on purpose: a break in the API needs only a minor bump, so read the
-> release notes before upgrading.
+Nothing in it is specific to any one consumer, and it installs on its own. A mod can
+use the toolkit without inheriting another mod's assumptions.
+
+> **Before its first stable release.** Everything below is built and in use, but the API
+> is still allowed to break. Read the release notes before upgrading rather than
+> assuming the surface is frozen.
 
 ## What is in it
 
@@ -17,81 +21,76 @@ installed on its own.
 | Package | What it gives a mod |
 |---|---|
 | `api/platform` | The loader seam: environment kind, game and config directories, `isModLoaded` and `modVersion`. |
-| `api/registry` | `SimpleRegistry<T>` for a mod's own Java-object registries, and `Registrar` — `register(id, supplier)` in the caller's namespace, duplicates rejected. |
-| `api/event` | Eight server-thread events: server starting, started and stopping, player tick, join and leave, entity death, and command registration. |
-| `api/net` | Payload declaration and registration with a direction and handlers, plus `sendToPlayer` and `sendToServer`. |
-| `api/data` | A strict JSON parser that records a line and column per path, presence and type checks with "did you mean" suggestions, `Problems`/`DataProblem` reporting, codec helpers, and `TypeDispatch` for type-tagged objects. |
+| `api/registry` | `SimpleRegistry` for a mod's own Java-object registries, and `Registrar` — register in the caller's namespace, duplicates rejected. |
+| `api/event` | Server-thread events: server starting, started and stopping, player tick, join and leave, entity death, and command registration. |
+| `api/net` | Payload declaration and registration with a direction and handlers, plus sending to a player and to the server. |
+| `api/data` | A strict JSON parser that records a line and column per path, presence and type checks with "did you mean" suggestions, problem reporting, codec helpers, and type dispatch for type-tagged objects. |
 | `api/client` | Key-mapping declaration and screen opening that name no client class until a loader supplies the backend. |
 | `api/teams` | `Team`, `TeamRole`, `TeamManager`, the team events, and a `Teams.of(server)` facade. |
 
 ### The client toolkit — `common/src/main/java/dev/ellipog/armature/client/`
 
-- **One renderer seam.** `GuiRenderer` is a game-free drawing interface: fill, text, styled runs,
-  item icons, player faces, blur, scissored clips, and a `batched` region — one submission for a
-  stretch of drawing that would otherwise flush per fill on the unmanaged screen path. `render/
-  GuiGraphicsRenderer` is its 1.21.1 implementation, and the toolkit draws through the interface.
-- **`ui.kit`** — layout (`Stack` to `Layout` to `Slot`, with measurement and hit-testing),
-  `Viewport` and `ScrollView` for pan, zoom, clamped scrolling and row culling, `ScrollBar` for the
-  bar itself (drag, groove paging with a hold-repeat, wheel accumulation and three drawn states), the
-  text models
-  (`TextField`, `TextArea`, selection, undo/redo, wrapping, codepoint-safe movement, and markdown
-  through `RichText`), and the visual vocabulary (`RoundedRect`, `NineSlice`, `Outline`, `Colour`,
-  `Easing`, `Tween`, `Motion`, `Hover`).
-- **`ui.shape`** — a `Shape` is a span list per row, so drawing and hit-testing agree by
-  construction. Eleven named shapes — rectangle, circle, hexagon, tome, diamond, star, octagon,
-  pentagon, gear, heart, rounded — plus rounded, rotated and point-sampled factories.
-- **Themes** — a `Theme` record of colour tokens, the corner radius, the motion duration and curve,
-  and the canvas background, with sixteen built-ins and JSON patches read from a themes directory the
-  mod hands `Look`. The library never chooses that directory, so a mod owns its own appearance file
-  rather than sharing one with everything else on the client. `Look` is the per-mod instance a mod
-  owns, and `ArmatureTheme` scopes a theme to a region while drawing.
-- **Canvas backgrounds** — a theme field rather than a feature of a screen: a flat surface, a
-  procedural pattern drawn from arithmetic, or a tiled or covered image. A pattern is anchored either
-  to the content, so it pans and zooms with the graph under it, or to the screen, so the content
-  glides over it.
-- **Widgets and screens** — `ArmatureButton`, `ArmatureTextField`, `ArmatureTextArea`,
-  `ArmatureSlider` and `ArmatureSwitch`, and `ArmatureScreen` with `ArmatureLive`, which rebuilds the
-  screen when watched state changes. `ArmatureScreens` is the screen registry and the opener.
-- **`ui.inspect`** — the machinery behind a property editor: typed fields with parse errors, row
-  kinds and metrics, and section panels a mod registers per type.
-- **`ui.party`** — `PartyRoster`, the model behind a party panel: members, roles, self and owner
+- **One renderer seam.** `GuiRenderer` is a game-free drawing interface: fill, text,
+  styled runs, item icons, player faces, blur, scissored clips, and a `batched` region —
+  one submission for a stretch of drawing that would otherwise flush per fill on the
+  unmanaged screen path. The toolkit draws through the interface; the per-version
+  implementation sits behind it, so a port swaps the implementation and the toolkit
+  above it does not move.
+- **`ui.kit`** — layout (`Stack` to `Layout` to `Slot`, with measurement and
+  hit-testing), `Viewport` and `ScrollView` for pan, zoom, clamped scrolling and row
+  culling, `ScrollBar` for the bar itself (drag, groove paging with hold-repeat, wheel
+  accumulation, three drawn states), the text models (`TextField`, `TextArea`,
+  selection, undo/redo, wrapping, codepoint-safe movement, Markdown through
+  `RichText`), and the visual vocabulary (`RoundedRect`, `NineSlice`, `Outline`,
+  `Colour`, `Easing`, `Tween`, `Motion`, `Hover`).
+- **`ui.shape`** — a `Shape` is a span list per row, so drawing and hit-testing agree
+  by construction. Named shapes — rectangle, circle, hexagon, tome, diamond, star,
+  octagon, pentagon, gear, heart, rounded — plus rounded, rotated, and point-sampled
+  factories.
+- **Themes** — a `Theme` record of colour tokens, corner radius, motion duration and
+  curve, and canvas background, with a set of built-ins and JSON patches read from a
+  themes directory the mod hands `Look`. The library never chooses that directory, so
+  a mod owns its own appearance file instead of sharing one with everything else on
+  the client. `Look` is the per-mod instance a mod owns.
+- **Canvas backgrounds** — a theme field, not a screen feature: a flat surface, a
+  procedural pattern drawn from arithmetic, or a tiled or covered image. A pattern
+  anchors either to the content, so it pans and zooms with the graph under it, or to
+  the screen, so the content glides over it.
+- **Widgets and screens** — button, text field, text area, slider, and switch, plus a
+  screen base with a live variant that rebuilds when watched state changes. A screen
+  registry with an opener.
+- **`ui.inspect`** — the machinery behind a property editor: typed fields with parse
+  errors, row kinds and metrics, and section panels a mod registers per type.
+- **`ui.party`** — the model behind a party panel: members, roles, self and owner
   flags, and who may be removed.
+
+The layout engine, text models, and shapes are arithmetic over rectangles and strings,
+so they are asserted in milliseconds without a client, a font, or a window.
 
 ### Teams
 
-`Teams.of(server)` resolves a server's parties in order: a provider a mod registered explicitly,
-then FTB Teams, then Open Parties and Claims, then Armature's own stored teams — world-persisted,
-and the fallback when nothing else is present. FTB Teams and Open Parties and Claims are
-`compileOnly` and never reach a jar or the published POM; each adapter is only class-loaded behind
-an `isModLoaded` check, so a server with neither loses nothing.
+`Teams.of(server)` resolves a server's parties in order: a provider a mod registered
+explicitly, then FTB Teams, then Open Parties and Claims, then Armature's own stored
+teams — world-persisted, and the fallback when nothing else is present. The two
+third-party integrations are compile-only and never reach a jar or the published POM.
+Each adapter loads only behind an `isModLoaded` check, so a server with neither loses
+nothing.
 
-## Requirements
+## Installing
 
-| | |
-|---|---|
-| Minecraft | 1.21.1 |
-| Java | 21 |
-| Fabric | Fabric Loader 0.16.9+, with Fabric API 0.109.0+1.21.1 |
-| NeoForge | 21.1.80+ |
-| FTB Teams / Open Parties and Claims | optional — read as team sources when present |
+Drop the jar in `mods/`, on either loader. Fabric also needs Fabric API — NeoForge
+needs nothing beyond NeoForge itself.
 
-Fabric API is required on Fabric only. NeoForge needs nothing beyond NeoForge itself.
+See the Modrinth page for the supported Minecraft version and the required loader
+versions. The FTB Teams and Open Parties and Claims integrations are optional: when
+either is present it is read as a team source, and when neither is, Armature's stored
+teams carry on as before.
 
-## Building
+## Using it as a library
 
-```cmd
-gradlew build
-```
-
-Jars land in `fabric/build/libs` and `neoforge/build/libs`. Install the plain jar
-(`armature-fabric-1.21.1-0.1.5.jar`) — the `-sources` jars are not mods. The test
-suite is JUnit 5, headless, and part of `gradlew build`; the kit's layout and text models are
-game-free by design, which is what lets them be asserted on without a running client.
-
-### Using Armature as a library
-
-Armature's API is published to its own Maven repository, so a mod compiles against it with a
-repository line and a coordinate — no clone, and nothing to publish first:
+A mod compiles against Armature's published artifact rather than its source tree — a
+repository line and a coordinate, no clone and nothing to publish first. See the
+releases page for the current coordinate, in this shape:
 
 ```groovy
 repositories {
@@ -99,31 +98,44 @@ repositories {
 }
 
 dependencies {
-    // The API to compile against. `compileOnly`, because at runtime Armature is a separate mod jar
-    // sitting beside yours in the mods folder -- it is never bundled into a consumer's jar.
-    compileOnly 'dev.ellipog:armature-common-1.21.1:0.1.5'
+    // The API to compile against. compileOnly: at runtime Armature is a separate
+    // mod jar sitting beside yours in the mods folder, never bundled into it.
+    compileOnly 'dev.ellipog:armature-common-<minecraft-line>:<release>'
 }
 ```
 
-The coordinate carries the Minecraft version, so `armature-common-1.21.1` and `armature-common-1.20.1`
-are different artefacts and can never be confused. The `-fabric` and `-neoforge` siblings are on the
-same repository; they are the mod jars, for a dev run's `runtimeOnly`. The optional teams mods are in
-neither POM.
+The coordinate carries the Minecraft line, so artifacts for different Minecraft lines
+are different artifacts and can never be confused. The loader-specific siblings live
+on the same repository — they are the mod jars, for a dev run's runtime classpath.
+The optional team mods appear in neither POM, so a consumer never inherits a
+dependency on a mod it may not run.
 
-Every tagged release publishes this automatically, and a published version is permanent — a fix is a
-new version, never a re-upload. To compile against an *unreleased* Armature instead:
+To compile against an unreleased Armature instead — a change on its main branch before
+any release:
 
 ```cmd
 gradlew publishToMavenLocal
 ```
 
-which puts `dev.ellipog:armature-common-1.21.1:<version>` in the local Maven repository, where a
-sibling checkout finds it first. `gradlew publishToLocalRepo` writes the same thing to `build/repo`
-as a Maven tree, which is what the release workflow uploads.
+That places the artifact in the local Maven repository, where a sibling checkout
+finds it first. `gradlew publishToLocalRepo` writes the same thing to `build/repo`
+as a Maven tree, which is what the release workflow uploads. Every tagged release
+publishes automatically, and a published release is permanent — a fix is a new
+release, never a re-upload.
 
-## Deploying to a local test profile
+## Building
 
-Three tasks copy the freshly built jars straight into the Modrinth App profiles named in
+```cmd
+gradlew build
+```
+
+Jars land in `fabric/build/libs` and `neoforge/build/libs` — install the plain jars,
+not the `-sources` jars. The test suite is headless and runs as part of the build.
+The kit's layout and text models are game-free by design, which is what lets them be
+asserted on without a running client; the client tests draw through a recording
+renderer rather than a running game.
+
+Three tasks copy freshly built jars into the Modrinth App profiles named in
 `gradle.properties`:
 
 ```cmd
@@ -132,32 +144,30 @@ gradlew deployNeoForge   :: NeoForge profile only
 gradlew deployAll        :: both
 ```
 
-Each one deletes the previous copies from the profile before copying, so you never end up with
-`armature-...jar` and `armature-... (1).jar` sitting side by side — Minecraft picks whichever it
-likes, and the resulting bug hunt is never worth it.
-
-If your profiles are named something else, edit these two lines in `gradle.properties`:
-
-```properties
-testModsDirFabric=<your Modrinth profile folder>/mods
-testModsDirNeoForge=<your Modrinth profile folder>/mods
-```
+Each deletes the previous copies first, so stale duplicates never sit side by side.
+If your profiles are named differently, edit the two `testModsDir` lines in
+`gradle.properties`.
 
 ## Layout
 
-| Project | What goes there |
+| Path | What goes there |
 |---|---|
 | `common/` | Compiled against vanilla only. `api/` is the public surface, `impl/` is internal and free to change, `client/` is the renderer seam and the toolkit. |
 | `fabric/` | Fabric entry points: platform, registrar, events, key mappings. |
 | `neoforge/` | NeoForge entry points for the same. |
-| `buildSrc/` | The shared Gradle logic both loaders apply — the jar naming, the `sources` jar, and the deploy tasks. A new `gradle.properties` field has to be added to its `expandProps` map to reach the metadata. |
-| `docs/` | Documentation: `docs/index.md` is the front door, `docs/api/` covers the mod-facing API, and `docs/toolkit/` the client toolkit. |
+| `buildSrc/` | Shared Gradle logic both loaders apply — jar naming, the `sources` jar, and the deploy tasks. A new `gradle.properties` field has to be added to its `expandProps` map to reach the metadata. |
+| `docs/` | `docs/index.md` is the front door, `docs/api/` covers the mod-facing API, `docs/toolkit/` the client toolkit. |
 
-`common/` cannot reference `fabric/` or `neoforge/`. That direction is enforced by the build, not
-by convention.
+`common/` cannot reference `fabric/` or `neoforge/`. That direction is enforced by
+the build, not by convention.
 
-Based on the [MultiLoader Template](https://github.com/Jaredlll08/MultiLoader-Template), with the
-Forge subproject removed.
+Based on the [MultiLoader Template](https://github.com/Jaredlll08/MultiLoader-Template),
+with the Forge subproject removed.
+
+## Links
+
+- Manual: `docs/index.md`, mirrored at [ellipog.dev](https://ellipog.dev/docs/armature/)
+- Community: see the Discord link in `gradle.properties`
 
 ## Licence
 
