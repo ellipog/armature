@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.JsonOps;
 
 import java.util.ArrayList;
@@ -67,8 +68,22 @@ public final class Checks {
      * @param input an already-parsed value, normally a {@link JsonDocument}'s root
      */
     public static <T> DataResult<T> parse(Codec<T> codec, JsonElement input) {
+        return parse(codec, input, JsonOps.INSTANCE);
+    }
+
+    /**
+     * The same boundary over caller-supplied ops: registry-backed codecs (data components,
+     * holders, tags) decode against registries, which plain JSON ops cannot see. Callers
+     * with a registry context pass it here; callers without one use {@link #parse(Codec,
+     * JsonElement)} and accept that registry-backed fields cannot be judged.
+     *
+     * @param codec the codec to run. Its own functions may throw; this method will not.
+     * @param input an already-parsed value, normally a {@link JsonDocument}'s root
+     * @param ops   the ops to decode with, usually registry ops from the server
+     */
+    public static <T> DataResult<T> parse(Codec<T> codec, JsonElement input, DynamicOps<JsonElement> ops) {
         try {
-            return codec.parse(JsonOps.INSTANCE, input);
+            return codec.parse(ops, input);
         }
         catch (RuntimeException e) {
             return DataResult.error(() -> "this value made the codec throw rather than report a problem: "
