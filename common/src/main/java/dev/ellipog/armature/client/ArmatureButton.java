@@ -105,6 +105,17 @@ public class ArmatureButton extends AbstractWidget {
     private net.minecraft.world.item.ItemStack icon;
 
     /**
+     * A texture file drawn before the label instead of the item, or null.
+     *
+     * <p>For a control whose picture is a file rather than an item — a chapter row wearing a pack's
+     * emblem. Drawn stretched into the same box the item would take, so a row of controls with and
+     * without icons still lines its labels up. An item set beside it wins, because the item is what
+     * every control drawn before this field existed wears; the two never arrive together from one
+     * icon, which carries one arm or the other.
+     */
+    private net.minecraft.resources.ResourceLocation texture;
+
+    /**
      * How far the icon sits inside the control's own edge, on every side.
      *
      * <h2>Why this is a field rather than the two numbers it was</h2>
@@ -268,6 +279,18 @@ public class ArmatureButton extends AbstractWidget {
 
     public ArmatureButton icon(net.minecraft.world.item.Item item) {
         return icon(new net.minecraft.world.item.ItemStack(item));
+    }
+
+    /**
+     * A texture file drawn before the label instead of the item.
+     *
+     * <p>Null clears it. An item set beside it wins when both are set, so a control that learned a
+     * texture never changes what it drew for an item. See {@link #texture} for why the two never
+     * arrive together.
+     */
+    public ArmatureButton texture(net.minecraft.resources.ResourceLocation id) {
+        this.texture = id;
+        return this;
     }
 
     /**
@@ -507,9 +530,13 @@ public class ArmatureButton extends AbstractWidget {
         // lines its labels up. Both numbers come from the one inset -- see `iconInset` -- so a control
         // can say "two pixels in" and get two pixels on all four sides rather than three on the left.
         int iconBox = Math.max(8, height - iconInset * 2);
-        int iconSlot = icon != null ? iconBox + 4 : 0;
+        int iconSlot = icon != null || texture != null ? iconBox + 4 : 0;
         if (icon != null) {
             renderer.icon(icon, getX() + iconInset, getY() + (height - iconBox) / 2, iconBox);
+        }
+        else if (texture != null) {
+            renderer.texture(texture, getX() + iconInset, getY() + (height - iconBox) / 2,
+                    iconBox, iconBox);
         }
 
         int textLeft = getX() + iconSlot;

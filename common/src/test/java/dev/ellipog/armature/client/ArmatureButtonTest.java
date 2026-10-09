@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A control's label ink, and the box its sprite is drawn in.
@@ -108,5 +109,31 @@ class ArmatureButtonTest {
         assertEquals(2, tight.x(), "an inset of two puts the sprite two pixels in");
         assertEquals(2, tight.y(), "on every side, not two on the left and one on the right");
         assertEquals(12, tight.x2(), "and a 16-pixel control draws a 12-pixel sprite");
+    }
+
+    @Test
+    @DisplayName("a texture draws in the icon's box, and an item set beside it wins")
+    void textureDrawsInTheIconBox() {
+        RecordingRenderer file = RecordingRenderer.create();
+        new ArmatureButton(0, 0, 20, 20, Component.literal("Book"), () -> {
+        }).texture(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pack", "textures/gui/emblem.png"))
+                .draw(file, 0L);
+
+        assertEquals(1, file.textures().size(), "one blit, not an item");
+        assertEquals(3, file.textures().get(0).x(), "in the icon's box, three pixels in");
+        assertEquals(14, file.textures().get(0).x2() - file.textures().get(0).x(),
+                "a 20-pixel control draws a 14-pixel picture");
+
+        // Both set is the item: a control that learned a texture never changes what it drew for one.
+        MinecraftTestBootstrap.boot();
+        RecordingRenderer both = RecordingRenderer.create();
+        new ArmatureButton(0, 0, 20, 20, Component.literal("Book"), () -> {
+        }).icon(new ItemStack(Items.STONE))
+                .texture(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pack",
+                        "textures/gui/emblem.png"))
+                .draw(both, 0L);
+
+        assertEquals(1, both.icons().size(), "the item wins");
+        assertTrue(both.textures().isEmpty(), "and the texture draws nothing beside it");
     }
 }
