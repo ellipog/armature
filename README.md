@@ -11,11 +11,11 @@ beside any mod that needs it.
 
 ## Why Armature
 
-- **[One game-free renderer seam](docs/toolkit/index.md).** Every draw call goes through `GuiRenderer`, so UI is unit-tested in milliseconds instead of eyeballed in screenshots.
-- **[Layout, text, and shapes without a client](docs/toolkit/index.md).** Headless-tested arithmetic over rectangles and strings — pan, zoom, wrapping, hit-testing that agrees with drawing by construction.
-- **[Strict JSON with did-you-mean](docs/api/data.md).** Line and column per path, presence and type checks with suggestions, and problem reports a mod's own format can reuse.
-- **[Teams resolve in order](docs/api/teams.md).** `Teams.of(server)` reads an explicit provider, then FTB Teams, then Open Parties and Claims, then the built-in stored fallback.
-- **[Per-mod appearance](docs/toolkit/themes.md).** Each mod owns its `Look`, so two mods never share one player's theme file.
+- **[One game-free renderer seam](https://ellipog.dev/docs/armature/toolkit).** Every draw call goes through `GuiRenderer`, so UI is unit-tested in milliseconds instead of eyeballed in screenshots.
+- **[Layout, text, and shapes without a client](https://ellipog.dev/docs/armature/toolkit).** Headless-tested arithmetic over rectangles and strings — pan, zoom, wrapping, hit-testing that agrees with drawing by construction.
+- **[Strict JSON with did-you-mean](https://ellipog.dev/docs/armature/api/data).** Line and column per path, presence and type checks with suggestions, and problem reports a mod's own format can reuse.
+- **[Teams resolve in order](https://ellipog.dev/docs/armature/api/teams).** `Teams.of(server)` reads an explicit provider, then FTB Teams, then Open Parties and Claims, then the built-in stored fallback.
+- **[Per-mod appearance](https://ellipog.dev/docs/armature/toolkit/themes).** Each mod owns its `Look`, so two mods never share one player's theme file.
 
 ## Using it
 
@@ -29,11 +29,11 @@ at runtime.
 
 Details live in the manual:
 
-- [Manual front door](docs/index.md)
-- [Mod-facing API](docs/api/index.md) — platform, registries, events, networking
-- [Strict JSON reader](docs/api/data.md)
-- [Teams](docs/api/teams.md) — where a server's parties are read from
-- [Client toolkit](docs/toolkit/index.md) — renderer seam, layout, text, shapes, themes, widgets
+- [Manual front door](https://ellipog.dev/docs/armature)
+- [Mod-facing API](https://ellipog.dev/docs/armature/api) — platform, registries, events, networking
+- [Strict JSON reader](https://ellipog.dev/docs/armature/api/data)
+- [Teams](https://ellipog.dev/docs/armature/api/teams) — where a server's parties are read from
+- [Client toolkit](https://ellipog.dev/docs/armature/toolkit) — renderer seam, layout, text, shapes, themes, widgets
 
 ## Building
 
