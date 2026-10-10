@@ -646,10 +646,23 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      * <p>{@code blit} with the image's own size named as the texture size, which is the whole of it:
      * the shorter overload assumes a 256×256 sheet and would sample the wrong region of a 12-pixel
      * file, so both sizes are written out.
+     *
+     * <p>The colour is set first, like {@link #scaled} and {@link #sprite} do: setting it flushes
+     * a managed batch when one is open, so this blit is submitted on its own rather than queued
+     * behind fills with a pipeline state it did not ask for. Every other picture call already
+     * escapes the batch this way — items through their own flush, sprites and scaled blits
+     * through this same colour set — and the plain blit was the one call that did not. White
+     * draws the file exactly as authored, so callers see no change outside a batch.
      */
     @Override
     public void texture(ResourceLocation texture, int x, int y, int width, int height) {
-        graphics.blit(texture, x, y, width, height, 0F, 0F, width, height, width, height);
+        graphics.setColor(1F, 1F, 1F, 1F);
+        try {
+            graphics.blit(texture, x, y, width, height, 0F, 0F, width, height, width, height);
+        }
+        finally {
+            graphics.setColor(1F, 1F, 1F, 1F);
+        }
     }
 
     /**

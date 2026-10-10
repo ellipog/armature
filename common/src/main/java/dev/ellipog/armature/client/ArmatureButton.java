@@ -116,6 +116,16 @@ public class ArmatureButton extends AbstractWidget {
     private net.minecraft.resources.ResourceLocation texture;
 
     /**
+     * An atlas region drawn before the label instead of the item, or null.
+     *
+     * <p>For a control whose picture is a region rather than a file — a chapter row wearing a
+     * pack's block sprite. Drawn from the atlas into the same box the item would take. An item
+     * set beside it wins, then a texture; the three never arrive together from one icon, which
+     * carries one arm or the other.
+     */
+    private net.minecraft.resources.ResourceLocation sprite;
+
+    /**
      * How far the icon sits inside the control's own edge, on every side.
      *
      * <h2>Why this is a field rather than the two numbers it was</h2>
@@ -290,6 +300,17 @@ public class ArmatureButton extends AbstractWidget {
      */
     public ArmatureButton texture(net.minecraft.resources.ResourceLocation id) {
         this.texture = id;
+        return this;
+    }
+
+    /**
+     * An atlas region drawn before the label instead of the item.
+     *
+     * <p>Null clears it. The item wins when set beside it, then the texture, for the same
+     * reason the texture yields to the item: one icon arm per control, resolved in one order.
+     */
+    public ArmatureButton sprite(net.minecraft.resources.ResourceLocation id) {
+        this.sprite = id;
         return this;
     }
 
@@ -530,13 +551,17 @@ public class ArmatureButton extends AbstractWidget {
         // lines its labels up. Both numbers come from the one inset -- see `iconInset` -- so a control
         // can say "two pixels in" and get two pixels on all four sides rather than three on the left.
         int iconBox = Math.max(8, height - iconInset * 2);
-        int iconSlot = icon != null || texture != null ? iconBox + 4 : 0;
+        int iconSlot = icon != null || texture != null || sprite != null ? iconBox + 4 : 0;
         if (icon != null) {
             renderer.icon(icon, getX() + iconInset, getY() + (height - iconBox) / 2, iconBox);
         }
         else if (texture != null) {
             renderer.texture(texture, getX() + iconInset, getY() + (height - iconBox) / 2,
                     iconBox, iconBox);
+        }
+        else if (sprite != null) {
+            renderer.sprite(sprite, getX() + iconInset, getY() + (height - iconBox) / 2,
+                    iconBox, iconBox, 0xFFFFFFFF);
         }
 
         int textLeft = getX() + iconSlot;
