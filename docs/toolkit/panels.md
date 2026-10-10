@@ -78,8 +78,9 @@ written — the fallback is not a panel, and does not count.
 ```java
 PartyRoster roster = PartyRoster.of(team, viewerId, nameLookup, onlineLookup);
 for (PartyRoster.Member m : roster.members()) {
-    // m.key() and m.removeKey() place the row and its Remove button; m.label() says
-    // the name, with "(you)" appended when it is the viewer.
+    // m.key(), m.removeKey() and m.transferKey() place the row and its Remove and
+    // Transfer buttons; m.label() says the name, with "(you)" appended when it is
+    // the viewer, and m.roleLabel() the role the way the command spells it.
 }
 ```
 
@@ -98,3 +99,9 @@ screen explains. A consumer that draws a role badge from the same strip measures
 From a wire-format rather than a live team, `PartyRoster.fromParts(..., policy, memberLimit)` builds
 the same roster from what the snapshot carried — `canRemove` and friends recomputed from the roles
 rather than sent, because a boolean that travels can disagree with the roles it came from.
+
+The roster also answers what the viewer may do with the party as a whole — `canLeave`,
+`canDisband`, `canInvite`, `canRename`, `canSetPolicy` — and what the party is: `memberCount`,
+`memberLimit` with `hasMemberLimit`, `membersCanInvite`, `openJoin`, and `removableCount` for the
+rows a Remove button may sit on. A panel asks these rather than re-deriving them from roles, for
+the same reason a kick button asks `canActOn`.

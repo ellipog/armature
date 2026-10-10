@@ -55,7 +55,7 @@ meaning anything.
 | `HEXAGON` | A true flat-topped hexagon: a horizontal edge top and bottom, straight flanks, points at the sides. Regular, so it keeps a few rows of air above and below. |
 | `OCTAGON` | A regular octagon: equal straight chamfers on all four corners. |
 | `PENTAGON` | A regular pentagon, point up: five equal sides, a flat base, its widest row above the middle. |
-| `GEAR` | A cog with eight wide-rooted trapezoidal teeth (six on the smallest nodes) round a large hub. |
+| `GEAR` | A cog with eight wide-rooted trapezoidal teeth (six below 32 pixels, where eight would be too many to read) round a large hub. |
 | `HEART` | The classic curve, fitted whole — its own proportions, not stretched to fill the square. |
 | `TOME` | A book: a flat spine notched at its head and tail, and a rounded fore-edge. |
 | `STAR` | A four-point star: tips at the top, right, bottom and left, and curved sides pinching in between them. |
@@ -83,7 +83,8 @@ Shape named = Shapes.byName("gear", Shapes.RECT);
   circle is left exactly alone and a square at 45 degrees becomes the largest diamond the node holds.
   Nothing is ever stretched, and a turn can only make a node smaller, never larger: a turned node is
   drawn, clicked and fitted in its turned form inside its own square.
-- `byName(name, fallback)` is the lookup a file needs: `"shape": "gear"` resolves, and an unknown name
+- `byName(name, fallback)` is the lookup a file needs: `"shape": "gear"` resolves — as do the
+  aliases `star_4` and `rect`/`rectangle`/`square` — and an unknown name
   falls back rather than failing to load.
 
 ## The layers, and why they are derived

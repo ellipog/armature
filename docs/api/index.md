@@ -22,7 +22,7 @@ vanilla equivalent:
 | `isModLoaded(modId)` | Whether a mod is loaded. Safe to ask about any id, including ones that do not exist. |
 | `modVersion(modId)` | The version a loaded mod reports, as the string it reports. Empty when absent. |
 | `isClient()` | Whether this is a client. On a dedicated server, `false`. |
-| `isDevelopmentEnvironment()` | Whether this is a development environment rather than a player's install. |
+| `isDevelopmentEnvironment()`, `environmentName()` | Whether this is a development environment rather than a player's install — and that answer as the word `development` or `production`. |
 | `gameDir()`, `configDir()`, `configDir(child)` | The instance folder, the config folder, and a folder inside config. |
 
 > [!WARNING]
@@ -73,7 +73,8 @@ THINGS.register(id, new MyThing(...));
 It exists because this is the addon API: a sealed set can never be extended by anyone else, and every
 saved file and network message is written in terms of the entry's identity, so the shape of that
 identity cannot be changed later. Registering the same id twice is an exception, not a silent
-replacement — two mods claiming one id is a bug worth a loud failure.
+replacement — two mods claiming one id is a bug worth a loud failure. `ids()` reads back sorted;
+`values()` in registration order.
 
 ## Events
 
@@ -114,7 +115,9 @@ ArmatureNetwork.register(new ArmatureNetwork.Registration<>(
 `Direction` is `TO_CLIENT`, `TO_SERVER` or `BIDIRECTIONAL`, and the constructor refuses a registration
 missing a handler for a direction it travels: a payload that arrives and does nothing is silent at
 runtime and reads as a bug in whatever was supposed to fire. Send with
-`ArmatureNetwork.sendToPlayer(player, payload)` and `sendToServer(payload)`.
+`ArmatureNetwork.sendToPlayer(player, payload)` and `sendToServer(payload)`; `isInstalled()`,
+`registeredCount()`, `registrations()` and `byId(id)` answer what is registered, which is what a
+second mod's payload problem is diagnosed with.
 
 ## Client seams
 
@@ -132,4 +135,7 @@ ArmatureClient.registerKeyMapping(
 ArmatureScreens.register(PANEL_SCREEN_ID, MyPanelScreen::new);
 ```
 
-The loader subprojects supply the backend; common code never mentions one.
+The loader subprojects supply the backend; common code never mentions one. The backend surface is
+small on purpose: `install` (once — a second install throws), `tick`, `translationKey` and
+`installScreenOpener` on the client side, `declare` and `poll` on the key-mapping backend, and
+`install`, `register` and `open` on `ArmatureScreens`.

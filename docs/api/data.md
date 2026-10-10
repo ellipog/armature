@@ -20,7 +20,8 @@ JsonLocation where = document.nearestLocation("$.tasks[2].count");
 `parse` records a line and column for every path as it goes. The methods after that are the questions
 a reader asks: `get(path)`, `has(path)`, `location(path)` (exact), `nearestLocation(path)` (where it
 *would* have been, for a missing field), `lineText(line)` (the source line, for showing it), and
-`locationCount()`. **A path is rooted at `$`** — `$.title`, `$.tasks[2].count` — and one that is not is
+`locationCount()`. `name()` and `root()` name the file and hand back the parsed tree; nesting past
+128 deep is refused rather than recursed into. **A path is rooted at `$`** — `$.title`, `$.tasks[2].count` — and one that is not is
 not a path this reader knows: it answers empty rather than guessing, so a path written without the root
 reads as a field that is simply missing.
 
@@ -37,9 +38,15 @@ List<String> tags = Checks.stringList(document, "$.tags", problems);
 ```
 
 `string`/`optionalString`, `integer`/`optionalInt`, `optionalBool`, `object`/`optionalObject`,
-`array`/`optionalArray`, `stringList`/`optionalStringList`, `exists`, and `nameOf` — the last takes the
+`array`/`optionalArray`, `stringList`/`optionalStringList`, `id`/`idList` (lowercase letters, digits
+and underscores, at most 64 characters), `exists`, and `nameOf` — the last takes the
 field name off the end of a path, which is how a "missing required field" message can say *which* field.
-The path syntax is the same one throughout: `$.tasks[2].count`.
+`rejectUnknown` reports every field outside the allowed set, with a did-you-mean where one is close;
+`kindOf` and `describe` say what a value is, for the message. `parse(codec, input)` runs a codec
+inside the same report instead of throwing — with an overload taking the caller's own ops — and
+`clampedInt`, `clampedDouble`, `wrappedInt` and `jsonObject` are the small codecs a format reuses.
+`JsonWrite.atomically(path, text)` is the write half: through a temp file and an atomic move, so a
+crash cannot leave half a file. The path syntax is the same one throughout: `$.tasks[2].count`.
 
 ## `Problems` and `DataProblem`
 
@@ -82,5 +89,7 @@ Codec<MyTask> codec = TypeDispatch.codec(
 ```
 
 An unknown type fails with the known ones listed. A `MapCodec` per spec is what keeps `count` at the
-task's own level rather than nested under a `task` object, and `TypeSpec` pairs an id with its codec.
-This is the shape a mod's task and reward types are built with.
+task's own level rather than nested under a `task` object, and `TypeSpec` pairs an id with its codec —
+plus the type's field names, which is the set `rejectUnknown` checks a file against. The overload
+taking an unknown-type fallback is the additive-compatibility story: one addon's type in a file must
+not cost the author every quest in it. This is the shape a mod's task and reward types are built with.

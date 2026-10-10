@@ -13,7 +13,10 @@ claim.borderless(true);             // for a row that is already inside a box
 ```
 
 `ArmatureButton` also has `selected(...)` and `flat(...)`, so one class covers the loud button, the
-quiet one and the row that behaves like a choice.
+quiet one and the row that behaves like a choice. A button's picture need not be an item:
+`texture(id)` draws a texture file before the label and `sprite(id)` an atlas region, the item
+winning when set beside either — one icon arm per control — and `iconInset` says how far the
+sprite sits inside the edge.
 
 `ArmatureTextField` and `ArmatureTextArea` are the editing widgets; the models under them are on
 [[armature:toolkit/text]].

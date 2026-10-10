@@ -23,10 +23,14 @@ protected void renderContent(GuiRenderer r, int mouseX, int mouseY, float partia
 
 ## Drawing, and the one thing to know about it
 
-`GuiRenderer` has `fill`, `text`, `styledText` (runs of bold/italic/underline at a scale), `textWidth`,
-`lineHeight`, `icon(ItemStack, …)`, `face(UUID, …)`, `blur`, and `clip(left, top, right, bottom)` —
+`GuiRenderer` has `fill`, `text`, `shadowedText` (at a scale), `styledText` (runs of
+bold/italic/underline, each at a scale) with `styledWidth`, `centredText`, `textWidth`,
+`lineHeight`, `icon(ItemStack, …)` and `face(UUID, …)` (each answering whether it drew),
+`texture`/`scaled`/`sprite` stamps with `textureSize` for a file's own dimensions (`textureStamp`
+when only the handle is wanted), `turned` (a
+rotated region, closed like a clip), `blur`, and `clip(left, top, right, bottom)` —
 which returns a `Scoped` that closes the clip again, so a scissor cannot be left open by a return
-taken early.
+taken early. `clip` also takes a layout `Slot` or a `Viewport`, for the region a caller already holds.
 
 The other half of the seam is `batched(...)`: a region of drawing that submits once instead of once
 per fill, because the unmanaged screen path flushes per fill. It also has `flush()` for the caller

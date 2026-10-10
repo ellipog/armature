@@ -28,7 +28,7 @@ the wrong row. The key moves with the row.
 
 `Layout` is the result: `slots()`, `height()`, `isEmpty()`, `at(x, y)`, `slot(key)`, `visibleIn(top,
 bottom)`, and `visibleInViewport(viewportTop, viewportBottom, scrollOffset)` for a scrolled list.
-`Measure` is the only thing the layout needs to know about a font.
+`moved(dx, dy)` shifts the whole answer without re-laying it out. `Measure` is the only thing the layout needs to know about a font.
 
 ## `Viewport`: one transform, not four copies
 
@@ -48,7 +48,9 @@ float contentX = viewport.contentX(mouseX);
 
 `viewport.fixed()` is the no-zoom variant a scrolling list wants; `dragTo(screenX, screenY, grabX,
 grabY)` pans so a grabbed content point stays under the pointer; `setContentSize`, `scrollY`,
-`maxScrollY` and `scrollBy` are the scroll half.
+`maxScrollY` and `scrollBy` are the scroll half. `zoomAt` zooms keeping the pointer's content point
+still (answering whether the scale moved, so a caller at a limit skips the redraw),
+`zoomAboutCentre` is the pointerless form, and `centreOn` frames a content box without clamping.
 
 ## `ScrollView`: widgets inside a scrolled region
 
@@ -66,7 +68,7 @@ view.apply(layout, contentWidth);        // repositions every widget to its slot
 `put(key, widget[, shape])` names a widget into the layout; `apply(layout, contentWidth)` moves them
 after a layout pass and clamps the scroll against the new height — which is why a rebuild under a
 scrolled reader leaves the column where it was. `get(key)`, `size()`, `clear()`, `placedSlot(key)`,
-and the culling counts (`placed()`, `culled()`) round it out. Its bar is a `ScrollBar` — `bar()`, bound to
+`scrollBy`/`scrollTo`, and the culling counts (`placed()`, `culled()`) round it out. Its bar is a `ScrollBar` — `bar()`, bound to
 the strip just outside the viewport — and drawing it is one call:
 `bar().draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now)`.
 

@@ -35,6 +35,15 @@ rather than silently doing nothing. That is what makes read-only sources safe to
 exist, and they say what they are. A manager that *can* change is a `MutableTeamManager`, and asking
 is how a caller checks before offering a control.
 
+Three questions sort out what a source is, before any control is drawn. `managesMembership()` asks
+whether the structural calls do anything at all; `supports(...)` asks about the six extras one by
+one; `firesEvents()` asks whether the source announces its own changes onto `TeamEvents` below.
+`name()` names the answer — `stored`, `ftbteams` or `openpartiesandclaims` — which is the string a
+consumer prints when the operator asks "are these the parties I think they are".
+
+Party names are 1 to 32 characters — `TeamLimits.isValidName`, enforced where the name is written,
+so a blank, an overlong or a control-character name is refused with the reason rather than stored.
+
 ## Optional operations and capabilities
 
 Beyond the structural six there are operations a source may or may not be able to offer, and they are
@@ -46,9 +55,11 @@ if (teams.supports(TeamFeature.RENAME)) { /* offer the pencil */ }
 
 `TeamFeature` names them: `RENAME`, `TRANSFER`, `POLICY`, `OPEN_JOIN`, `INVITE_DECLINE`,
 `INVITE_CANCEL`. The stored manager supports all six. **Both foreign sources answer `false` for every
-one of them** — Open Parties and Claims writes membership through its own API rather than through
-this one, and FTB Teams is read-only here — so a panel asks rather than assumes, and hides the control
-rather than drawing a button whose only possible outcome is the refusal message.
+one of them** — so a panel asks rather than assumes, and hides the control rather than drawing a button
+whose only possible outcome is the refusal message. That answer is about the extras, not about
+membership itself: Open Parties and Claims manages its own parties through this API and honours the
+structural calls, while FTB Teams is read-only here, its six mutators the interface's refusing
+defaults.
 
 - `invite(actor, team, player)` is the actor-aware form: the permission is `Team.canInvite`, which
   `TeamPolicy.membersCanInvite` feeds, and enforcing it needs to know who is asking.
@@ -67,7 +78,8 @@ rather than drawing a button whose only possible outcome is the refusal message.
 than a set of ids, so an invitation row can show who asked and how long ago (a foreign source stores
 the owner and zero — see `TeamInvite` on why zero is the honest unknown), and `policy` holds the two
 switches. `TeamPolicy.DEFAULT` is invite-only with member invitations **on**, which is what version 1
-files migrate to and what a solo team carries. The permission rules — `canActOn`, `canInvite`,
+files migrate to and what a solo team carries; `TeamPolicy.OPEN` is the same with public joining
+allowed too. The permission rules — `canActOn`, `canInvite`,
 `canTransfer` — are methods on the record, and the numbers they read live in `TeamLimits`, so the
 manager enforcing them, the command explaining a refusal and the panel deciding whether to draw a
 control are one answer.
@@ -132,3 +144,10 @@ header and the server's refusal come from one number rather than two expressions
 `TEAM_RENAMED`, `OWNER_TRANSFERRED`, `POLICY_CHANGED` and `INVITE_CHANGED`, each a one-method
 listener over a small event object. A source that can announce a change is often the only way to find
 out one happened, which is why the events are part of the API rather than an extra.
+
+Every listener hears the server and the team first. After that: who joined or left, why they left
+(`Reason`: `LEFT`, `KICKED` or `DISBANDED` — a kick keeps its progression like a leave, because
+confiscation is not a moderation tool), the previous owner on a transfer, and the target and the
+`InviteKind` (`SENT`, `CANCELLED` or `DECLINED`) on an invitation. The team in the event already
+includes the change — the member joined, the name renamed — except the previous owner, which cannot
+be read off it any more and travels for exactly that reason.

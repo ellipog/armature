@@ -117,8 +117,10 @@ it unless it names its own.
 ## `Look`: the instance a mod owns
 
 The global palette is what is *drawn*; a `Look` is what a mod's player has *chosen*. It holds a theme
-name, the motion toggle, a radius, and any per-token overrides, and it is what a settings screen
-edits:
+name, the motion toggle, the text scale, a radius, a canvas background, and any per-token overrides,
+and it is what a settings screen edits. It is read from `appearance.json` in the mod's own config
+directory — each mod names its own directory when it calls `Look.load`, so two mods never share one
+player's file — with `themes/` beside it for the themes saved from the editor:
 
 ```java
 Look look = new Look();              // this mod's instance
