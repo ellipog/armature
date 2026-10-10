@@ -92,4 +92,4 @@ An unknown type fails with the known ones listed. A `MapCodec` per spec is what 
 task's own level rather than nested under a `task` object, and `TypeSpec` pairs an id with its codec —
 plus the type's field names, which is the set `rejectUnknown` checks a file against. The overload
 taking an unknown-type fallback is the additive-compatibility story: one addon's type in a file must
-not cost the author every quest in it. This is the shape a mod's task and reward types are built with.
+not cost the author everything else in it. This is the shape a mod's task and reward types are built with.
