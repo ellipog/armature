@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -55,6 +56,15 @@ public final class FabricEvents {
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) ->
                 ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(entity, source));
+
+        // AFTER fires once the block is gone, on either logical side: the
+        // ServerPlayer check is what keeps a client's own prediction from
+        // reaching server listeners, like the death hook's server-only source.
+        PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+            if (player instanceof ServerPlayer serverPlayer) {
+                ArmatureEvents.BLOCK_BROKEN.invoker().onBlockBroken(serverPlayer, state);
+            }
+        });
 
         // Fires on server start and again on every datapack reload, which is what the
         // NeoForge equivalent does too — so listeners register their commands each time

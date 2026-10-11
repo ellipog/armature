@@ -7,6 +7,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -65,6 +66,16 @@ public final class NeoForgeEvents {
         // anything that has to see the world in one particular state cannot rely on it.
         bus.addListener((LivingDeathEvent event) ->
                 ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(event.getEntity(), event.getSource()));
+
+        // BreakEvent is cancellable and fires before the break: a cancelled
+        // event is a protected block, so only an uncancelled one reaches
+        // listeners — that is the "actually happened" half of the contract
+        // Fabric's AFTER side gives for free.
+        bus.addListener((BlockEvent.BreakEvent event) -> {
+            if (!event.isCanceled() && event.getPlayer() instanceof ServerPlayer player) {
+                ArmatureEvents.BLOCK_BROKEN.invoker().onBlockBroken(player, event.getState());
+            }
+        });
 
         bus.addListener((RegisterCommandsEvent event) ->
                 ArmatureEvents.COMMANDS_REGISTER.invoker()

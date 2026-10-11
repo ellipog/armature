@@ -8,11 +8,12 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * The events Armature publishes, and the listeners they take.
  *
- * <p>Eight, chosen because they are the hooks a content mod actually needs and because
+ * <p>Nine, chosen because they are the hooks a content mod actually needs and because
  * both loaders can supply every one of them from public API — no mixins.
  *
  * <p>All of these fire on the <b>server</b> thread, on both integrated and dedicated
@@ -35,6 +36,11 @@ import net.minecraft.world.entity.LivingEntity;
  *   <li>{@link #ENTITY_DEATH} fires <b>after</b> the death on Fabric
  *       ({@code ServerLivingEntityEvents.AFTER_DEATH}) and <b>before</b> it on NeoForge
  *       ({@code LivingDeathEvent}, while it can still be cancelled).</li>
+ *   <li>{@link #BLOCK_BROKEN} fires <b>after</b> the break on Fabric
+ *       ({@code PlayerBlockBreakEvents.AFTER}) and <b>before</b> it on NeoForge
+ *       ({@code BlockEvent.BreakEvent}, while it can still be cancelled) — but only
+ *       forwarded when the break actually happens: a cancelled NeoForge event never
+ *       reaches a listener.</li>
  * </ul>
  *
  * <p>Both events therefore carry only what is immutably true on either side — the server
@@ -122,6 +128,18 @@ public final class ArmatureEvents {
     }
 
     /**
+     * A player broke a block.
+     *
+     * <p>Carries the breaker and the state <b>as it was broken</b> — the only moment it is
+     * real, on either loader. Anything that must see the world in one particular state
+     * has to cope with both orderings, the same caveat {@link #ENTITY_DEATH} carries.
+     */
+    @FunctionalInterface
+    public interface BlockBroken {
+        void onBlockBroken(ServerPlayer player, BlockState state);
+    }
+
+    /**
      * The server is collecting commands. Register a {@code /} command here.
      *
      * <p>Fires on server start and again on every datapack reload, so register each time
@@ -184,6 +202,13 @@ public final class ArmatureEvents {
             (LivingEntity entity, DamageSource source) -> {
                 for (EntityDeath listener : listeners) {
                     listener.onEntityDeath(entity, source);
+                }
+            });
+
+    public static final Event<BlockBroken> BLOCK_BROKEN = new Event<>(listeners ->
+            (ServerPlayer player, BlockState state) -> {
+                for (BlockBroken listener : listeners) {
+                    listener.onBlockBroken(player, state);
                 }
             });
 

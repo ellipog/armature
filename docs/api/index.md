@@ -78,7 +78,7 @@ replacement — two mods claiming one id is a bug worth a loud failure. `ids()` 
 
 ## Events
 
-`ArmatureEvents` publishes eight server-thread moments. Each listener is a one-method interface, so
+`ArmatureEvents` publishes nine server-thread moments. Each listener is a one-method interface, so
 registering one is a lambda:
 
 | Event | Listener receives |
@@ -86,6 +86,7 @@ registering one is a lambda:
 | `ServerStarting`, `ServerStarted`, `ServerStopping` | `MinecraftServer` |
 | `PlayerTick`, `PlayerJoin`, `PlayerLeave` | `ServerPlayer` |
 | `EntityDeath` | `LivingEntity`, `DamageSource` |
+| `BlockBroken` | `ServerPlayer`, `BlockState` (the state as broken; cancelled breaks never fire) |
 | `CommandsRegister` | `CommandDispatcher`, `CommandBuildContext`, `Commands.CommandSelection` |
 
 ```java
