@@ -362,6 +362,18 @@ public final class Tooltips {
 
     /** The box itself: the themed panel, then its lines. */
     private static void paint(GuiRenderer r, Placed placed) {
+        // Under vanilla chrome the procedural vanilla box: 1.21.1 ships no tooltip/* sprites,
+        // so an atlas lookup for one is the missing-texture checkerboard. The fill and two-tone
+        // frame are TooltipRenderUtil's own colours and the lines wear the game's shadow.
+        if (VanillaChrome.inForce()) {
+            VanillaChrome.tooltipBox(r, placed.x(), placed.y(), placed.width(), placed.height());
+            int lineY = placed.y() + PAD;
+            for (String line : placed.lines()) {
+                r.shadowedText(line, placed.x() + PAD, lineY, VanillaChrome.FLOATING_TEXT, 1F);
+                lineY += r.lineHeight();
+            }
+            return;
+        }
         ArmatureTheme.panel(r, placed.x(), placed.y(), placed.width(), placed.height(),
                 ArmatureTheme.tooltipFill(), ArmatureTheme.tooltipEdge());
         int lineY = placed.y() + PAD;

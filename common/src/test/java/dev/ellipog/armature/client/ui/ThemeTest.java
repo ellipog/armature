@@ -244,16 +244,17 @@ class ThemeTest {
         // a theme that is the right shape and has each colour shifted by one slot, which reads as a
         // palette nobody would choose rather than as a bug.
         assertThrows(IllegalArgumentException.class,
-                () -> Theme.from("x", new int[3], 4, 100L, Easing.LINEAR, CanvasBackground.NONE));
+                () -> Theme.from("x", new int[3], 4, 100L, Easing.LINEAR, CanvasBackground.NONE,
+                        Theme.Chrome.FLAT));
         assertThrows(IllegalArgumentException.class,
                 () -> Theme.from("x", new int[ThemeToken.ALL.size() + 1], 4, 100L, Easing.LINEAR,
-                        CanvasBackground.NONE));
+                        CanvasBackground.NONE, Theme.Chrome.FLAT));
         assertThrows(IllegalArgumentException.class,
                 () -> Theme.from("x", new int[ThemeToken.ALL.size()], -1, 100L, Easing.LINEAR,
-                        CanvasBackground.NONE));
+                        CanvasBackground.NONE, Theme.Chrome.FLAT));
         assertThrows(IllegalArgumentException.class,
                 () -> Theme.from("x", new int[ThemeToken.ALL.size()], 4, -1L, Easing.LINEAR,
-                        CanvasBackground.NONE));
+                        CanvasBackground.NONE, Theme.Chrome.FLAT));
     }
 
     @Test

@@ -136,4 +136,85 @@ class ArmatureButtonTest {
         assertEquals(1, both.icons().size(), "the item wins");
         assertTrue(both.textures().isEmpty(), "and the texture draws nothing beside it");
     }
+
+    @Test
+    @DisplayName("vanilla chrome draws the widget sprite with shadowed white ink")
+    void vanillaChromeDrawsWidgetSprites() {
+        // The whole of the vanilla button claim, assertable headless: one GUI sprite rather than
+        // flat fills, and a shadowed label rather than a plain one. A recorder sees which calls
+        // were made, which is the only way to tell a sprite from a fill without a client.
+        ArmatureTheme.setCurrent(Themes.VANILLA);
+        ArmatureButton button = new ArmatureButton(0, 0, 60, 20, Component.literal("Done"), () -> {
+        });
+
+        RecordingRenderer r = RecordingRenderer.create();
+        button.draw(r, 0L);
+
+        assertEquals(1, r.guiSprites().size(), "a vanilla button is one sprite: " + r.calls());
+        assertEquals(VanillaChrome.BUTTON.toString(), r.guiSprites().get(0).text());
+        assertTrue(r.fills().isEmpty(), "and no flat fills beside it");
+        assertEquals(1, r.shadowedTexts().size(), "vanilla labels wear the game's shadow");
+        assertEquals(VanillaChrome.FLOATING_TEXT, r.shadowedTexts().get(0).argb());
+        assertTrue(r.texts().isEmpty(), "and no plain label beside it");
+    }
+
+    @Test
+    @DisplayName("vanilla chrome swaps the sprite and the ink with the state")
+    void vanillaChromeFollowsState() {
+        ArmatureTheme.setCurrent(Themes.VANILLA);
+
+        RecordingRenderer hovered = RecordingRenderer.create();
+        new ArmatureButton(0, 0, 60, 20, Component.literal("Done"), () -> {
+        }).hoverTold(true).draw(hovered, 0L);
+        assertEquals(VanillaChrome.BUTTON_HIGHLIGHTED.toString(), hovered.guiSprites().get(0).text(),
+                "under the pointer the button wears its white border");
+
+        RecordingRenderer disabled = RecordingRenderer.create();
+        ArmatureButton off = new ArmatureButton(0, 0, 60, 20, Component.literal("Done"), () -> {
+        });
+        off.active = false;
+        off.draw(disabled, 0L);
+        assertEquals(VanillaChrome.BUTTON_DISABLED.toString(), disabled.guiSprites().get(0).text());
+        assertEquals(VanillaChrome.DISABLED_TEXT, disabled.shadowedTexts().get(0).argb(),
+                "a button that cannot be used says so in grey");
+    }
+
+    @Test
+    @DisplayName("vanilla chrome gives selected buttons their own ink, not the hover's")
+    void vanillaChromeMarksSelected() {
+        // Vanilla has no selected sprite, so a selected button that wore the plain look would
+        // vanish into the column — the reported bug. The sprite stays hover-driven while the
+        // label turns vanilla's formatting yellow, so every combination still reads: plain idle
+        // is stone and white, plain hovered adds the white border, selected adds the yellow ink.
+        ArmatureTheme.setCurrent(Themes.VANILLA);
+
+        RecordingRenderer idle = RecordingRenderer.create();
+        new ArmatureButton(0, 0, 60, 20, Component.literal("Done"), () -> {
+        }).selected(true).draw(idle, 0L);
+        assertEquals(VanillaChrome.BUTTON.toString(), idle.guiSprites().get(0).text(),
+                "selected does not fake a hover");
+        assertEquals(VanillaChrome.SELECTED_TEXT, idle.shadowedTexts().get(0).argb());
+
+        RecordingRenderer hovered = RecordingRenderer.create();
+        new ArmatureButton(0, 0, 60, 20, Component.literal("Done"), () -> {
+        }).selected(true).hoverTold(true).draw(hovered, 0L);
+        assertEquals(VanillaChrome.BUTTON_HIGHLIGHTED.toString(), hovered.guiSprites().get(0).text());
+        assertEquals(VanillaChrome.SELECTED_TEXT, hovered.shadowedTexts().get(0).argb(),
+                "and stays yellow under the pointer, unlike a plain hover's white");
+    }
+
+    @Test
+    @DisplayName("vanilla chrome leaves flat and borderless controls alone")
+    void vanillaChromeKeepsLabelsAsLabels() {
+        // A label that happens to be clickable is not a button in vanilla either: flat controls
+        // draw no sprite, and their ink stays the theme's rather than turning button-white.
+        ArmatureTheme.setCurrent(Themes.VANILLA);
+        RecordingRenderer r = RecordingRenderer.create();
+        new ArmatureButton(0, 0, 60, 20, Component.literal("Back"), () -> {
+        }).flat(true).draw(r, 0L);
+
+        assertTrue(r.guiSprites().isEmpty(), "a flat control is not a stone button");
+        assertEquals(Themes.VANILLA.title(), r.texts().get(0).argb(),
+                "so its label stays the theme's title ink, unshadowed");
+    }
 }

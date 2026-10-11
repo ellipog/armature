@@ -23,13 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The shipped themes: sixteen of them, in four families, and the look the project already had.
+ * The shipped themes: seventeen of them, in four families, and the look the project already had.
  *
  * <h2>Why the count and the distinctness are asserted rather than assumed</h2>
  *
  * <p>Because the names are the keys. They are what a setting stores, what a chapter names, and what the
  * picker's cycle walks — so two themes sharing one name makes one of them unreachable, and the lookup
- * silently returns whichever was declared first. "Fifteen" is asserted for a narrower reason: the four
+ * silently returns whichever was declared first. "Seventeen" is asserted for a narrower reason: the four
  * families were a deliberate choice by the person this is for, and a family quietly losing a member is
  * the kind of thing that is noticed a year later.
  *
@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Every theme here is a {@link ThemePatch} over {@code modern} rather than a hand-written full
  * palette, and that is the point rather than a convenience. It means the shipped set is itself proof
- * that the override mechanism is expressive enough for whatever a pack author will want — if sixteen
+ * that the override mechanism is expressive enough for whatever a pack author will want — if seventeen
  * themes of four genuinely different characters can all be written as patches, then a data file given
  * the same mechanism is not being offered a lesser version of it. Had the catalogue been full palettes
  * while patches were the "custom" path, the two would have diverged, and the divergence would only ever
@@ -57,9 +57,9 @@ class ThemesTest {
     }
 
     @Test
-    @DisplayName("there are sixteen, with distinct names and distinct labels")
-    void thereAreSixteenDistinctThemes() {
-        assertEquals(16, Themes.ALL.size());
+    @DisplayName("there are seventeen, with distinct names and distinct labels")
+    void thereAreSeventeenDistinctThemes() {
+        assertEquals(17, Themes.ALL.size());
 
         Set<String> names = new HashSet<>();
         Set<String> labels = new HashSet<>();
@@ -81,14 +81,14 @@ class ThemesTest {
     @Test
     @DisplayName("the four families are all present")
     void allFourFamiliesArePresent() {
-        // The families are: the default, first, because it is what a client is already using; the three
+        // The families are: the default, first, because it is what a client is already using; the four
         // originals, so nobody's muscle memory breaks; three chosen to solve a problem rather than to
         // look like somewhere; five drawn from the game's own materials and dimensions; and two that are
         // applications rather than places. Asserted by name because the *order* is a design statement
-        // too -- a list of sixteen in random order is a list nobody reads past the third entry.
+        // too -- a list of seventeen in random order is a list nobody reads past the third entry.
         List<String> expected = List.of(
                 "default",
-                "modern", "tome", "vanilla_plus",
+                "modern", "tome", "vanilla_plus", "vanilla",
                 "high_contrast", "monochrome", "paper",
                 "obsidian", "amethyst", "copper", "redstone",
                 "nether", "end", "deep_dark",
@@ -182,6 +182,12 @@ class ThemesTest {
         assertEquals(0L, Themes.HIGH_CONTRAST.motion());
         assertEquals(0, Themes.HIGH_CONTRAST.cornerRadius());
 
+        // And `vanilla`: square and still like `vanilla_plus`, for the same reason — vanilla has
+        // no rounded corners and no UI animation — with vanilla's own sprites on top.
+        assertEquals(0, Themes.VANILLA.cornerRadius());
+        assertEquals(0L, Themes.VANILLA.motion());
+        assertEquals(Easing.LINEAR, Themes.VANILLA.easing());
+
         // And a theme with motion, so "zero means instant" is not the only case exercised.
         assertTrue(Themes.MODERN.motion() > 0L);
         assertTrue(Themes.TOME.motion() > 0L);
@@ -190,7 +196,7 @@ class ThemesTest {
     }
 
     @Test
-    @DisplayName("three themes carry the surface their name promises, and the rest are flat")
+    @DisplayName("four themes carry the surface their name promises, and the rest are flat")
     void presetsCarryTheirBackgrounds() {
         // A theme file that names one of these inherits its surface, so these numbers are pinned
         // rather than left to drift with the model's defaults -- and the pattern is part of what the
@@ -207,8 +213,63 @@ class ThemesTest {
         assertEquals(CanvasBackground.Kind.DOTS, terminal.kind());
         assertEquals(2, terminal.tuning().size(), "terminal's dots are a shadow mask, not dust");
 
+        // Vanilla's canvas is the menu dirt, tiled: the one built-in whose surface is a texture
+        // rather than arithmetic. The tile is dirt's own 16 pixels, and the darkening is the
+        // canvasPattern alpha — an image draws in its own colours and only the alpha comes through.
+        CanvasBackground vanilla = Themes.VANILLA.background();
+        assertEquals(CanvasBackground.Kind.IMAGE, vanilla.kind());
+        assertEquals("minecraft:textures/block/dirt.png", vanilla.image().texture());
+        assertEquals(CanvasBackground.Fit.TILE, vanilla.image().fit());
+        assertEquals(16, vanilla.image().tileSize());
+
         // And the reference theme is flat: a pattern on every theme would make the default noisy.
         assertEquals(CanvasBackground.Kind.NONE, Themes.MODERN.background().kind());
+    }
+
+    @Test
+    @DisplayName("vanilla is the only vanilla-chromed theme, and every other built-in is flat")
+    void onlyVanillaIsVanillaChromed() {
+        // Chrome is a per-theme setting like the radius: one built-in asks for sprites, and a
+        // second one arriving by copy-paste would route half the catalogue through vanilla's
+        // atlas. Pinned so the addition of the next chromed theme is a decision with a test
+        // to update rather than a value nobody chose.
+        assertEquals(Theme.Chrome.VANILLA, Themes.VANILLA.chrome());
+        for (Theme theme : Themes.ALL) {
+            if (theme == Themes.VANILLA) {
+                continue;
+            }
+            assertEquals(Theme.Chrome.FLAT, theme.chrome(),
+                    theme.name() + " draws flat fills, or its panels changed without anyone saying so");
+        }
+
+        // And a file round-trips the value: a pack variant based on vanilla keeps its sprites,
+        // and one based on anything else keeps its fills.
+        ThemePatch patch = ThemePatch.fromJson(com.google.gson.JsonParser.parseString(
+                "{\"chrome\": \"vanilla\"}").getAsJsonObject(), new java.util.ArrayList<>());
+        assertEquals(Theme.Chrome.VANILLA, patch.chrome());
+        assertEquals(Theme.Chrome.VANILLA, patch.applyTo(Themes.MODERN).chrome());
+        assertEquals(Theme.Chrome.FLAT, Themes.MODERN.chrome(),
+                "applying a patch must not leak chrome into the base it was applied to");
+    }
+
+    @Test
+    @DisplayName("vanilla is a light theme, with vanilla's own state inks")
+    void vanillaIsLight() {
+        // Inventory grey behind inventory-dark text: the same inversion that makes paper worth
+        // shipping, sampled from container/inventory.png rather than invented.
+        assertTrue(luminance(Themes.VANILLA.panel()) > luminance(Themes.VANILLA.body()),
+                "vanilla's panel should be lighter than its body text, or it is not a light theme");
+
+        // Vanilla's formatting inks, not tints of them: white, gold, green, grey.
+        assertEquals(0xFFFFFFFF, Themes.VANILLA.available());
+        assertEquals(0xFFFFAA00, Themes.VANILLA.inProgress());
+        assertEquals(0xFF55FF55, Themes.VANILLA.complete());
+        assertEquals(0xFFA0A0A0, Themes.VANILLA.blocked());
+
+        // The container greys themselves, as sampled.
+        assertEquals(0xFFC6C6C6, Themes.VANILLA.panel());
+        assertEquals(0xFF8B8B8B, Themes.VANILLA.recessed());
+        assertEquals(0xFF3F3F3F, Themes.VANILLA.title());
     }
 
     @Test

@@ -16,7 +16,7 @@ import dev.ellipog.armature.client.ui.kit.ScrollBar;
  * is "the blue that means available" or "the surface a tooltip sits on", chosen by a person against
  * the palette it lives in. They are <b>the same colour, more so</b>: the grip, further from the
  * groove, because that is the only thing a hover on a three-pixel bar can usefully say. Spelling that
- * as two more tokens would mean two more hand-chosen values in each of the sixteen built-ins — thirty
+ * as two more tokens would mean two more hand-chosen values in each of the seventeen built-ins — thirty-four
  * values to keep consistent with a pair they are derived from anyway — and the failure mode of
  * getting one wrong is a theme whose grip <i>loses</i> contrast exactly when the pointer arrives on
  * it, which is the one moment it has to be findable.

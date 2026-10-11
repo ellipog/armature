@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * A change to a theme: some colours, maybe a radius, maybe a motion, maybe a name.
+ * A change to a theme: some colours, maybe a radius, maybe a motion, maybe a chrome, maybe a name.
  *
  * <h2>The thing that makes three levels of override one piece of code</h2>
  *
@@ -40,8 +40,8 @@ import java.util.Set;
  *
  * <ul>
  *   <li><b>{@link #applyTo}</b> is how a whole theme is made — a theme file, or one of the derived
- *       built-ins. It takes the name, the radius, the motion and the easing as well as the colours,
- *       because a theme is those things.</li>
+ *       built-ins. It takes the name, the radius, the motion, the easing, the background and
+ *       the chrome as well as the colours, because a theme is those things.</li>
  *   <li><b>{@link #tint}</b> is how a region is reskinned — a group, an entry. It takes colours only.
  *       A group that could change the corner radius of every panel in the book, or the duration of
  *       every transition, would be a data file reaching into the screen's construction; and the
@@ -68,6 +68,7 @@ import java.util.Set;
  *                     value — instant — and is not the same as null
  * @param easing       a new curve, or null to keep the base's
  * @param background   a new canvas background, or null to keep the base's
+ * @param chrome       a new chrome style, or null to keep the base's
  */
 public record ThemePatch(
         String name,
@@ -75,10 +76,11 @@ public record ThemePatch(
         Integer cornerRadius,
         Long motion,
         Easing easing,
-        CanvasBackground background) {
+        CanvasBackground background,
+        Theme.Chrome chrome) {
 
     /** The patch that changes nothing. Applying it returns the base unchanged. */
-    public static final ThemePatch NONE = new ThemePatch(null, Map.of(), null, null, null, null);
+    public static final ThemePatch NONE = new ThemePatch(null, Map.of(), null, null, null, null, null);
 
     /**
      * A node's border follows its state colour unless the patch says otherwise.
@@ -120,12 +122,12 @@ public record ThemePatch(
 
     /** A named patch — a theme file, or one of the derived built-ins. */
     public static ThemePatch of(String name, Map<String, Integer> colours) {
-        return new ThemePatch(name, colours, null, null, null, null);
+        return new ThemePatch(name, colours, null, null, null, null, null);
     }
 
     /** An unnamed patch of colours, for a group or an entry. */
     public static ThemePatch colours(Map<String, Integer> colours) {
-        return new ThemePatch(null, colours, null, null, null, null);
+        return new ThemePatch(null, colours, null, null, null, null, null);
     }
 
     /** One token. What the editor does on a click. */
@@ -136,7 +138,7 @@ public record ThemePatch(
     /** Whether this changes anything at all. */
     public boolean isEmpty() {
         return colours.isEmpty() && cornerRadius == null && motion == null && easing == null
-                && background == null;
+                && background == null && chrome == null;
     }
 
     /**
@@ -177,6 +179,9 @@ public record ThemePatch(
         if (background != null) {
             result = result.withBackground(background);
         }
+        if (chrome != null) {
+            result = result.withChrome(chrome);
+        }
         return result;
     }
 
@@ -215,7 +220,7 @@ public record ThemePatch(
         // The three that are not colours are only reachable through `applyTo`; a `tint` keeps the base's
         // radius and motion, which is what "reskin this region" means.
         return Theme.from(base.name(), values, base.cornerRadius(), base.motion(), base.easing(),
-                base.background());
+                base.background(), base.chrome());
     }
 
     /**
@@ -244,7 +249,8 @@ public record ThemePatch(
                 child.cornerRadius != null ? child.cornerRadius : cornerRadius,
                 child.motion != null ? child.motion : motion,
                 child.easing != null ? child.easing : easing,
-                child.background != null ? child.background : background);
+                child.background != null ? child.background : background,
+                child.chrome != null ? child.chrome : chrome);
     }
 
     /**
@@ -322,6 +328,9 @@ public record ThemePatch(
         if (background != null) {
             root.add("canvasBackground", background.toJson());
         }
+        if (chrome != null) {
+            root.addProperty("chrome", chrome.id());
+        }
         return root;
     }
 
@@ -341,7 +350,7 @@ public record ThemePatch(
      * asks this rather than spelling the keys out.
      */
     public static final List<String> KEYS =
-            List.of("name", "colours", "cornerRadius", "motion", "easing", "canvasBackground");
+            List.of("name", "colours", "cornerRadius", "motion", "easing", "canvasBackground", "chrome");
 
     /**
      * Reads a patch, collecting anything wrong into {@code problems}.
@@ -469,7 +478,25 @@ public record ThemePatch(
                 ? CanvasBackground.fromJson(root.get("canvasBackground"), problems)
                 : null;
 
-        return new ThemePatch(name, colours, radius, motion, easing, background);
+        Theme.Chrome chrome = null;
+        if (root.has("chrome") && !root.get("chrome").isJsonNull()) {
+            JsonElement value = root.get("chrome");
+            if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+                Theme.Chrome parsed = Theme.Chrome.byId(value.getAsString());
+                if (parsed == null) {
+                    problems.add("'" + value.getAsString() + "' is not a chrome style. Try"
+                            + " \"flat\" (fills) or \"vanilla\" (vanilla's own sprites)");
+                }
+                else {
+                    chrome = parsed;
+                }
+            }
+            else {
+                problems.add("'chrome' should be \"flat\" or \"vanilla\", but is " + value);
+            }
+        }
+
+        return new ThemePatch(name, colours, radius, motion, easing, background, chrome);
     }
 
     /** Every token id, with its label and its group — the list a file may set and an editor shows. */

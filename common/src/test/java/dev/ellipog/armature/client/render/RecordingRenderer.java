@@ -134,6 +134,7 @@ public final class RecordingRenderer implements GuiRenderer {
                 case FACE -> "face(" + text + " at " + x + "," + y + " " + x2 + "px)";
                 case TEXTURE -> "texture(" + text + " at " + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case SPRITE -> "sprite(" + text + " at " + x + "," + y + " -> " + x2 + "," + y2 + ")";
+                case GUI_SPRITE -> "guiSprite(" + text + " at " + x + "," + y + " -> " + x2 + "," + y2 + ")";
                 case TURN -> "turn(about " + x + "," + y + " by "
                         + (amount == null ? "?" : amount.value() + "\u00b0") + ")";
                 case UNTURN -> "unturn";
@@ -153,7 +154,7 @@ public final class RecordingRenderer implements GuiRenderer {
 
     /** What a recorded call was. */
     public enum Op {
-        FILL, TEXT, SHADOWED_TEXT, STYLED_TEXT, ICON, FACE, TEXTURE, SPRITE,
+        FILL, TEXT, SHADOWED_TEXT, STYLED_TEXT, ICON, FACE, TEXTURE, SPRITE, GUI_SPRITE,
         TURN, UNTURN, BLUR, CLIP, UNCLIP, FLUSH, BATCH, END_BATCH
     }
 
@@ -364,6 +365,19 @@ public final class RecordingRenderer implements GuiRenderer {
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * <p>Its own op beside {@link Op#SPRITE}, for the reason that one is beside
+     * {@link Op#TEXTURE}: the atlas differs, so a test that could not tell a widget button
+     * from a block-atlas picture could not hold either lookup's behaviour.
+     */
+    @Override
+    public void guiSprite(ResourceLocation guiSprite, int x, int y, int width, int height) {
+        calls.add(new Call(Op.GUI_SPRITE, x, y, x + width, y + height, 0,
+                guiSprite == null ? "" : guiSprite.toString()));
+    }
+
+    /**
      * Declares a texture's size for {@link #textureSize}, the way a resource pack would.
      *
      * <p>A settable map rather than a fixed list, and the mirror of {@code withoutIcons}: a test that
@@ -523,6 +537,11 @@ public final class RecordingRenderer implements GuiRenderer {
     /** The sprites, in order, each carrying the sprite's own id. */
     public List<Call> sprites() {
         return calls.stream().filter(call -> call.op() == Op.SPRITE).toList();
+    }
+
+    /** The vanilla GUI sprites, in order, each carrying the sprite's own id. */
+    public List<Call> guiSprites() {
+        return calls.stream().filter(call -> call.op() == Op.GUI_SPRITE).toList();
     }
 
     /** The turns, in order, each carrying its pivot and its angle. */

@@ -22,7 +22,7 @@ import java.util.UUID;
  * unchanged. Without it, it is every draw call in a toolkit and a screen, twice, with no way to tell
  * which were missed.
  *
- * <h2>Eighteen abstract methods and four defaults, because that is what was actually being used</h2>
+ * <h2>Nineteen abstract methods and four defaults, because that is what was actually being used</h2>
  *
  * <p>Not a guess at what a UI toolkit might need. The first cut was the complete set of operations that
  * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and a screen between them
@@ -41,7 +41,7 @@ import java.util.UUID;
  * sheet, {@link #turned} for a picture that is not axis-aligned, and {@link #shadowedText} for a label
  * with no backdrop behind it. {@code centredText} and the two {@link #clip} overloads are defaults
  * rather than abstract members, so the figure that matters to an implementer -- and the one to keep
- * in step with this list -- is the eighteen.
+ * in step with this list -- is the nineteen.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -73,13 +73,14 @@ import java.util.UUID;
  * {@link #styledWidth} measures one. A {@code Component} would carry far more than that (events, fonts,
  * colours, hover) and would tie every caller to the game to say "bold".
  *
- * <p><b>No {@code renderItemDecorations}, no gradients, no nine-slice, and no atlas coordinates.</b>
+ * <p><b>No {@code renderItemDecorations}, no gradients, and no atlas coordinates.</b>
  * R5's work. {@link #texture} draws a caller's own file by path, and {@link #sprite} draws a region of
  * a stitched sheet — but it takes the sprite's <b>id</b>, not a {@code u}/{@code v} pair, so which
  * sheet it lives in and where it landed in it stay inside the implementation. That distinction is the
  * whole of it: a caller that has a sprite's name has said everything it knows, and a caller that has
  * sheet coordinates has already gone looking for something this seam exists to keep out of its hands.
- * This interface is what today's code needs and nothing more, which is what makes it small enough that
+ * {@link #guiSprite} is the same distinction one atlas over: a vanilla widget id, nine-sliced by its
+ * own metadata rather than by coordinates. This interface is what today's code needs and nothing more, which is what makes it small enough that
  * a second implementation is a real thing to write rather than a project.
  *
  * <h2>Why it is an interface with a test double, rather than an abstraction</h2>
@@ -442,6 +443,32 @@ public interface GuiRenderer {
      * @param argb the tint, multiplied channel by channel as {@link #scaled}'s is; white means untouched
      */
     void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb);
+
+    /**
+     * Draws a vanilla GUI sprite into a rectangle, nine-sliced by its own metadata.
+     *
+     * <h2>Why a sprite is not a {@link #sprite}</h2>
+     *
+     * <p>Because the two live in different atlases. {@link #sprite} draws from the block atlas,
+     * which is where item and block pictures are stitched; a GUI sprite — {@code widget/button},
+     * {@code tooltip/background} — lives in the GUI atlas, which is stitched from
+     * {@code textures/gui/sprites} and resolved through {@code GuiGraphics.blitSprite} rather
+     * than through an atlas lookup. A caller holding a widget id could not draw one through
+     * {@link #sprite} at all: the block atlas answers it with its missing marker.
+     *
+     * <p>The nine-slicing is vanilla's, not a parameter: each sprite carries its own
+     * {@code .mcmeta} scaling metadata (a button's 3-pixel border, a tooltip frame's 9), and
+     * the draw call honours it at any destination size. That is what makes a 200×20 button
+     * sprite correct on a 120-pixel control and on a 400-pixel one with no insets threaded
+     * through this seam. {@link dev.ellipog.armature.client.ui.kit.NineSlice} stays the
+     * geometry for callers that slice file textures themselves.
+     *
+     * <p>Drawn as authored, with no tint: GUI sprites are finished art, and a tinted stone
+     * button is a theme colour applied twice — once in the palette and once on the sprite.
+     *
+     * @param guiSprite the sprite id, like {@code minecraft:widget/button}
+     */
+    void guiSprite(ResourceLocation guiSprite, int x, int y, int width, int height);
 
     // ------------------------------------------------------------------
     // Turning

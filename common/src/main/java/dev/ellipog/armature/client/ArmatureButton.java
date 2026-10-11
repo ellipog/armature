@@ -500,7 +500,17 @@ public class ArmatureButton extends AbstractWidget {
         // border would draw a ring that is invisible but still costs a second shape per frame, and it
         // would inset the fill by one pixel for no reason -- a one-pixel shift on every flat control,
         // which is the kind of thing that reads as a layout bug rather than as a rounding decision.
-        if (ArmatureControlStyle.drawsBox(variant)) {
+        // Under vanilla chrome a boxed control is vanilla's own nine-sliced widget sprite rather
+        // than a flat panel: stone at rest, white-bordered under the pointer or while held, dark
+        // when it cannot be used. Flat, borderless and section controls keep their drawing — a
+        // label that happens to be clickable is not a button in vanilla either.
+        boolean vanillaButton = VanillaChrome.inForce()
+                && ArmatureControlStyle.drawsBox(variant) && !borderless;
+        if (vanillaButton) {
+            renderer.guiSprite(VanillaChrome.buttonSprite(active, hovered || held),
+                    getX(), getY(), width, height);
+        }
+        else if (ArmatureControlStyle.drawsBox(variant)) {
             if (borderless) {
                 ArmatureTheme.fillSurface(renderer, getX(), getY(), width, height, fill,
                         ArmatureTheme.CORNERS_ALL);
@@ -525,7 +535,16 @@ public class ArmatureButton extends AbstractWidget {
         // its own background. Everywhere else the caller's own textColour wins, since a screen may have
         // a reason the style cannot know.
         int colour;
-        if (!active) {
+        if (vanillaButton) {
+            // Vanilla's inks rather than the theme's: shadowed white, formatting yellow for the
+            // selected one, grey when disabled. The caller's textColour is set aside with the flat
+            // fills — a tinted label on a stone button reads as a misprint rather than as a theme.
+            // The sprite stays hover-driven: selected never fakes a hover, the ink carries it.
+            colour = !active ? VanillaChrome.DISABLED_TEXT
+                    : variant == ArmatureControlStyle.Variant.SELECTED ? VanillaChrome.SELECTED_TEXT
+                    : VanillaChrome.FLOATING_TEXT;
+        }
+        else if (!active) {
             colour = ArmatureTheme.blocked();
         }
         else if (variant == ArmatureControlStyle.Variant.ACCENT
@@ -583,7 +602,16 @@ public class ArmatureButton extends AbstractWidget {
         int textX = alignLeft
                 ? textLeft + LABEL_INSET
                 : textLeft + (textWidth - renderer.textWidth(shown)) / 2;
-        renderer.text(shown, textX, getY() + (height - 8) / 2, colour);
+        // Shadowed on a sprite, plain on a fill: vanilla draws its button labels with the
+        // game's drop shadow, while every flat label in this toolkit sits on an opaque backdrop
+        // where a shadow would be a smudge. See GuiRenderer.shadowedText for why the two are
+        // never one flag.
+        if (vanillaButton) {
+            renderer.shadowedText(shown, textX, getY() + (height - 8) / 2, colour, 1F);
+        }
+        else {
+            renderer.text(shown, textX, getY() + (height - 8) / 2, colour);
+        }
     }
 
     @Override

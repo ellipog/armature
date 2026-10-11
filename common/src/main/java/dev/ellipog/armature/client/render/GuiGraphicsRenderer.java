@@ -708,6 +708,24 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <h2>One call, because the nine-slicing is the sprite's own</h2>
+     *
+     * <p>This version's {@code GuiGraphics.blitSprite} reads the sprite's scaling metadata
+     * itself — a button's 3-pixel nine-slice border, a tooltip frame's 9 — so there are no
+     * insets to thread through the seam and no pieces to loop over. The guards are the same
+     * shape as {@link #sprite}'s: nothing to draw, or nowhere to draw it, draws nothing.
+     */
+    @Override
+    public void guiSprite(ResourceLocation guiSprite, int x, int y, int width, int height) {
+        if (guiSprite == null || width <= 0 || height <= 0) {
+            return;
+        }
+        graphics.blitSprite(guiSprite, x, y, width, height);
+    }
+
     // ------------------------------------------------------------------
     // Turning
     // ------------------------------------------------------------------

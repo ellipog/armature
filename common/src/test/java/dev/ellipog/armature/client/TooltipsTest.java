@@ -78,6 +78,29 @@ class TooltipsTest {
     }
 
     @Test
+    @DisplayName("vanilla chrome draws the procedural vanilla box with shadowed lines")
+    void vanillaChromeDrawsTheVanillaBox() {
+        // 1.21.1 ships no tooltip/* sprites (verified against its client jar: widget/* only),
+        // so the vanilla box is drawn the way 1.21.1 draws it — near-black fill, two-tone purple
+        // frame sampled from TooltipRenderUtil — and never touches the GUI atlas. A sprite lookup
+        // for one is the missing-texture checkerboard, which is exactly what shipped.
+        ArmatureTheme.setCurrent(Themes.VANILLA);
+        RecordingRenderer r = RecordingRenderer.create();
+
+        Tooltips.draw(r, List.of("Line one"), 50, 50, 800, 600);
+
+        assertTrue(r.guiSprites().isEmpty(), "no atlas lookup in a vanilla tooltip: " + r.calls());
+        assertTrue(r.fills().stream().anyMatch(call -> call.argb() == VanillaChrome.TOOLTIP_FILL),
+                "the near-black fill");
+        assertTrue(r.fills().stream().anyMatch(call -> call.argb() == VanillaChrome.TOOLTIP_FRAME_TOP),
+                "the purple frame top");
+        assertTrue(r.fills().stream().anyMatch(call -> call.argb() == VanillaChrome.TOOLTIP_FRAME_BOTTOM),
+                "and its dark foot");
+        assertEquals(1, r.shadowedTexts().size(), "vanilla tooltip lines wear the game's shadow");
+        assertTrue(r.texts().isEmpty(), "and no plain label beside them");
+    }
+
+    @Test
     @DisplayName("it moves rather than leaving the window, and clamps when no placement fits")
     void itMovesAtTheEdges() {
         ArmatureTheme.setCurrent(Themes.MODERN);

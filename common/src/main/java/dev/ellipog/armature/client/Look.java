@@ -142,7 +142,9 @@ public final class Look {
         if (custom.isEmpty() && radius == null && background == null) {
             return ThemePatch.NONE;
         }
-        return new ThemePatch(null, custom, radius, null, null, background);
+        // No chrome: a player's edits tint the theme they chose, and the chrome arrives with the
+        // theme itself — an edit worth keeping across a theme choice is saved as a file first.
+        return new ThemePatch(null, custom, radius, null, null, background, null);
     }
     }
 
@@ -570,8 +572,10 @@ public final class Look {
         // do the opposite: a player who has just looked at forty colours and pressed save expects the file
         // to be the theme they saw, not a diff they would have to reason about. `basedOn` is kept so the
         // radius, motion and easing still come from somewhere, and so the file says what it started as.
+        // The chrome travels with it for the same reason the colours do: edits saved from vanilla must
+        // still draw sprites when the file is chosen, not the flat fills of the base it names.
         ThemePatch patch = new ThemePatch(clean, settings.custom(), settings.radius(), null, null,
-                settings.background());
+                settings.background(), main().chrome());
         JsonObject root = patch.toJson();
         root.addProperty("basedOn", settings.theme());
 
@@ -824,7 +828,7 @@ public final class Look {
             root.add("canvasBackground", toWrite.background().toJson());
         }
         if (!toWrite.custom().isEmpty()) {
-            root.add("custom", new ThemePatch(null, toWrite.custom(), null, null, null, null).toJson()
+            root.add("custom", new ThemePatch(null, toWrite.custom(), null, null, null, null, null).toJson()
                     .getAsJsonObject("colours"));
         }
         return root.toString();

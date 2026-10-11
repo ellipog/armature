@@ -726,6 +726,15 @@ public final class ArmatureTheme {
      */
     public static void panel(GuiRenderer renderer, int left, int top, int width, int height,
                              int fill, int border) {
+        // Vanilla draws no flat bordered panels at all: an inventory is a bevel, so under a
+        // vanilla-chromed theme this is one too. The radius never reaches here — vanilla has no
+        // rounded corners — and the border argument is set aside with it, because a bevel's edges
+        // are highlight and shadow rather than one ring. Scoped like everything else here: a
+        // vanilla chapter in a flat book still gets its bevels.
+        if (VanillaChrome.inForce()) {
+            VanillaChrome.panel(renderer, left, top, width, height, fill);
+            return;
+        }
         int radius = current().cornerRadius();
         // The border as the whole footprint, then the fill inset by one -- which is the same pixels as
         // "fill the rectangle, then draw a one-pixel outline over it" and is what makes the corners round

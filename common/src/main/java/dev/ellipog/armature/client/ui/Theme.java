@@ -30,7 +30,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * <h2>{@link #from} is the only place that knows the field order</h2>
  *
  * <p>Every derived theme — a patch applied, a radius changed, a name swapped — is built by
- * {@code from(name, allColours(), radius, motion, easing)}. That is deliberate, and it fixed a real
+ * {@code from(name, allColours(), radius, motion, easing, background, chrome)}. That is deliberate, and it fixed a real
  * bug rather than tidying one: {@code withMotion} and {@code withRadius} each restated all thirty-three top-level
  * values positionally, so adding a colour meant editing three lists, and forgetting one produced a
  * theme whose colours were silently transposed. One restatement is one place to be wrong.
@@ -50,7 +50,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * <h2>The prebuilt themes live in {@link Themes}, not here</h2>
  *
  * <p>This class is the <i>shape</i>: the components, the array, the copy operations. The catalogue is
- * sixteen themes and a thousand lines of hex, and a record whose own file is mostly examples is one
+ * seventeen themes and a thousand lines of hex, and a record whose own file is mostly examples is one
  * nobody edits with any confidence. {@code Themes} is also where a derived theme is expressed as a
  * {@link ThemePatch} over a base, which is the same mechanism a data file uses — so the built-in set
  * is itself a demonstration that the override system is expressive enough.
@@ -99,6 +99,7 @@ import dev.ellipog.armature.client.ui.kit.Easing;
  * @param easing         the curve transitions use
  * @param background     what is drawn behind the canvas content, over its colour — see
  *                       {@link CanvasBackground}
+ * @param chrome         how chrome is drawn: flat fills, or vanilla's own sprites
  */
 public record Theme(
         String name,
@@ -148,7 +149,44 @@ public record Theme(
         int cornerRadius,
         long motion,
         Easing easing,
-        CanvasBackground background) {
+        CanvasBackground background,
+        Chrome chrome) {
+
+    /**
+     * How chrome is drawn: flat fills, or vanilla's own sprites.
+     *
+     * <p>A setting rather than a token, like the radius, the motion, the easing and the
+     * background: it is one value per theme rather than a colour, and an editor wants a
+     * dropdown for it rather than a swatch. {@code FLAT} is every theme until one says
+     * otherwise; {@code VANILLA} draws buttons, panels, tooltips and scrollbars the way
+     * vanilla Minecraft draws them — nine-sliced widget sprites, shadowed inks, square
+     * corners — while the layout and geometry stay this toolkit's.
+     */
+    public enum Chrome {
+        /** Flat fills with a one-pixel border. Every theme until one says otherwise. */
+        FLAT,
+        /** Vanilla's own sprites: stone buttons, bevel panels, vanilla tooltips. */
+        VANILLA;
+
+        /** The name a theme file writes. */
+        public String id() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        /** The chrome one file id names, or null when nothing does. */
+        public static Chrome byId(String id) {
+            if (id == null) {
+                return null;
+            }
+            String trimmed = id.trim();
+            for (Chrome chrome : values()) {
+                if (chrome.id().equalsIgnoreCase(trimmed)) {
+                    return chrome;
+                }
+            }
+            return null;
+        }
+    }
 
     /**
      * The ten colours a control is drawn from, as a set rather than ten loose fields.
@@ -294,7 +332,7 @@ public record Theme(
      *     it wrong would otherwise produce a plausibly-coloured theme
      */
     public static Theme from(String name, int[] colours, int cornerRadius, long motion, Easing easing,
-                             CanvasBackground background) {
+                             CanvasBackground background, Chrome chrome) {
         if (colours.length != ThemeToken.ALL.size()) {
             throw new IllegalArgumentException("a theme needs " + ThemeToken.ALL.size()
                     + " colours, got " + colours.length);
@@ -321,7 +359,8 @@ public record Theme(
                 cornerRadius,
                 motion,
                 easing,
-                background);
+                background,
+                chrome != null ? chrome : Chrome.FLAT);
     }
 
     // ------------------------------------------------------------------
@@ -363,7 +402,7 @@ public record Theme(
      * frame. The same argument as {@code Slot.moved} returning a new slot.
      */
     public Theme withName(String newName) {
-        return from(newName, allColours(), cornerRadius, motion, easing, background);
+        return from(newName, allColours(), cornerRadius, motion, easing, background, chrome);
     }
 
     /**
@@ -373,17 +412,17 @@ public record Theme(
      * theme's zero and a player's own setting are told apart.
      */
     public Theme withMotion(long millis) {
-        return from(name, allColours(), cornerRadius, millis, easing, background);
+        return from(name, allColours(), cornerRadius, millis, easing, background, chrome);
     }
 
     /** A copy at a different corner radius. Zero means square, and is not turned into one. */
     public Theme withRadius(int radius) {
-        return from(name, allColours(), radius, motion, easing, background);
+        return from(name, allColours(), radius, motion, easing, background, chrome);
     }
 
     /** A copy on a different easing curve. */
     public Theme withEasing(Easing curve) {
-        return from(name, allColours(), cornerRadius, motion, curve, background);
+        return from(name, allColours(), cornerRadius, motion, curve, background, chrome);
     }
 
     /**
@@ -394,12 +433,24 @@ public record Theme(
      * {@code canvasPattern} token beside them.
      */
     public Theme withBackground(CanvasBackground newBackground) {
-        return from(name, allColours(), cornerRadius, motion, easing, newBackground);
+        return from(name, allColours(), cornerRadius, motion, easing, newBackground, chrome);
+    }
+
+    /**
+     * A copy drawn in a different chrome: flat fills, or vanilla's own sprites.
+     *
+     * <p>Like the radius rather than like a colour edit: it changes how every panel and
+     * control is painted, so it travels with the theme and with scopes, and a region
+     * reskin ({@code tint}) never carries it.
+     */
+    public Theme withChrome(Chrome newChrome) {
+        return from(name, allColours(), cornerRadius, motion, easing, background,
+                newChrome != null ? newChrome : Chrome.FLAT);
     }
 
     /** A copy with a whole new set of colours, in {@link ThemeToken#ALL} order. */
     public Theme withColours(int[] colours) {
-        return from(name, colours, cornerRadius, motion, easing, background);
+        return from(name, colours, cornerRadius, motion, easing, background, chrome);
     }
 
     /** A copy with one colour replaced. Unknown ids leave the theme unchanged. */

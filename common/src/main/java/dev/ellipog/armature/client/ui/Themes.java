@@ -18,7 +18,7 @@ import java.util.Map;
  *
  * <h2>Every theme here is a patch, and that is the point rather than a convenience</h2>
  *
- * <p>The sixteen are written as {@link ThemePatch}es over a base, using the same mechanism a data
+ * <p>The seventeen are written as {@link ThemePatch}es over a base, using the same mechanism a data
  * file uses to reskin a group. Two things fall out of that, and the second is the one that matters:
  *
  * <ul>
@@ -26,7 +26,7 @@ import java.util.Map;
  *       {@link #AMETHYST} is thirty lines rather than forty-three, and the lines it has are the ones that
  *       make it amethyst.</li>
  *   <li><b>The built-in set is itself the proof that the override system is expressive enough.</b> If
- *       sixteen themes of quite different characters can all be expressed as patches, then a pack
+ *       seventeen themes of quite different characters can all be expressed as patches, then a pack
  *       author with the same mechanism is not being given a lesser version of it. Had the catalogue been
  *       hand-written full palettes while patches were the "custom" path, the two would have diverged and
  *       the divergence would only show up as a file that could not do something a built-in could.</li>
@@ -40,7 +40,7 @@ import java.util.Map;
  * indistinguishable from a colour decision. A test asserts that its map is complete, so a new token can
  * never silently inherit a zero.
  *
- * <p>The other fifteen are stated in full too, and the guard in {@link #set} throws at class
+ * <p>The other sixteen are stated in full too, and the guard in {@link #set} throws at class
  * initialisation if one is not — the same completeness as the reference palette, enforced rather than
  * remembered, because a token that silently inherited {@code modern}'s value is a decision nobody made.
  * A theme in a file is the opposite by design: it is a diff, and everything it leaves out comes from
@@ -61,7 +61,8 @@ public final class Themes {
      */
     private static Theme seed(String name) {
         return Theme.from(name, new int[ThemeToken.ALL.size()], 4, 140L,
-                dev.ellipog.armature.client.ui.kit.Easing.QUAD_OUT, CanvasBackground.NONE);
+                dev.ellipog.armature.client.ui.kit.Easing.QUAD_OUT, CanvasBackground.NONE,
+                Theme.Chrome.FLAT);
     }
 
     /**
@@ -99,7 +100,7 @@ public final class Themes {
         }
         // Every shipped theme states every token, and this is the guard that keeps it true rather
         // than a convention: an omitted token silently becomes modern's value, and a token added to
-        // the registry later would be inherited by all sixteen themes with nobody deciding it. So a
+        // the registry later would be inherited by all seventeen themes with nobody deciding it. So a
         // theme that leaves one out fails at class initialisation, naming itself and the holes --
         // the same shape as `Theme.allColours`'s length check, and the loudest way for it to be wrong.
         List<String> missing = new ArrayList<>();
@@ -370,6 +371,92 @@ public final class Themes {
             .withRadius(0)
             .withMotion(0L)
             .withEasing(dev.ellipog.armature.client.ui.kit.Easing.LINEAR);
+
+    /**
+     * Vanilla Minecraft itself: inventory grey, stone buttons, dirt under the graph.
+     *
+     * <p>Not {@link #VANILLA_PLUS} tidied — the game's own surfaces, sampled from 1.21.10:
+     *
+     * <ul>
+     *   <li>Panels are the container grey ({@code gui/container/inventory.png}: fill
+     *       {@code #C6C6C6}, slot {@code #8B8B8B}, white top/left bevel, {@code #373737} and
+     *       black bottom/right), drawn as a bevel rather than a one-pixel ring.</li>
+     *   <li>Buttons are the widget sprites themselves ({@code widget/button},
+     *       {@code widget/button_highlighted} with its white border, {@code widget/button_disabled},
+     *       each 200×20 nine-sliced with a 3-pixel border), with shadowed white inks and
+     *       {@code #A0A0A0} when disabled.</li>
+     *   <li>The canvas is tiled dirt ({@code block/dirt.png} at 16 pixels, darkened through the
+     *       {@code canvasPattern} alpha) — the menu background, not graph paper.</li>
+     *   <li>States are vanilla's formatting inks: white available, gold {@code #FFAA00}
+     *       in-progress, green {@code #55FF55} complete, grey {@code #A0A0A0} blocked.</li>
+     *   <li>Tooltips are the vanilla box painted procedurally ({@code #100010} fill, purple
+     *       crown to dark-violet foot frame): 1.21.1 ships no tooltip sprites, so an atlas lookup
+     *       for one is the missing-texture checkerboard.</li>
+     *   <li>Text on panels is the inventory dark ({@code #3F3F3F}, unshadowed); floating text is
+     *       white with vanilla's shadow.</li>
+     * </ul>
+     *
+     * <p>Square and still like {@link #VANILLA_PLUS} (radius 0, motion 0, linear), and additionally
+     * the first theme whose {@code chrome} is {@link Theme.Chrome#VANILLA} rather than
+     * {@link Theme.Chrome#FLAT} — which is what routes panels, buttons, tooltips and scrollbars
+     * through the sprites above instead of the flat fills. A light theme like {@code paper}:
+     * the panel is lighter than the body text, and the label backdrop stays dark so white node
+     * ink still reads.
+     */
+    public static final Theme VANILLA = ThemePatch.of("vanilla", set("vanilla", 
+            "dim", "#B8000000",
+            "canvas", "#FF201510",
+            "recessed", "#FF8B8B8B",
+            "panel", "#FFC6C6C6",
+            "raised", "#FFD6D6D6",
+            "panelEdge", "#FF373737",
+            "title", "#FF3F3F3F",
+            "body", "#FF404040",
+            "faint", "#FF767676",
+            "heading", "#FF505050",
+            "available", "#FFFFFFFF",
+            "inProgress", "#FFFFAA00",
+            "complete", "#FF55FF55",
+            "blocked", "#FFA0A0A0",
+            "nodeFill", "#FF8B8B8B",
+            "nodeDim", "#9C000000",
+            "nodeDoneWash", "#3355FF55",
+            "nodeEdgeBlocked", "#FF555555",
+            "nodeEdgeAvailable", "#FFFFFFFF",
+            "nodeEdgeInProgress", "#FFFFAA00",
+            "nodeEdgeComplete", "#FF55FF55",
+            "line", "#FF6E6E6E",
+            "lineDone", "#FF55FF55",
+            "selectedRing", "#FFFFFFFF",
+            "hoverRing", "#80FFFFFF",
+            "canvasPattern", "#80000000",
+            "rowHover", "#22FFFFFF",
+            "labelBackdrop", "#F0000000",
+            "scrollTrack", "#FF000000",
+            "scrollThumb", "#FFC0C0C0",
+            "tooltipFill", "#F0100010",
+            "tooltipEdge", "#FF5000FF",
+            "tooltipText", "#FFFFFFFF",
+            "fill", "#FF6F6F6F",
+            "hover", "#FF757575",
+            "held", "#FF6A6A6A",
+            "selected", "#FF7D7D7D",
+            "disabled", "#FF2C2C2C",
+            "accent", "#FF6F6F6F",
+            "edge", "#FF000000",
+            "edgeAccent", "#FFFFFFFF",
+            "edgeSelected", "#FFFFFFFF",
+            "edgeBright", "#FFFFFFFF"))
+            .applyTo(MODERN)
+            .withRadius(0)
+            .withMotion(0L)
+            .withEasing(dev.ellipog.armature.client.ui.kit.Easing.LINEAR)
+            .withChrome(Theme.Chrome.VANILLA)
+            .withBackground(new CanvasBackground(CanvasBackground.Kind.IMAGE,
+                    CanvasBackground.Space.SCREEN, 16,
+                    new CanvasBackground.Tuning(1, 5, false),
+                    new CanvasBackground.Image("minecraft:textures/block/dirt.png",
+                            CanvasBackground.Fit.TILE, 16)));
 
     // ------------------------------------------------------------------
     // Utility
@@ -1046,11 +1133,11 @@ public final class Themes {
      * <h2>The order is a design statement, not an accident of declaration</h2>
      *
      * <p>It goes: the default first, because it is the one a client is already using and a picker that
-     * does not list the current setting is a picker nobody trusts; then the three originals, so a cycle
+     * does not list the current setting is a picker nobody trusts; then the four originals, so a cycle
      * starts where the project started and nobody's muscle memory breaks; then the three utility themes,
      * because they are chosen to solve a problem and someone looking for one should not have to scroll;
      * then materials, dimensions, and finally the two that are applications rather than places. <b>A list
-     * of sixteen in random order is a list nobody reads past the third entry.</b>
+     * of seventeen in random order is a list nobody reads past the third entry.</b>
      *
      * <p><b>A theme has to be in this list to be reachable by clicking.</b> That is not a description of
      * this constant so much as the constraint on it: {@code ThemesTest} asserts that the names here are
@@ -1063,6 +1150,7 @@ public final class Themes {
             MODERN,
             TOME,
             VANILLA_PLUS,
+            VANILLA,
             HIGH_CONTRAST,
             MONOCHROME,
             PAPER,

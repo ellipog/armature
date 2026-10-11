@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>Why there is a test here at all, given the class has no arithmetic</h2>
  *
- * <p>Because the decision this class embodies is a claim about all sixteen themes, and the claim is
+ * <p>Because the decision this class embodies is a claim about all seventeen themes, and the claim is
  * the only thing standing between "no new tokens" and a theme whose grip vanishes under the pointer.
  *
  * <p>The theme declares two scrollbar colours. The hover and held appearances are shades of the grip,
@@ -93,7 +93,7 @@ class ArmatureScrollStyleTest {
         }
 
         assertTrue(moved >= Themes.ALL.size() - 2,
-                "only a grip already at an extreme can fail to move, and at most two of the sixteen "
+                "only a grip already at an extreme can fail to move, and at most two of the seventeen "
                         + "reach one — a white grip on a black groove, or the reverse; " + moved
                         + " of " + Themes.ALL.size() + " did move");
     }

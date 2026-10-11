@@ -11,16 +11,18 @@ checked — and addressed **by name** by anything outside code: a theme file, a 
 and controls. A token's name is what the code reads it for: a node's border is one of the four
 `nodeEdge*` tokens, so a theme can give its borders a colour apart from its progress inks.
 
-## Sixteen built-ins
+## Seventeen built-ins
 
-`default`, `modern`, `tome`, `vanilla_plus`, `high_contrast`, `monochrome`, `paper`, `obsidian`,
+`default`, `modern`, `tome`, `vanilla_plus`, `vanilla`, `high_contrast`, `monochrome`, `paper`, `obsidian`,
 `amethyst`, `copper`, `redstone`, `nether`, `end`, `deep_dark`, `terminal` and `neon` — `Themes.ALL`
 for the list, `Themes.byName(name)` for one. `default` is `modern` with a square corner radius, which
-is a theme defined by what it changes rather than a second palette to keep in step.
+is a theme defined by what it changes rather than a second palette to keep in step. `vanilla` is
+vanilla Minecraft itself — inventory grey, stone buttons, dirt under the graph — and the only
+built-in whose `chrome` is `vanilla` rather than `flat` (see below).
 
 **Every built-in states every token**, and the guard in `Themes.set` enforces it at class
 initialisation: an omitted token silently becomes `modern`'s value, and a token added to the registry
-later would be inherited by all sixteen themes with nobody deciding it. A **file** theme is the
+later would be inherited by all seventeen themes with nobody deciding it. A **file** theme is the
 opposite by design — it is a diff, and everything it leaves out comes from the theme it names as its
 `basedOn` (which defaults to `default`).
 
@@ -37,11 +39,14 @@ from the theme it names as its base.
   "colours": { "panel": "#2A2233", "canvas": "#1A1622", "available": "#C79BF0" },
   "cornerRadius": 6,
   "motion": 120,
-  "easing": "QUAD_OUT"
+  "easing": "QUAD_OUT",
+  "chrome": "flat"
 }
 ```
 
 `basedOn` may name a built-in or another file-loaded theme, so a pack can have a variant of its own.
+`chrome` is `"flat"` (fills) or `"vanilla"` (vanilla's own sprites) — absent means the base's, so a
+file based on `vanilla` keeps its stone buttons unless it says otherwise.
 
 The directory is read by `Look.load(path, themesDirectory)` — the call a mod makes once at startup — and
 again after `Look.saveAsTheme` writes a file, so a theme shipped as a file is selectable from the first
@@ -143,7 +148,7 @@ into a theme file, and the file is a theme like any other.
 ## `ThemePatch`, and the boundary it keeps
 
 `applyTo(base)` makes a whole theme — a file, a derived built-in — and takes the name, radius, motion,
-easing and canvas background as well as the colours, because a theme is those things. `tint(base)`
+easing, canvas background and chrome as well as the colours, because a theme is those things. `tint(base)`
 reskins a *region* and takes colours only.
 
 That split is a decision rather than an oversight. A region that could change the corner radius of
@@ -151,6 +156,16 @@ every panel in a screen, or the duration of every transition, would be a data fi
 screen's construction — and motion would silently do nothing anyway, because animation timing is
 pushed to `Motion` once per client rather than per region. A value that cannot take effect is worse
 than one that is refused.
+
+## Chrome: flat fills or vanilla sprites
+
+`chrome` is the one non-colour setting that changes *how* things are painted rather than what
+colour they are: `"flat"` draws bordered fills, `"vanilla"` draws vanilla's own nine-sliced
+widget sprites — stone buttons, bevel panels, the vanilla tooltip box — with shadowed inks.
+Only `vanilla` sets it among the built-ins. Like the radius it travels with the theme and with
+scopes, so a vanilla-chromed chapter keeps its bevels inside a flat book; like motion it is
+never set by a region reskin. A chapter `themePatch` may still name it, because a chapter patch
+is a whole-theme `applyTo` over the chapter's base rather than a region tint.
 
 ## Scoping a palette to a region
 
