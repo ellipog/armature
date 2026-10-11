@@ -230,6 +230,19 @@ class ThemesTest {
     }
 
     @Test
+    @DisplayName("every label backdrop is dark, paper's included, because node ink is white")
+    void everyLabelBackdropIsDark() {
+        // Node labels wear white by default on all themes, so the strip behind them is what
+        // carries the text over a busy canvas. Paper once shipped a pale backdrop (#F0F6F1E6),
+        // which is white-on-parchment and unreadable against its own #FFEDE7DA canvas — the one
+        // token where a light theme must not follow its surfaces.
+        for (Theme theme : Themes.ALL) {
+            assertTrue(luminance(theme.labelBackdrop()) < 0x180,
+                    theme.name() + "'s label backdrop should be dark enough to carry white node ink");
+        }
+    }
+
+    @Test
     @DisplayName("monochrome has no hue anywhere, so a screen that relies on one is visibly broken")
     void monochromeIsGrey() {
         // Included as a test as much as a theme. Every state is a distinct brightness and nothing else,

@@ -561,7 +561,11 @@ public final class Themes {
             "hoverRing", "#801A1611",
             "canvasPattern", "#336E6454",
             "rowHover", "#221A1611",
-            "labelBackdrop", "#F0F6F1E6",
+            // Dark like every other shipped theme, NOT pale like the canvas: node labels wear white
+            // by default on all themes, so the strip behind them is what carries the text over
+            // a busy canvas. A pale backdrop here is white-on-parchment and unreadable (the paper
+            // canvas is #FFEDE7DA); a dark one reads exactly as on the dark themes. See `labelBackdrop`.
+            "labelBackdrop", "#F02E2820",
             "scrollTrack", "#FFE2DACA",
             "scrollThumb", "#FF9A8E76",
             "tooltipFill", "#F0FFFCF4",
