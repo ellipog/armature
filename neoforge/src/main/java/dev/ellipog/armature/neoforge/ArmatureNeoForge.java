@@ -3,6 +3,7 @@ package dev.ellipog.armature.neoforge;
 import dev.ellipog.armature.Armature;
 import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.ArmatureApi;
+import dev.ellipog.armature.api.energy.EnergyAccesses;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -25,5 +26,9 @@ public final class ArmatureNeoForge {
         ArmatureApi.install(new NeoForgePlatform(), new NeoForgeRegistrar(modEventBus, Constants.MOD_ID));
         NeoForgeEvents.attach();
         Armature.init();
+
+        // Stored energy through the energy-storage item capability, which NeoForge ships --
+        // no third-party library and nothing to guard.
+        EnergyAccesses.install(new NeoForgeEnergy());
     }
 }

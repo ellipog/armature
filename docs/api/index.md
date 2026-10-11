@@ -1,8 +1,8 @@
 # The API
 
 Everything a mod's own code calls is under `api/`, reached from a handful of static entry points —
-`ArmatureApi` for the platform and the registries, `ArmatureEvents`, `ArmatureNetwork`, and
-`Teams.of(server)`. Nothing under `api/` *imports* `impl/`: the one reference is a class name resolved
+`ArmatureApi` for the platform and the registries, `ArmatureEvents`, `ArmatureNetwork`,
+`EnergyAccesses.current()` for carried energy, and `Teams.of(server)`. Nothing under `api/` *imports* `impl/`: the one reference is a class name resolved
 once, which is what leaves the packages behind the surface free to change.
 
 ```java
@@ -139,3 +139,19 @@ The loader subprojects supply the backend; common code never mentions one. The b
 small on purpose: `install` (once — a second install throws), `tick`, `translationKey` and
 `installScreenOpener` on the client side, `declare` and `poll` on the key-mapping backend, and
 `install`, `register` and `open` on `ArmatureScreens`.
+
+## Carried energy
+
+Batteries, capacitors and charged tools, in Forge Energy units — read through the loader's own
+machinery (NeoForge's energy-storage capability, Team Reborn Energy's item lookup on Fabric)
+because vanilla has no energy API:
+
+```java
+int stored = EnergyAccesses.current().storedOf(player, maxPerItem);
+int drained = EnergyAccesses.current().drainFrom(player, amount, maxPerItem);
+```
+
+Each item contributes no more than `maxPerItem` when that is positive; zero or negative means
+unlimited. The measurement caps and the drain caps in the same slot order, so what one counted
+is what the other takes. TR Energy is optional on Fabric: an instance without it reads zero
+rather than crashing, and `reset()` restores that silence for tests.

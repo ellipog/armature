@@ -2,6 +2,15 @@ plugins {
     id 'multiloader-loader'
     id 'fabric-loom'
 }
+repositories {
+    // Team Reborn Energy's own maven. Filtered to teamreborn on purpose: this is the one
+    // group resolved from here, and everything else keeps resolving where it already does.
+    maven {
+        name = 'TeamReborn'
+        url = 'https://maven.fabricmc.net/'
+        content { includeGroup('teamreborn') }
+    }
+}
 dependencies {
     minecraft "com.mojang:minecraft:${minecraft_version}"
     mappings loom.layered {
@@ -10,6 +19,19 @@ dependencies {
     }
     modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+
+    // Team Reborn Energy, for the energy adapter's classes only -- see the note in
+    // gradle.properties. `compileOnly`, so it never reaches the jar or the published POM:
+    // a Fabric instance without the library keeps the seam's silent zero, not a crash. The
+    // adapter is the only file that names its packages, and the holder is the only file that
+    // names the adapter -- anything else naming either is a NoClassDefFoundError on an
+    // instance without the library.
+    compileOnly "teamreborn:energy:${energy_version}"
+
+    // And for the dev runs, so the adapter can actually be exercised: TR Energy is optional
+    // at runtime, which is exactly why the runs have to carry it explicitly. `runtimeOnly`
+    // puts it on the run classpath and nowhere near the published jar.
+    runtimeOnly "teamreborn:energy:${energy_version}"
 }
 
 loom {

@@ -1,14 +1,14 @@
 # Armature documentation
 
-Armature is a shared library mod: a loader seam, a strict JSON reader, event, network and team APIs,
-and a client UI toolkit — layout, scrolling, text models, shapes, themes, widgets and the machinery
+Armature is a shared library mod: a loader seam, a strict JSON reader, event, network, energy and
+team APIs, and a client UI toolkit — layout, scrolling, text models, shapes, themes, widgets and the machinery
 behind a property editor — all drawn through one game-free renderer [[seam|seam]].
 
 It is a standalone mod, and nothing in it is specific to any one consumer — a mod can use the toolkit
 without inheriting another mod's assumptions.
 
 > [!NOTE]
-> **Armature is at 0.2.0 — pre-1.0.** Everything these pages describe is built and in use, but the
+> **Armature is at 0.2.1 — pre-1.0.** Everything these pages describe is built and in use, but the
 > version is below 1.0 deliberately: a break in the API needs only a minor bump, so read the release
 > notes before upgrading rather than assuming the surface is frozen.
 
