@@ -68,6 +68,26 @@ class CanvasBackgroundTest {
     }
 
     @Test
+    @DisplayName("a tiled image keeps its space through JSON")
+    void imageSpaceRoundTrips() {
+        List<String> problems = new ArrayList<>();
+        CanvasBackground parsed = read(
+                "{\"pattern\": \"image\", \"space\": \"graph\", \"texture\": \"mymod:gui/bg\","
+                        + " \"fit\": \"tile\", \"tile\": 32}",
+                problems);
+
+        assertEquals(CanvasBackground.Kind.IMAGE, parsed.kind());
+        assertEquals(CanvasBackground.Space.GRAPH, parsed.space());
+        assertEquals(CanvasBackground.Fit.TILE, parsed.image().fit());
+        assertTrue(problems.isEmpty(), problems.toString());
+
+        CanvasBackground back = CanvasBackground.fromJson(parsed.toJson(), problems);
+        assertEquals(parsed, back, "a stored space must read back as the one written");
+        assertEquals(CanvasBackground.Space.GRAPH, back.space());
+        assertTrue(problems.isEmpty(), problems.toString());
+    }
+
+    @Test
     @DisplayName("a missing field takes its default; every kind's id is accepted")
     void defaultsAndKindIds() {
         List<String> problems = new ArrayList<>();

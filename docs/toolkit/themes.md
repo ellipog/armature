@@ -77,7 +77,8 @@ tolerance:
   flat kinds are drawn from arithmetic: no texture ships with them and none has to resolve.
 - `space` — `graph` anchors the pattern to the content, so it pans and zooms with the graph;
   `screen` fixes it to the surface. `spacing` is content units in the first case and screen pixels in
-  the second. Flat kinds only: an image is always screen-fixed and ignores both.
+  the second. A tiled image honours this like any other repeating pattern; a covered image is
+  screen-fixed by construction and ignores it.
 - `size` — the edge of a dot or speck and the thickness of a line or hatch step, 1..4 pixels.
 - `density` — speckle only: one cell in this many carries a mark, 2..16.
 - `direction` — hatch only: `slash` or `backslash`.
@@ -103,7 +104,9 @@ An `image` is a texture the pack ships:
   texture keeps its 2:1 aspect when drawn.
 - `fit` — `tile` repeats the texture at `tile` pixels wide (4..256, aspect-preserving), and the
   lattice steps by the drawn size, so rows and columns abut with no spacing knob and no seams.
-  `cover` draws it once, scaled to fill the rectangle and centre-cropped to the rectangle's aspect.
+  A tile honours `space`: `graph` tiles pan and zoom with the content, `screen` tiles stay put.
+  `cover` draws it once, scaled to fill the rectangle and centre-cropped to the rectangle's aspect,
+  always screen-fixed.
 - A texture that cannot be resolved draws nothing — the painter will not guess — and an id that is not a
   texture id at all is `canonicalTexture`'s empty string, so a caller's own editor can refuse it with
   the resolved path in the message.

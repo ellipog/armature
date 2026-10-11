@@ -302,7 +302,7 @@ class CanvasBackgroundArtTest {
         RecordingRenderer r = RecordingRenderer.create();
         r.putTextureSize(TILED, 24, 16);
         CanvasBackground background = image(TILED, CanvasBackground.Fit.TILE,
-                CanvasBackground.Space.GRAPH, 12);
+                CanvasBackground.Space.SCREEN, 12);
 
         CanvasBackgroundArt.draw(r, view(100, 60), background, 0x33FF0000);
 
@@ -336,14 +336,14 @@ class CanvasBackgroundArtTest {
     }
 
     @Test
-    @DisplayName("a tiled image is a wallpaper: pan and zoom do not move it")
+    @DisplayName("a screen-anchored tile is a wallpaper: pan and zoom do not move it")
     void imageTileIsScreenFixed() {
         RecordingRenderer still = RecordingRenderer.create();
         still.putTextureSize(FIXED, 24, 16);
         RecordingRenderer moved = RecordingRenderer.create();
         moved.putTextureSize(FIXED, 24, 16);
         CanvasBackground background = image(FIXED, CanvasBackground.Fit.TILE,
-                CanvasBackground.Space.GRAPH, 12);
+                CanvasBackground.Space.SCREEN, 12);
 
         Viewport panned = view(100, 60);
         panned.setOffset(13, 7);
@@ -353,7 +353,103 @@ class CanvasBackgroundArtTest {
         CanvasBackgroundArt.draw(moved, panned, background, INK);
 
         assertEquals(still.textures(), moved.textures(),
-                "the image must ignore the viewport entirely, whatever space it was given");
+                "a screen tile must ignore the viewport entirely");
+    }
+
+    @Test
+    @DisplayName("a graph-anchored tile agrees with a screen one where the view is at rest")
+    void imageTileGraphAgreesWithScreenAtIdentity() {
+        RecordingRenderer graph = RecordingRenderer.create();
+        graph.putTextureSize(TILED, 24, 16);
+        RecordingRenderer screen = RecordingRenderer.create();
+        screen.putTextureSize(TILED, 24, 16);
+
+        CanvasBackgroundArt.draw(graph, view(100, 60),
+                image(TILED, CanvasBackground.Fit.TILE, CanvasBackground.Space.GRAPH, 12),
+                0x33FF0000);
+        CanvasBackgroundArt.draw(screen, view(100, 60),
+                image(TILED, CanvasBackground.Fit.TILE, CanvasBackground.Space.SCREEN, 12),
+                0x33FF0000);
+
+        assertEquals(screen.textures(), graph.textures(),
+                "at unit scale and no pan the content lattice sits on the screen one");
+    }
+
+    @Test
+    @DisplayName("a graph-anchored tile pans with the content")
+    void imageTileGraphFollowsPan() {
+        RecordingRenderer still = RecordingRenderer.create();
+        still.putTextureSize(TILED, 24, 16);
+        RecordingRenderer moved = RecordingRenderer.create();
+        moved.putTextureSize(TILED, 24, 16);
+        CanvasBackground background = image(TILED, CanvasBackground.Fit.TILE,
+                CanvasBackground.Space.GRAPH, 12);
+
+        Viewport panned = view(100, 60);
+        panned.setOffset(13, 7);
+
+        CanvasBackgroundArt.draw(still, view(100, 60), background, 0x33FF0000);
+        CanvasBackgroundArt.draw(moved, panned, background, 0x33FF0000);
+
+        assertNotEquals(still.textures(), moved.textures(),
+                "a graph tile must answer the pan, or the space binding is decorative");
+        assertTrue(has(still.textures(), 0, 0), "at rest the content origin is the view's corner");
+        assertTrue(has(moved.textures(), 13, 7),
+                "panned, the content origin — and the tile anchored to it — sits at the offset");
+        for (RecordingRenderer.Call tile : moved.textures()) {
+            assertEquals(12, tile.x2() - tile.x(), "a pan resizes nothing: " + tile);
+            assertEquals(8, tile.y2() - tile.y(), "a pan resizes nothing: " + tile);
+        }
+    }
+
+    @Test
+    @DisplayName("a graph-anchored tile zooms with the content")
+    void imageTileGraphFollowsZoom() {
+        RecordingRenderer zoomed = RecordingRenderer.create();
+        zoomed.putTextureSize(TILED, 24, 16);
+
+        Viewport close = view(100, 60);
+        close.setScale(2F);
+
+        CanvasBackgroundArt.draw(zoomed, close,
+                image(TILED, CanvasBackground.Fit.TILE, CanvasBackground.Space.GRAPH, 12),
+                0x33FF0000);
+
+        List<RecordingRenderer.Call> tiles = zoomed.textures();
+        assertEquals(5 * 4, tiles.size(), "ceil(100/24) across by ceil(60/16) down, and nothing else");
+        for (RecordingRenderer.Call tile : tiles) {
+            assertEquals(24, tile.x2() - tile.x(), "the destination width is the zoomed tile: " + tile);
+            assertEquals(16, tile.y2() - tile.y(), "the destination height keeps the 24:16 aspect");
+            assertEquals(24, tile.source().sourceWidth(), "a tile still reads the whole texture");
+            assertEquals(16, tile.source().sourceHeight());
+        }
+        assertTrue(has(tiles, 0, 0), "phase zero is the content origin, on screen at rest");
+        assertTrue(has(tiles, 24, 0), "columns abut at the zoomed step");
+        assertTrue(has(tiles, 0, 16), "rows abut at the zoomed step");
+    }
+
+    @Test
+    @DisplayName("cover ignores the space: one blit however the view moved")
+    void coverIgnoresSpace() {
+        RecordingRenderer still = RecordingRenderer.create();
+        still.putTextureSize(COVERED, 64, 32);
+        RecordingRenderer moved = RecordingRenderer.create();
+        moved.putTextureSize(COVERED, 64, 32);
+
+        Viewport panned = view(60, 100);
+        panned.setOffset(13, 7);
+        panned.setScale(2F);
+
+        CanvasBackgroundArt.draw(still, view(60, 100),
+                image(COVERED, CanvasBackground.Fit.COVER, CanvasBackground.Space.GRAPH, 16),
+                0x33FF0000);
+        CanvasBackgroundArt.draw(moved, panned,
+                image(COVERED, CanvasBackground.Fit.COVER, CanvasBackground.Space.GRAPH, 16),
+                0x33FF0000);
+
+        assertEquals(1, still.textures().size(), "cover is one blit");
+        assertEquals(still.textures(), moved.textures(),
+                "a cover is screen-fixed by construction, whatever space it was given");
     }
 
     @Test

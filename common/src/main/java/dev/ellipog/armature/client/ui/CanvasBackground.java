@@ -23,9 +23,8 @@ import java.util.Locale;
  * <p>{@link Space#GRAPH} anchors the pattern to the content: it pans and zooms with the nodes, like
  * graph paper under a drawing. {@link Space#SCREEN} fixes it to the surface — a wallpaper the content
  * glides over. {@code spacing} means content units in the first and screen pixels in the second; the
- * art is the same either way. An image is the one pattern that ignores this: a texture tiled or
- * covered onto a rectangle belongs to the screen, and a wallpaper that panned with the graph would be
- * a window onto a moving picture rather than a surface.
+ * art is the same either way. A tiled image honours this like any other repeating pattern; a covered
+ * image is screen-fixed by construction — one blit over the visible rectangle — and ignores it.
  *
  * <h2>Patterns from arithmetic, images from a file</h2>
  *
@@ -38,7 +37,9 @@ import java.util.Locale;
  *
  * <p>{@link Fit#TILE} repeats the texture across the visible rectangle at the {@code tile} size,
  * preserving the texture's aspect; {@link Fit#COVER} draws it once, scaled so the rectangle is fully
- * covered and centred, cropping the overflow. Both are screen-fixed; see the space note above.
+ * covered and centred, cropping the overflow. A tile honours the space — graph-anchored tiles pan
+ * and zoom with the content, screen-anchored ones stay put — while a cover is always screen-fixed;
+ * see the space note above.
  *
  * <h2>Tuning: how heavy the marks are</h2>
  *
@@ -48,7 +49,8 @@ import java.util.Locale;
  * value one step past legible should draw, not vanish.
  *
  * @param kind    which pattern, or {@link Kind#NONE} for the bare surface
- * @param space   what the pattern is anchored to; ignored by images. See the class note
+ * @param space   what the pattern is anchored to; honoured by the procedural kinds and by tiled
+ *                images, ignored by covers and by {@link Kind#NONE}. See the class note
  * @param spacing the distance between repeats, in the space's own units. Clamped to a range where
  *                the pattern stays legible rather than becoming moiré: a few pixels apart at the
  *                least, and close enough that a canvas shows a field and not one lonely dot
@@ -210,10 +212,16 @@ public record CanvasBackground(Kind kind, Space space, int spacing, Tuning tunin
     /** How an image meets the rectangle it is drawn in. */
     public enum Fit {
 
-        /** Repeats the texture across the rectangle at {@code tile} size, aspect preserved. */
+        /**
+         * Repeats the texture across the rectangle at {@code tile} size, aspect preserved.
+         * Honours the space like any other repeating pattern.
+         */
         TILE("tile"),
 
-        /** Draws the texture once, scaled and centred so the rectangle is fully covered. */
+        /**
+         * Draws the texture once, scaled and centred so the rectangle is fully covered.
+         * Screen-fixed by construction; ignores the space.
+         */
         COVER("cover");
 
         private final String id;

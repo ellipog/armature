@@ -98,7 +98,7 @@ public final class CanvasBackgroundArt {
             case GRID_LINES -> grid(r, view, background, ink, x0, y0, x1, y1);
             case SPECKLE -> speckle(r, view, background, ink, x0, y0, x1, y1);
             case HATCH -> hatch(r, view, background, ink, x0, y0, x1, y1);
-            case IMAGE -> image(r, background, ink, x0, y0, x1, y1);
+            case IMAGE -> image(r, view, background, ink, x0, y0, x1, y1);
             case NONE -> {
             }
         }
@@ -248,7 +248,7 @@ public final class CanvasBackgroundArt {
     private record Sized(GuiRenderer.TextureSize size, long stamp) {
     }
 
-    private static void image(GuiRenderer r, CanvasBackground background, int ink,
+    private static void image(GuiRenderer r, Viewport view, CanvasBackground background, int ink,
                               int x0, int y0, int x1, int y1) {
         CanvasBackground.Image image = background.image();
         if (image.texture().isEmpty()) {
@@ -266,7 +266,7 @@ public final class CanvasBackgroundArt {
             cover(r, id, size, ink, x0, y0, x1, y1);
         }
         else {
-            tile(r, image, id, size, ink, x0, y0, x1, y1);
+            tile(r, view, background, image, id, size, ink, x0, y0, x1, y1);
         }
     }
 
@@ -308,19 +308,30 @@ public final class CanvasBackgroundArt {
     }
 
     /**
-     * Repeats the texture across the visible rectangle, screen-fixed.
+     * Repeats the texture across the visible rectangle.
      *
-     * <h2>Phase zero, and the step on each axis</h2>
+     * <h2>Two lattices, one tile size</h2>
      *
-     * <p>The lattice starts at the visible rectangle's top-left corner rather than at the viewport
-     * origin: a screen-fixed pattern has no content to be anchored to, and starting anywhere else
-     * would make the first tile a partial one whose seam moves with the pan. The vertical step is the
-     * destination <i>height</i>, not the width, because a rectangular texture only tiles seamlessly
-     * when each repeat advances by exactly what one image covers.
+     * <p>In {@link CanvasBackground.Space#SCREEN} the lattice starts at the visible rectangle's
+     * top-left corner rather than at the viewport origin: a screen-fixed pattern has no content to be
+     * anchored to, and starting anywhere else would make the first tile a partial one whose seam moves
+     * with the pan. In {@link CanvasBackground.Space#GRAPH} the lattice is the content's own — tile
+     * {@code (kx, ky)} covers content {@code [kx * tile, (kx + 1) * tile)} — so the repeats pan and zoom
+     * with the graph exactly like the procedural patterns. The vertical step is the destination
+     * <i>height</i>, not the width, because a rectangular texture only tiles seamlessly when each
+     * repeat advances by exactly what one image covers.
+     *
+     * <p>{@link CanvasBackground.Fit#COVER} never reaches here; it is screen-fixed by construction
+     * (one blit over the visible rectangle) and ignores the space.
      */
-    private static void tile(GuiRenderer r, CanvasBackground.Image image, ResourceLocation id,
+    private static void tile(GuiRenderer r, Viewport view, CanvasBackground background,
+                             CanvasBackground.Image image, ResourceLocation id,
                              GuiRenderer.TextureSize size, int ink,
                              int x0, int y0, int x1, int y1) {
+        if (background.space() == CanvasBackground.Space.GRAPH) {
+            tileGraph(r, view, image, id, size, ink, x0, y0, x1, y1);
+            return;
+        }
         int tileWidth = image.tileSize();
         int tileHeight = Math.max(1, Math.round(tileWidth * (float) size.height() / size.width()));
         float fade = spacingFade(tileWidth);
@@ -337,6 +348,57 @@ public final class CanvasBackgroundArt {
         for (int y = y0; y < y1; y += tileHeight) {
             for (int x = x0; x < x1; x += tileWidth) {
                 r.scaled(id, x, y, tileWidth, tileHeight, 0F, 0F, size.width(), size.height(),
+                        size.width(), size.height(), tint);
+            }
+        }
+    }
+
+    /**
+     * The content-anchored half of {@link #tile}: tile {@code (kx, ky)} is the content rectangle
+     * {@code [kx * tile, (kx + 1) * tile)}, placed through the viewport so it pans and zooms with
+     * the graph. The tile size is content units, so the destination size is the zoomed size —
+     * the same "content units zoom, screen units do not" rule {@link #stepPixels} states.
+     */
+    private static void tileGraph(GuiRenderer r, Viewport view, CanvasBackground.Image image,
+                                  ResourceLocation id, GuiRenderer.TextureSize size, int ink,
+                                  int x0, int y0, int x1, int y1) {
+        float contentWidth = image.tileSize();
+        float contentHeight = contentWidth * (float) size.height() / size.width();
+        int tileWidth = Math.max(1, Math.round(contentWidth * view.scale()));
+        int tileHeight = Math.max(1, Math.round(contentHeight * view.scale()));
+        float fade = spacingFade(tileWidth);
+        if (fade <= 0F) {
+            return;
+        }
+        // The content span on screen, so the loop below only visits tiles that can be visible.
+        // Floor, not truncation: content west or north of the origin lives at negative coordinates,
+        // and a tile there is still a tile the pan can bring back.
+        long kx0 = (long) Math.floor(view.contentX(x0) / (double) contentWidth);
+        long ky0 = (long) Math.floor(view.contentY(y0) / (double) contentHeight);
+        long kx1 = (long) Math.ceil(view.contentX(x1) / (double) contentWidth);
+        long ky1 = (long) Math.ceil(view.contentY(y1) / (double) contentHeight);
+        long across = kx1 - kx0;
+        long down = ky1 - ky0;
+        if (across <= 0 || down <= 0) {
+            return;
+        }
+        int colour = inkAt(ink, Math.min(fade,
+                budgetFade((int) Math.min(Integer.MAX_VALUE, across * down))));
+        if (Colour.invisible(colour)) {
+            return;
+        }
+        int tint = 0xFFFFFF | (Colour.alpha(colour) << 24);
+        for (long ky = ky0; ky < ky1; ky++) {
+            int sy = view.screenY((float) (ky * contentHeight));
+            if (sy + tileHeight <= y0 || sy >= y1) {
+                continue;
+            }
+            for (long kx = kx0; kx < kx1; kx++) {
+                int sx = view.screenX((float) (kx * contentWidth));
+                if (sx + tileWidth <= x0 || sx >= x1) {
+                    continue;
+                }
+                r.scaled(id, sx, sy, tileWidth, tileHeight, 0F, 0F, size.width(), size.height(),
                         size.width(), size.height(), tint);
             }
         }
