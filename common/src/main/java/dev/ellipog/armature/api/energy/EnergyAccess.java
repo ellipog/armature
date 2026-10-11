@@ -11,9 +11,9 @@ import net.minecraft.server.level.ServerPlayer;
  * a Fabric instance without it reads zero.
  *
  * <p>Installed once per loader, by that loader's entry point; everything else asks
- * {@link EnergyAccesses}. The first consumer was Tenet's energy task, and the seam lives here
- * rather than there so any mod on the suite can measure carried energy without depending on
- * the questing engine.
+ * {@link EnergyAccesses}. The first consumer measured carried energy for its own mechanics, and
+ * the seam lives here rather than there so any mod on the suite can measure it without depending
+ * on a consumer.
  *
  * @see EnergyAccesses
  */
@@ -23,8 +23,8 @@ public interface EnergyAccess {
      * Forge Energy units stored across carried items, each item contributing no more than
      * {@code maxPerItem} when that is positive.
      *
-     * <p>The per-item cap is the caller's to define — Tenet passes its task's {@code maxInput}:
-     * zero or negative means unlimited. Pure read: measures, changes nothing.
+     * <p>The per-item cap is the caller's to define: zero or negative means unlimited. Pure read:
+     * measures, changes nothing.
      */
     int storedOf(ServerPlayer player, int maxPerItem);
 
