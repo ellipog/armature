@@ -3,6 +3,8 @@ package dev.ellipog.armature.api.platform;
 import java.nio.file.Path;
 import java.util.Optional;
 
+import net.minecraft.server.level.ServerPlayer;
+
 /**
  * Everything that genuinely differs between Fabric and NeoForge, behind one interface.
  *
@@ -52,6 +54,16 @@ public interface ArmaturePlatform {
 
     /** Whether this is a development environment rather than a player's install. */
     boolean isDevelopmentEnvironment();
+
+    /**
+     * Whether this player is a fake one — automation's hands rather than a person's: a contraption,
+     * a placer, a scripted actor. Vanilla marks nothing, so common code cannot answer this alone,
+     * which is why it sits behind this interface beside the loader questions.
+     *
+     * <p>Answered per loader, honestly where it cannot be: a loader with no reliable marker says
+     * {@code false} and says so, rather than guessing from a name pattern that a player could wear.
+     */
+    boolean isFakePlayer(ServerPlayer player);
 
     /** "development" or "production" — for log lines. */
     default String environmentName() {

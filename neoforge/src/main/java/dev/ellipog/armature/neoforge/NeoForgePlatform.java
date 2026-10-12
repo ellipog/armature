@@ -8,6 +8,7 @@ import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.common.util.FakePlayer;
 
 import java.nio.file.Path;
 import java.util.Optional;
@@ -45,6 +46,11 @@ public final class NeoForgePlatform implements ArmaturePlatform {
     @Override
     public boolean isDevelopmentEnvironment() {
         return !FMLLoader.isProduction();
+    }
+
+    @Override
+    public boolean isFakePlayer(net.minecraft.server.level.ServerPlayer player) {
+        return player instanceof FakePlayer;
     }
 
     @Override

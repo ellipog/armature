@@ -41,6 +41,14 @@ public final class FabricPlatform implements ArmaturePlatform {
     }
 
     @Override
+    public boolean isFakePlayer(net.minecraft.server.level.ServerPlayer player) {
+        // No reliable marker: vanilla marks nothing, and a name-pattern guess would misfire on a
+        // player wearing the wrong name. False and said out loud, rather than a guess that can
+        // only be wrong in one direction — see the interface note.
+        return false;
+    }
+
+    @Override
     public Path gameDir() {
         return loader.getGameDir();
     }
