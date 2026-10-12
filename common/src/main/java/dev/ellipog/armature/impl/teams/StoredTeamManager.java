@@ -195,7 +195,7 @@ public final class StoredTeamManager implements MutableTeamManager {
                 .withPolicy(settings().defaultPolicy());
         store.put(team);
 
-        Constants.LOG.info("armature: team '{}' created by {}", name, owner);
+        Constants.LOG.debug("armature: team '{}' created by {}", name, owner);
         TeamEvents.TEAM_CREATED.invoker().onTeamCreated(server, team);
         return team;
     }
@@ -274,7 +274,7 @@ public final class StoredTeamManager implements MutableTeamManager {
         Team joined = target.withMember(player, TeamRole.MEMBER);
         store.put(joined);
 
-        Constants.LOG.info("armature: {} joined team '{}'", player, joined.name());
+        Constants.LOG.debug("armature: {} joined team '{}'", player, joined.name());
         // Fires after the store is updated, so a listener reading the team sees the new membership.
         TeamEvents.MEMBER_JOINED.invoker().onMemberJoined(server, joined, player);
         return Optional.of(joined);
@@ -327,7 +327,7 @@ public final class StoredTeamManager implements MutableTeamManager {
         List<UUID> members = List.copyOf(team.memberIds());
         store.remove(teamId);
 
-        Constants.LOG.info("armature: team '{}' disbanded by {}", team.name(), actor);
+        Constants.LOG.debug("armature: team '{}' disbanded by {}", team.name(), actor);
         TeamEvents.TEAM_DISBANDED.invoker().onTeamDisbanded(server, team);
         for (UUID member : members) {
             TeamEvents.MEMBER_LEFT.invoker().onMemberLeft(server, team, member, TeamEvents.Reason.DISBANDED);
@@ -362,7 +362,7 @@ public final class StoredTeamManager implements MutableTeamManager {
         Team after = team.withName(trimmed);
         store.put(after);
 
-        Constants.LOG.info("armature: team '{}' renamed to '{}' by {}", team.name(), trimmed, actor);
+        Constants.LOG.debug("armature: team '{}' renamed to '{}' by {}", team.name(), trimmed, actor);
         TeamEvents.TEAM_RENAMED.invoker().onTeamRenamed(server, after);
         return true;
     }
@@ -388,7 +388,7 @@ public final class StoredTeamManager implements MutableTeamManager {
         Team after = team.withOwner(target, TeamRole.MEMBER);
         store.put(after);
 
-        Constants.LOG.info("armature: team '{}' handed from {} to {}", team.name(), actor, target);
+        Constants.LOG.debug("armature: team '{}' handed from {} to {}", team.name(), actor, target);
         TeamEvents.OWNER_TRANSFERRED.invoker().onOwnerTransferred(server, after, actor);
         return true;
     }
@@ -412,7 +412,7 @@ public final class StoredTeamManager implements MutableTeamManager {
         Team after = team.withPolicy(policy);
         store.put(after);
 
-        Constants.LOG.info("armature: team '{}' policy is now {}", team.name(), policy);
+        Constants.LOG.debug("armature: team '{}' policy is now {}", team.name(), policy);
         TeamEvents.POLICY_CHANGED.invoker().onPolicyChanged(server, after);
         return true;
     }
@@ -444,7 +444,7 @@ public final class StoredTeamManager implements MutableTeamManager {
         Team joined = team.withMember(player, TeamRole.MEMBER);
         store.put(joined);
 
-        Constants.LOG.info("armature: {} joined open team '{}'", player, joined.name());
+        Constants.LOG.debug("armature: {} joined open team '{}'", player, joined.name());
         TeamEvents.MEMBER_JOINED.invoker().onMemberJoined(server, joined, player);
         return Optional.of(joined);
     }

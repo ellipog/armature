@@ -180,6 +180,10 @@ public final class ArmatureNetwork {
      *
      * <p>Server side. Silently does nothing if the loader has not installed its networking — which
      * happens on a client that never opened a world, and is not worth a crash over.
+     *
+     * <p>No rate limit, no dedup: the caller throttles. A send per tick per player will get that
+     * player kicked for packet spam, so anything recurrent coalesces before it calls here — see
+     * how Tenet's tree broadcast collapses to one per tick rather than one per edit.
      */
     public static void sendToPlayer(ServerPlayer player, CustomPacketPayload payload) {
         NetworkBackend installed = backend;
@@ -194,6 +198,8 @@ public final class ArmatureNetwork {
      *
      * <p>Client side. Does nothing where there is nothing to send to, so a common code path can call
      * this after its own side check without a second one.
+     *
+     * <p>Same throttling rule as {@link #sendToPlayer}: no rate limit here, so the caller coalesces.
      */
     public static void sendToServer(CustomPacketPayload payload) {
         NetworkBackend installed = backend;
