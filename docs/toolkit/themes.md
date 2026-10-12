@@ -1,12 +1,12 @@
 # Themes
 
 Every colour the toolkit draws with comes from one place. A button does not know what a [[theme|theme]]
-is — it asks for the body ink and gets whatever the current theme says, which is why `ArmatureTheme` is
+is. It asks for the body ink and gets whatever the current theme says, which is why `ArmatureTheme` is
 a static class rather than something passed through every call.
 
 A `Theme` is a record of colour tokens, plus the corner radius, the motion duration and the easing
-curve. Tokens are read as **fields** by code — a record has fields the compiler knows, so a theme is
-checked — and addressed **by name** by anything outside code: a theme file, a pack naming a palette.
+curve. Tokens are read as **fields** by code (a record has fields the compiler knows, so a theme is
+checked) and addressed **by name** by anything outside code: a theme file, a pack naming a palette.
 `ThemeToken` groups the names: surfaces, text, progression, graph, rows and labels, scrollbar, tooltips
 and controls. A token's name is what the code reads it for: a node's border is one of the four
 `nodeEdge*` tokens, so a theme can give its borders a colour apart from its progress inks.
@@ -14,22 +14,22 @@ and controls. A token's name is what the code reads it for: a node's border is o
 ## Seventeen built-ins
 
 `default`, `modern`, `tome`, `vanilla_plus`, `vanilla`, `high_contrast`, `monochrome`, `paper`, `obsidian`,
-`amethyst`, `copper`, `redstone`, `nether`, `end`, `deep_dark`, `terminal` and `neon` — `Themes.ALL`
+`amethyst`, `copper`, `redstone`, `nether`, `end`, `deep_dark`, `terminal` and `neon`: `Themes.ALL`
 for the list, `Themes.byName(name)` for one. `default` is `modern` with a square corner radius, which
 is a theme defined by what it changes rather than a second palette to keep in step. `vanilla` is
-vanilla Minecraft itself — inventory grey, stone buttons, dirt under the graph — and the only
+vanilla Minecraft itself (inventory grey, stone buttons, dirt under the graph) and the only
 built-in whose `chrome` is `vanilla` rather than `flat` (see below).
 
 **Every built-in states every token**, and the guard in `Themes.set` enforces it at class
 initialisation: an omitted token silently becomes `modern`'s value, and a token added to the registry
 later would be inherited by all seventeen themes with nobody deciding it. A **file** theme is the
-opposite by design — it is a diff, and everything it leaves out comes from the theme it names as its
+opposite by design: it is a diff, and everything it leaves out comes from the theme it names as its
 `basedOn` (which defaults to `default`).
 
 ## Theme files
 
-A theme can be written by hand, one file per theme, in the themes directory the mod hands `Look` —
-the library never chooses one. A file is a **diff**: it says what it changes, and the rest comes
+A theme can be written by hand, one file per theme, in the themes directory the mod hands `Look`.
+The library never chooses one. A file is a **diff**: it says what it changes, and the rest comes
 from the theme it names as its base.
 
 ```json
@@ -45,11 +45,11 @@ from the theme it names as its base.
 ```
 
 `basedOn` may name a built-in or another file-loaded theme, so a pack can have a variant of its own.
-`chrome` is `"flat"` (fills) or `"vanilla"` (vanilla's own sprites) — absent means the base's, so a
+`chrome` is `"flat"` (fills) or `"vanilla"` (vanilla's own sprites), so absent means the base's, and a
 file based on `vanilla` keeps its stone buttons unless it says otherwise.
 
-The directory is read by `Look.load(path, themesDirectory)` — the call a mod makes once at startup — and
-again after `Look.saveAsTheme` writes a file, so a theme shipped as a file is selectable from the first
+The directory is read by `Look.load(path, themesDirectory)` (the call a mod makes once at startup)
+and again after `Look.saveAsTheme` writes a file, so a theme shipped as a file is selectable from the first
 frame and a theme saved in game is selectable without a restart. `ThemeFiles.reload(directory)` is the
 explicit re-read, and `ThemeFiles.all()` is everything loaded.
 
@@ -61,7 +61,7 @@ explicit re-read, and `ThemeFiles.all()` is everything loaded.
 ## Canvas backgrounds
 
 A theme's canvas is a colour (`canvas`) and, optionally, a pattern drawn over it. The pattern is
-`canvasBackground` — a top-level object beside `colours`, in the same file and read with the same
+`canvasBackground`: a top-level object beside `colours`, in the same file and read with the same
 tolerance:
 
 ```json
@@ -73,18 +73,18 @@ tolerance:
 }
 ```
 
-- `pattern` — `none` (the default), `dot_grid`, `grid_lines`, `speckle`, `hatch` or `image`. The five
+- `pattern`: `none` (the default), `dot_grid`, `grid_lines`, `speckle`, `hatch` or `image`. The five
   flat kinds are drawn from arithmetic: no texture ships with them and none has to resolve.
-- `space` — `graph` anchors the pattern to the content, so it pans and zooms with the graph;
+- `space`: `graph` anchors the pattern to the content, so it pans and zooms with the graph;
   `screen` fixes it to the surface. `spacing` is content units in the first case and screen pixels in
   the second. A tiled image honours this like any other repeating pattern; a covered image is
   screen-fixed by construction and ignores it.
-- `size` — the edge of a dot or speck and the thickness of a line or hatch step, 1..4 pixels.
-- `density` — speckle only: one cell in this many carries a mark, 2..16.
-- `direction` — hatch only: `slash` or `backslash`.
-- `canvasPattern` — the ink, a colour token like any other, so it can be set under `colours` and listed
+- `size`: the edge of a dot or speck and the thickness of a line or hatch step, 1..4 pixels.
+- `density`: speckle only: one cell in this many carries a mark, 2..16.
+- `direction`: hatch only: `slash` or `backslash`.
+- `canvasPattern`: the ink, a colour token like any other, so it can be set under `colours` and listed
   by anything that enumerates the tokens. **Its alpha is the pattern's strength**: `#33` is a hint,
-  `#80` is a blueprint. For an image the ink's RGB is ignored — the texture draws in its own colours
+  `#80` is a blueprint. For an image the ink's RGB is ignored, because the texture draws in its own colours
   and only the alpha comes through, so a dark `canvasPattern` cannot crush a coloured texture.
 
 `spacing` is clamped to 6..256, and a pattern fades out rather than shimmering when its repeats fall
@@ -98,28 +98,28 @@ An `image` is a texture the pack ships:
                       "fit": "tile", "tile": 32 }
 ```
 
-- `texture` — canonicalised to `ns:textures/path.png`: lowercased, the namespace defaulted to
+- `texture`: canonicalised to `ns:textures/path.png`: lowercased, the namespace defaulted to
   `minecraft`, and a leading `textures/` and trailing `.png` accepted and folded away. The real pixel
-  size is read from the file's own PNG header — 24 bytes, no decode, nothing to leak — so a 32x16
+  size is read from the file's own PNG header (24 bytes, no decode, nothing to leak), so a 32x16
   texture keeps its 2:1 aspect when drawn.
-- `fit` — `tile` repeats the texture at `tile` pixels wide (4..256, aspect-preserving), and the
+- `fit`: `tile` repeats the texture at `tile` pixels wide (4..256, aspect-preserving), and the
   lattice steps by the drawn size, so rows and columns abut with no spacing knob and no seams.
   A tile honours `space`: `graph` tiles pan and zoom with the content, `screen` tiles stay put.
   `cover` draws it once, scaled to fill the rectangle and centre-cropped to the rectangle's aspect,
   always screen-fixed.
-- A texture that cannot be resolved draws nothing — the painter will not guess — and an id that is not a
+- A texture that cannot be resolved draws nothing (the painter will not guess), and an id that is not a
   texture id at all is `canonicalTexture`'s empty string, so a caller's own editor can refuse it with
   the resolved path in the message.
 
 A patch that carries only a surface is a valid patch, so one region can be resurfaced without its
-colours being touched — the same object a theme file parses, and the same merge:
+colours being touched: the same object a theme file parses, and the same merge:
 
 ```json
 { "canvasBackground": { "pattern": "speckle", "spacing": 18 } }
 ```
 
-Three built-ins carry a surface as part of what they are — `tome` a parchment speckle, `paper` a
-one-pixel rule grid, `terminal` two-pixel phosphor dots — and a theme based on one of them inherits
+Three built-ins carry a surface as part of what they are (`tome` a parchment speckle, `paper` a
+one-pixel rule grid, `terminal` two-pixel phosphor dots), and a theme based on one of them inherits
 it unless it names its own.
 
 ## `Look`: the instance a mod owns
@@ -127,8 +127,8 @@ it unless it names its own.
 The global palette is what is *drawn*; a `Look` is what a mod's player has *chosen*. It holds a theme
 name, the motion toggle, the text scale, a radius, a canvas background, and any per-token overrides,
 and it is what a settings screen edits. It is read from `appearance.json` in the mod's own config
-directory — each mod names its own directory when it calls `Look.load`, so two mods never share one
-player's file — with `themes/` beside it for the themes saved from the editor:
+directory (each mod names its own directory when it calls `Look.load`, so two mods never share one
+player's file), with `themes/` beside it for the themes saved from the editor:
 
 ```java
 Look look = new Look();              // this mod's instance
@@ -138,11 +138,11 @@ look.apply();                        // push the settings into the palette every
 
 `settings()`, `main()`, `radius()` (0–12), `motion()`, `chosen()`, `serverDefault()`, `custom()`,
 `clearRadius()`, `background()` and `setBackground(...)`. The `Settings` record it exposes is what a
-consumer stores — on the server for a default, or wherever its own config lives. `Settings.patch()` is
+consumer stores, on the server for a default or wherever its own config lives. `Settings.patch()` is
 the same settings as a `ThemePatch`, which is what makes "a pack suggests a palette" and "a player
 picked one" the same merge.
 
-**Choosing a theme clears the per-token overrides, the radius and the canvas background with it** — a
+**Choosing a theme clears the per-token overrides, the radius and the canvas background with it**: a
 theme choice means "use this look", so a picked palette is not tinted by edits made under the previous
 one. The motion toggle and the text scale are untouched, because they are accessibility settings rather
 than parts of a look. Edits worth keeping across a choice are saved first: `saveAsTheme` writes them
@@ -150,13 +150,13 @@ into a theme file, and the file is a theme like any other.
 
 ## `ThemePatch`, and the boundary it keeps
 
-`applyTo(base)` makes a whole theme — a file, a derived built-in — and takes the name, radius, motion,
+`applyTo(base)` makes a whole theme (a file, a derived built-in) and takes the name, radius, motion,
 easing, canvas background and chrome as well as the colours, because a theme is those things. `tint(base)`
 reskins a *region* and takes colours only.
 
 That split is a decision rather than an oversight. A region that could change the corner radius of
 every panel in a screen, or the duration of every transition, would be a data file reaching into the
-screen's construction — and motion would silently do nothing anyway, because animation timing is
+screen's construction. Motion would silently do nothing anyway, because animation timing is
 pushed to `Motion` once per client rather than per region. A value that cannot take effect is worse
 than one that is refused.
 
@@ -164,7 +164,7 @@ than one that is refused.
 
 `chrome` is the one non-colour setting that changes *how* things are painted rather than what
 colour they are: `"flat"` draws bordered fills, `"vanilla"` draws vanilla's own nine-sliced
-widget sprites — stone buttons, bevel panels, the vanilla tooltip box — with shadowed inks.
+widget sprites (stone buttons, bevel panels, the vanilla tooltip box) with shadowed inks.
 Only `vanilla` sets it among the built-ins. Like the radius it travels with the theme and with
 scopes, so a vanilla-chromed chapter keeps its bevels inside a flat book; like motion it is
 never set by a region reskin. A chapter `themePatch` may still name it, because a chapter patch
@@ -173,7 +173,7 @@ is a whole-theme `applyTo` over the chapter's base rather than a region tint.
 ## Scoping a palette to a region
 
 `ArmatureTheme.scope(theme)` and `scopeOf(name)` return a `Scope` that is `AutoCloseable`, so a region
-can be drawn in another palette and the old one restored on the way out — including on an early
+can be drawn in another palette and the old one restored on the way out, including on an early
 return:
 
 ```java

@@ -21,13 +21,14 @@ JsonLocation where = document.nearestLocation("$.tasks[2].count");
 a reader asks: `get(path)`, `has(path)`, `location(path)` (exact), `nearestLocation(path)` (where it
 *would* have been, for a missing field), `lineText(line)` (the source line, for showing it), and
 `locationCount()`. `name()` and `root()` name the file and hand back the parsed tree; nesting past
-128 deep is refused rather than recursed into. **A path is rooted at `$`** — `$.title`, `$.tasks[2].count` — and one that is not is
+128 deep is refused rather than recursed into. **A path is rooted at `$`** (`$.title`, `$.tasks[2].count`),
+and one that is not is
 not a path this reader knows: it answers empty rather than guessing, so a path written without the root
 reads as a field that is simply missing.
 
 ## `Checks`
 
-The checking that every format repeats, so it is written once — each call records a problem rather
+The checking that every format repeats, so it is written once. Each call records a problem rather
 than throwing, and returns the value when it was there:
 
 ```java
@@ -39,11 +40,11 @@ List<String> tags = Checks.stringList(document, "$.tags", problems);
 
 `string`/`optionalString`, `integer`/`optionalInt`, `optionalBool`, `object`/`optionalObject`,
 `array`/`optionalArray`, `stringList`/`optionalStringList`, `id`/`idList` (lowercase letters, digits
-and underscores, at most 64 characters), `exists`, and `nameOf` — the last takes the
+and underscores, at most 64 characters), `exists`, and `nameOf`. The last takes the
 field name off the end of a path, which is how a "missing required field" message can say *which* field.
 `rejectUnknown` reports every field outside the allowed set, with a did-you-mean where one is close;
 `kindOf` and `describe` say what a value is, for the message. `parse(codec, input)` runs a codec
-inside the same report instead of throwing — with an overload taking the caller's own ops — and
+inside the same report instead of throwing (with an overload taking the caller's own ops), and
 `clampedInt`, `clampedDouble`, `wrappedInt` and `jsonObject` are the small codecs a format reuses.
 `JsonWrite.atomically(path, text)` is the write half: through a temp file and an atomic move, so a
 crash cannot leave half a file. The path syntax is the same one throughout: `$.tasks[2].count`.
@@ -52,9 +53,9 @@ crash cannot leave half a file. The path syntax is the same one throughout: `$.t
 
 `Problems` is the report: `error(document, path, message)`, `warn(...)`, `add(...)`, plus `forFile`,
 `hasErrorsIn`, `all()`, and error/warning counts. A file is decoded only if `hasErrorsIn` its name is
-false — one mistake, one message.
+false: one mistake, one message.
 
-A `DataProblem` is a record — `file`, `line`, `column`, `path`, `severity`, `message` — and its
+A `DataProblem` is a record (`file`, `line`, `column`, `path`, `severity`, `message`), and its
 `render()` is the line every reader of these docs will see in a log:
 
 ```
@@ -64,20 +65,20 @@ entries/01.json:14:9: error: unknown field "titl" - did you mean "title"?
 
 Problems sort by file, then line, then column, so a log reads in source order. The `path` field is the
 JSON path the fault sits at, and it is carried rather than rendered: `render()` is the one line a
-caller gets, because every reader of it — a log, a panel, a toast — shows one line per problem, and a
+caller gets, because every reader of it (a log, a panel, a toast) shows one line per problem, and a
 second line reading `at $.tasks[2]` became a card of its own in the one of those that has no room for
 a continuation.
 
 ## Codec helpers
 
-`Codecs.enumByName(MyEnum.class)` is a codec for an enum spelled by its name in the file — the name
+`Codecs.enumByName(MyEnum.class)` is a codec for an enum spelled by its name in the file. The name is
 lowercased on both sides, so a file may write `QUAD_OUT` or `quad_out` and mean the same constant, with
 no second vocabulary to keep in step.
 
 ## Type-tagged objects
 
-A format where one field chooses the rest — a list of tasks, where `"type": "some_mod:item"` decides
-which fields mean anything — wants the type's fields **flat at the object's own level**, and a good
+A format where one field chooses the rest (a list of tasks, where `"type": "some_mod:item"` decides
+which fields mean anything) wants the type's fields **flat at the object's own level**, and a good
 error when the type is unknown:
 
 ```java
@@ -89,7 +90,7 @@ Codec<MyTask> codec = TypeDispatch.codec(
 ```
 
 An unknown type fails with the known ones listed. A `MapCodec` per spec is what keeps `count` at the
-task's own level rather than nested under a `task` object, and `TypeSpec` pairs an id with its codec —
+task's own level rather than nested under a `task` object, and `TypeSpec` pairs an id with its codec,
 plus the type's field names, which is the set `rejectUnknown` checks a file against. The overload
 taking an unknown-type fallback is the additive-compatibility story: one addon's type in a file must
 not cost the author everything else in it. This is the shape a mod's task and reward types are built with.

@@ -2,8 +2,8 @@
 
 A property editor over *other people's* types is a panel over a set it cannot enumerate: an addon
 arrives with a kind this build has never heard of, and the panel still has to show something. The
-`ui.inspect` package is that machinery — rows, typed fields, layout metrics and a registry with a
-fallback — so a mod supplies only what a field of its own type means.
+`ui.inspect` package is that machinery (rows, typed fields, layout metrics and a registry with a
+fallback), so a mod supplies only what a field of its own type means.
 
 ## `InspectRow`: what a panel is made of
 
@@ -36,9 +36,9 @@ public interface InspectField<T> {
 ```
 
 This is where the honest failures live. A field that accepts `"twenty"` for a count and commits it as
-zero is not a drawing fault or an arithmetic fault, and no screenshot shows it — so `parse` answers
+zero is not a drawing fault or an arithmetic fault, and no screenshot shows it, so `parse` answers
 with a value *or a reason*, and the reason is drawn beside the row. The package ships the ordinary
-ones — text, integers with bounds, and so on — and a mod writes one for a type only it understands.
+ones (text, integers with bounds, and so on), and a mod writes one for a type only it understands.
 
 ## `InspectLayout`: metrics, and two shapes of row
 
@@ -51,7 +51,7 @@ Layout is not the panel's business, so the metrics and the stack live here:
 
 `Mode.SIDE_BY_SIDE` puts the label left and the control in the strip at its right; `Mode.STACKED`
 puts the label on its own band and the control across the row beneath it. Which one fits is a property
-of the panel rather than of a row — a narrow panel stacks — so the mode is the caller's, and
+of the panel rather than of a row (a narrow panel stacks), so the mode is the caller's, and
 `stack(rows[, mode])` and `build(rows, width, measure[, mode])` take it. A side-by-side row with a
 control reserves the strip with `stripRoom()`.
 
@@ -68,7 +68,7 @@ List<InspectRow> rows = panels.rowsFor(type, value);   // never null
 `register(type, panel)` is per type and re-registering replaces, deliberately. `fallback(...)` is what
 an unregistered type is shown as, and it is part of the registry rather than an error path: "this
 build cannot edit that" is still an answer a reader can act on. `known(type)` says whether a panel was
-written — the fallback is not a panel, and does not count.
+written. The fallback is not a panel, and does not count.
 
 ## The party roster
 
@@ -84,24 +84,24 @@ for (PartyRoster.Member m : roster.members()) {
 }
 ```
 
-A `Member` carries the id, name, role, and five facts a panel would otherwise re-derive — `self`,
-`owner`, `canRemove` and `canTransfer` (the same rules the server will apply) and `online`. One of
-those is worth calling out: `isReal()` — a question asked of the **roster** rather than of a member —
+A `Member` carries the id, name, role, and five facts a panel would otherwise re-derive (`self`,
+`owner`, `canRemove` and `canTransfer` (the same rules the server will apply) and `online`). One of
+those is worth calling out: `isReal()`, a question asked of the **roster** rather than of a member,
 distinguishes "a party of one you just created" from "you are alone", which a panel inferring it from
 `size() == 1` would get wrong for the ten seconds after the party is made.
 
-Each row reserves `PartyRoster.actionStrip()` on its right — room for Transfer and Remove, laid out by
+Each row reserves `PartyRoster.actionStrip()` on its right, room for Transfer and Remove, laid out by
 `transferSlot` and `removeSlot` from the row's own slot. It is reserved on **every** row, including
 the ones no control is drawn on, so two rows never have different text widths for a reason nothing on
 screen explains. A consumer that draws a role badge from the same strip measures it against the same
 `actionStrip()`, which is what keeps the chip and the hover controls one place rather than two.
 
 From a wire-format rather than a live team, `PartyRoster.fromParts(..., policy, memberLimit)` builds
-the same roster from what the snapshot carried — `canRemove` and friends recomputed from the roles
+the same roster from what the snapshot carried, with `canRemove` and friends recomputed from the roles
 rather than sent, because a boolean that travels can disagree with the roles it came from.
 
-The roster also answers what the viewer may do with the party as a whole — `canLeave`,
-`canDisband`, `canInvite`, `canRename`, `canSetPolicy` — and what the party is: `memberCount`,
+The roster also answers what the viewer may do with the party as a whole (`canLeave`,
+`canDisband`, `canInvite`, `canRename`, `canSetPolicy`) and what the party is: `memberCount`,
 `memberLimit` with `hasMemberLimit`, `membersCanInvite`, `openJoin`, and `removableCount` for the
 rows a Remove button may sit on. A panel asks these rather than re-deriving them from roles, for
 the same reason a kick button asks `canActOn`.

@@ -3,7 +3,7 @@
 A screen that measures its rows once to draw them and again to hit-test them is a screen where the two
 passes can disagree, and the disagreement is invisible until the day a row moves. The kit's answer is
 one object that does both: you describe the rows, it lays them out, and it hands back where each one
-went — so a click cannot land on a different row than the one that was drawn.
+went. A click cannot land on a different row than the one that was drawn.
 
 ## `Stack` builds, `Layout` answers
 
@@ -21,7 +21,7 @@ if (row != null && row.key().equals("claim-all")) { ... }
 
 `Stack` is a builder: `gap(height)`, `divider(spaceAbove, spaceBelow)`, `heading(label)`,
 `paragraph(prose)`, `paragraph(key, prose)`, `text(key, text, align)`, `row(key, height[, insets])`,
-`block(key, width, height, align[, insets])`, `append(other)`. Each element carries a **key** — and
+`block(key, width, height, align[, insets])`, `append(other)`. Each element carries a **key**, and
 that is the design: a hit test that returned coordinates would make the screen match on coordinates,
 so moving a row by changing a metric elsewhere would leave a test that still compiles and now names
 the wrong row. The key moves with the row.
@@ -33,7 +33,7 @@ bottom)`, and `visibleInViewport(viewportTop, viewportBottom, scrollOffset)` for
 ## `Viewport`: one transform, not four copies
 
 A pan-and-zoom surface normally carries a `panX`, a `panY` and a `zoom`, and then writes the same
-three-line conversion at every site that needs it — once to draw a node, once to hit-test one, once to
+three-line conversion at every site that needs it: once to draw a node, once to hit-test one, once to
 work out what a scroll moved. Four copies of one transform, and the copies drift: the one that
 hit-tests is the one nobody re-reads. So the transform lives in one object:
 
@@ -55,7 +55,7 @@ still (answering whether the scale moved, so a caller at a limit skips the redra
 ## `ScrollView`: widgets inside a scrolled region
 
 A hand-drawn row cannot take focus, cannot be narrated, cannot be reached by tab, and has no hover
-state unless the screen reimplements one per row. All of that is already solved by a widget — so the
+state unless the screen reimplements one per row. All of that is already solved by a widget. So the
 `ScrollView` owns the widgets and pays the repositioning cost once, when the content scrolls, rather
 than the screen doing it per row:
 
@@ -66,10 +66,10 @@ view.apply(layout, contentWidth);        // repositions every widget to its slot
 ```
 
 `put(key, widget[, shape])` names a widget into the layout; `apply(layout, contentWidth)` moves them
-after a layout pass and clamps the scroll against the new height — which is why a rebuild under a
+after a layout pass and clamps the scroll against the new height, which is why a rebuild under a
 scrolled reader leaves the column where it was. `get(key)`, `size()`, `clear()`, `placedSlot(key)`,
-`scrollBy`/`scrollTo`, and the culling counts (`placed()`, `culled()`) round it out. Its bar is a `ScrollBar` — `bar()`, bound to
-the strip just outside the viewport — and drawing it is one call:
+`scrollBy`/`scrollTo`, and the culling counts (`placed()`, `culled()`) round it out. Its bar is a `ScrollBar`: `bar()`, bound to
+the strip just outside the viewport, and drawing it is one call:
 `bar().draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now)`.
 
 > [!IMPORTANT]
@@ -86,7 +86,7 @@ the strip just outside the viewport — and drawing it is one call:
 
 A scrollbar is not decoration: a bar beside a list is where the pointer goes when the list is long, and
 a bar that cannot be dragged is a picture of a scrollbar. One class owns the whole of it, for every list
-in a screen — the strip it is drawn in, the grip's geometry, the hit test, both gestures and the wheel:
+in a screen: the strip it is drawn in, the grip's geometry, the hit test, both gestures and the wheel:
 
 ```java
 ScrollBar bar = new ScrollBar(viewport);          // one per list, kept across frames
@@ -102,7 +102,7 @@ bar.draw(renderer, ArmatureScrollStyle.skin(), mouseX, mouseY, now);
 ```
 
 `thumb()`, `track()` and `hit()` are the geometry; `pageStep()` is one screen less a row. The four
-colours come from a `ScrollBar.Skin` rather than from the theme, so the kit stays theme-free —
+colours come from a `ScrollBar.Skin` rather than from the theme, so the kit stays theme-free.
 `ArmatureScrollStyle.skin()` builds it from the theme's two scrollbar tokens, deriving the hover and held
 shades *away from the track's own luminance*, which is what makes a light theme darken its grip on hover
 and a dark theme brighten it. The three states are distinguishable without a colour being chosen for
@@ -112,7 +112,7 @@ shade plus a notch down its middle.
 > [!TIP]
 > The grip is held rather than widened. Every container that draws a bar reserved room for a three-pixel
 > one, so a hover that grew it would draw over content in any layout whose arithmetic was not re-derived
-> for it — and the state is legible without that.
+> for it, and the state is legible without that.
 
 > [!TIP]
 > The viewport is the kit's rather than a canvas's on purpose: moving content under a fixed window and

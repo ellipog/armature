@@ -2,14 +2,14 @@
 
 Armature's other half is a UI toolkit, and it is built on one decision: **every draw call goes through
 one interface.** `GuiRenderer` knows about fills, text, item icons, player faces, blur and scissor
-rectangles — and the only game types it names are the item stack and the texture id a caller already
+rectangles. The only game types it names are the item stack and the texture id a caller already
 holds. `render/GuiGraphicsRenderer` is its 1.21.1 implementation, and no drawing call in the toolkit
 names the graphics context: the controls are ordinary `AbstractWidget`s, for the input and narration
 the game already gives them, and what they draw they draw through the seam.
 
 That is what makes the toolkit testable at all: the layout engine, the text models and the shapes are
 arithmetic over rectangles and strings, so they are asserted in milliseconds without a client, a font
-or a window. It is also the version [[seam|seam]] — the 26.x port swaps the implementation and the toolkit
+or a window. It is also the version [[seam|seam]]: the 26.x port swaps the implementation and the toolkit
 above it does not move.
 
 ```java
@@ -28,7 +28,7 @@ bold/italic/underline, each at a scale) with `styledWidth`, `centredText`, `text
 `lineHeight`, `icon(ItemStack, …)` and `face(UUID, …)` (each answering whether it drew),
 `texture`/`scaled`/`sprite` stamps with `textureSize` for a file's own dimensions (`textureStamp`
 when only the handle is wanted), `turned` (a
-rotated region, closed like a clip), `blur`, and `clip(left, top, right, bottom)` —
+rotated region, closed like a clip), `blur`, and `clip(left, top, right, bottom)`,
 which returns a `Scoped` that closes the clip again, so a scissor cannot be left open by a return
 taken early. `clip` also takes a layout `Slot` or a `Viewport`, for the region a caller already holds.
 
@@ -36,7 +36,7 @@ The other half of the seam is `batched(...)`: a region of drawing that submits o
 per fill, because the unmanaged screen path flushes per fill. It also has `flush()` for the caller
 that has to draw something in the middle.
 
-Every colour a widget asks for comes from `ArmatureTheme.current()` — a button does not know what a
+Every colour a widget asks for comes from `ArmatureTheme.current()`. A button does not know what a
 theme is, it asks for `body` and gets whatever the current theme says. [[armature:toolkit/themes]] is
 the page about that.
 
@@ -54,13 +54,13 @@ The smaller pieces in `ui.kit`, each written once so a screen does not carry its
 
 | | |
 |---|---|
-| `RoundedRect` | A rounded rectangle as a span table — the horizontal extent of each row. |
+| `RoundedRect` | A rounded rectangle as a span table: the horizontal extent of each row. |
 | `NineSlice` | One source image drawn into a box of any size without its corners stretching. |
-| `Outline` | A collapsible tree of keyed nodes — each with a parent and a depth — and which rows that makes visible. |
+| `Outline` | A collapsible tree of keyed nodes (each with a parent and a depth) and which rows that makes visible. |
 | `Colour` | ARGB arithmetic: blending, alpha scaling, taking a colour apart. Eight digits, always. |
 | `Easing`, `Tween`, `Motion` | The curve of an animation over time; one value moving towards a target; and whether this client animates at all. |
-| `Hover` | Which of a set of things the pointer is over, eased — exactly one at a time. |
+| `Hover` | Which of a set of things the pointer is over, eased, exactly one at a time. |
 | `Insets` | Space around something: padding when inside, margin when outside. |
 | `Measure` | The only thing a layout needs to know about a font. |
 | `TextWrap`, `Codepoints`, `TextHistory` | Wrapping a paragraph to a column; what counts as one character to a caret; and a field's undo history. |
-| `DeclaredPaths` | How a folder that declares its own children resolves them — one bare segment, resolved inward. |
+| `DeclaredPaths` | How a folder that declares its own children resolves them: one bare segment, resolved inward. |
