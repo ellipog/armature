@@ -133,6 +133,11 @@ public final class ArmatureEvents {
      * <p>Carries the breaker and the state <b>as it was broken</b> — the only moment it is
      * real, on either loader. Anything that must see the world in one particular state
      * has to cope with both orderings, the same caveat {@link #ENTITY_DEATH} carries.
+     *
+     * <p>So the rule is: <b>never read the world from this listener</b> — on Fabric the
+     * block is already air, on NeoForge it is still there, and a listener that branches on
+     * what it finds behaves differently per loader by construction. Decide from the carried
+     * state alone, which is identical on both.
      */
     @FunctionalInterface
     public interface BlockBroken {
