@@ -3,6 +3,7 @@ package dev.ellipog.armature.neoforge;
 import dev.ellipog.armature.api.event.ArmatureEvents;
 
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -70,8 +71,14 @@ public final class NeoForgeEvents {
         // BreakEvent is cancellable and fires before the break: a cancelled
         // event is a protected block, so only an uncancelled one reaches
         // listeners — that is the "actually happened" half of the contract
-        // Fabric's AFTER side gives for free.
-        bus.addListener((BlockEvent.BreakEvent event) -> {
+        // Fabric's AFTER side gives for free. Lowest priority and
+        // receiveCancelled=false, so a protection mod cancelling at any
+        // higher priority has already run before this listener is even
+        // considered: without both, a late canceller would leak a
+        // BLOCK_BROKEN for a block that never broke. The isCanceled check
+        // stays as well, so the guarantee does not silently depend on the
+        // flags above surviving a future edit.
+        bus.addListener(EventPriority.LOWEST, false, (BlockEvent.BreakEvent event) -> {
             if (!event.isCanceled() && event.getPlayer() instanceof ServerPlayer player) {
                 ArmatureEvents.BLOCK_BROKEN.invoker().onBlockBroken(player, event.getState());
             }
