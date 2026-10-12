@@ -153,7 +153,7 @@ public final class OpenPacTeams implements MutableTeamManager {
      */
     public static boolean isPresent(MinecraftServer server) {
         if (!server.isSameThread()) {
-            Constants.LOG.debug("armature: asked whether Open Parties and Claims is present off the "
+            Constants.LOG.debug("asked whether Open Parties and Claims is present off the "
                     + "server thread; answering no, because its registry is not documented as safe to "
                     + "read from anywhere else");
             return false;
@@ -165,7 +165,7 @@ public final class OpenPacTeams implements MutableTeamManager {
         catch (ClassCastException e) {
             // get() casts the server to the interface OPAC's mixin adds. isModLoaded says the mod is
             // present, not that the mixin was applied -- so this is expected rather than exotic.
-            Constants.LOG.warn("armature: Open Parties and Claims is loaded but its server hook is not "
+            Constants.LOG.warn("Open Parties and Claims is loaded but its server hook is not "
                     + "present on this server ({}); its parties are not available", e.toString());
             return false;
         }
@@ -262,7 +262,7 @@ public final class OpenPacTeams implements MutableTeamManager {
         }
 
         if (!name.isEmpty() && !name.equals(party.getDefaultName())) {
-            Constants.LOG.info("armature: asked for a party named '{}'; Open Parties and Claims named it "
+            Constants.LOG.info("asked for a party named '{}'; Open Parties and Claims named it "
                     + "'{}' instead, as its public API has no rename", name, party.getDefaultName());
         }
         return toTeam(party);

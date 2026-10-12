@@ -153,7 +153,7 @@ public final class TeamProviders {
         }
         REGISTERED.add(provider);
         RESOLVED.clear();
-        Constants.LOG.info("armature: team provider '{}' registered", provider.id());
+        Constants.LOG.info("team provider '{}' registered", provider.id());
     }
 
     /**
@@ -210,7 +210,7 @@ public final class TeamProviders {
             // unconditionally, which is what makes it a usable floor -- and would tell the operator
             // they had two parties mods installed. Measured on a real boot: this line named 'stored'
             // on a server running exactly one.
-            Constants.LOG.warn("armature: '{}' is also present and lower in precedence, so its teams "
+            Constants.LOG.warn("'{}' is also present and lower in precedence, so its teams "
                     + "are not being used. Two parties mods installed is a choice this cannot make "
                     + "for you -- see TeamProviders", rival);
         }
@@ -272,7 +272,7 @@ public final class TeamProviders {
                 // A source that cannot subscribe is one we can still read from, so this is logged and
                 // not fatal. It is worth a warning rather than debug: the visible consequence is
                 // silence where a listener was expected, and silence is the hardest thing to diagnose.
-                Constants.LOG.warn("armature: team source '{}' could not attach its listeners ({}); it "
+                Constants.LOG.warn("team source '{}' could not attach its listeners ({}); it "
                         + "can still be read from, but its own changes will not be announced",
                         candidate.id(), e.toString());
             }
@@ -302,7 +302,7 @@ public final class TeamProviders {
      */
     public static void invalidate(MinecraftServer server) {
         if (RESOLVED.remove(server) != null) {
-            Constants.LOG.info("armature: re-resolving teams for this server, because a source's own "
+            Constants.LOG.info("re-resolving teams for this server, because a source's own "
                     + "teams changed");
         }
     }
@@ -327,7 +327,7 @@ public final class TeamProviders {
             ArmatureEvents.SERVER_STARTED.register(TeamProviders::of);
             ArmatureEvents.SERVER_STOPPING.register(server -> {
                 RESOLVED.remove(server);
-                Constants.LOG.info("armature: teams cache cleared for a stopping server");
+                Constants.LOG.info("teams cache cleared for a stopping server");
             });
         }
     }
@@ -344,7 +344,7 @@ public final class TeamProviders {
             // LinkageError as well as RuntimeException, and that is not defensive padding: the whole
             // reason this file defers the factories is that loading an adapter can fail to link when
             // its mod is absent or its mixin did not apply, and the answer is the same either way.
-            Constants.LOG.warn("armature: team provider '{}' could not be asked whether it is present "
+            Constants.LOG.warn("team provider '{}' could not be asked whether it is present "
                     + "({}); treating it as absent", provider.id(), e.toString());
             return false;
         }
@@ -363,7 +363,7 @@ public final class TeamProviders {
             return ArmatureApi.platform().isModLoaded(modId);
         }
         catch (RuntimeException e) {
-            Constants.LOG.debug("armature: cannot ask whether '{}' is loaded ({}); assuming not",
+            Constants.LOG.debug("cannot ask whether '{}' is loaded ({}); assuming not",
                     modId, e.toString());
             return false;
         }

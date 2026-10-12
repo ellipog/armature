@@ -290,7 +290,7 @@ public final class FtbTeams implements TeamProvider, PartySource {
             if (event.getPlayer() == null) {
                 // Removed while offline. The server is not in the event, so there is nothing honest
                 // to pass a listener. See this method's comment.
-                Constants.LOG.debug("armature: {} left an FTB party while offline; not bridged to "
+                Constants.LOG.debug("{} left an FTB party while offline; not bridged to "
                         + "Armature's TeamEvents because the event does not name a server",
                         event.getPlayerId());
                 return;
@@ -312,7 +312,7 @@ public final class FtbTeams implements TeamProvider, PartySource {
 
         // The word "whether or not" is the load-bearing part: this line appears on a server where FTB
         // is NOT the chosen source, and it has to. See attachListeners.
-        Constants.LOG.info("armature: listening for FTB Teams' party events (whether or not FTB is the "
+        Constants.LOG.info("listening for FTB Teams' party events (whether or not FTB is the "
                 + "chosen source on this server)");
     }
 }

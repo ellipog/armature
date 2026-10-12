@@ -131,7 +131,7 @@ public abstract class ArmatureScreen extends Screen {
         // case. It is here because the failure this mechanism can have is a screen that rebuilds on
         // every frame -- a source that does not settle, or a rebuild that moves a value the rebuild
         // itself reads -- and that is invisible except as a flicker.
-        dev.ellipog.armature.Constants.LOG.debug("armature: {} moved; {} is rebuilding", moved, title.getString());
+        dev.ellipog.armature.Constants.LOG.debug("{} moved; {} is rebuilding", moved, title.getString());
 
         rebuildWidgets();
     }

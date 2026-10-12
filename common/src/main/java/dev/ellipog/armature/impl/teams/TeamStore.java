@@ -175,7 +175,7 @@ public final class TeamStore extends SavedData {
                 // A team with no id or no owner cannot be repaired, and keeping it would produce
                 // one nobody can join or leave. Dropped, and said so.
                 dev.ellipog.armature.Constants.LOG.warn(
-                        "armature: skipping a stored team with no id or owner (entry {})", i);
+                        "skipping a stored team with no id or owner (entry {})", i);
                 continue;
             }
 
@@ -240,7 +240,7 @@ public final class TeamStore extends SavedData {
             return UUID.fromString(raw);
         }
         catch (IllegalArgumentException e) {
-            dev.ellipog.armature.Constants.LOG.warn("armature: '{}' is not a valid uuid in stored team data", raw);
+            dev.ellipog.armature.Constants.LOG.warn("'{}' is not a valid uuid in stored team data", raw);
             return null;
         }
     }
@@ -252,7 +252,7 @@ public final class TeamStore extends SavedData {
         catch (IllegalArgumentException e) {
             // A role that no longer exists means somebody removed a constant. Demoting to MEMBER is
             // the safe direction: it grants nothing new.
-            dev.ellipog.armature.Constants.LOG.warn("armature: unknown team role '{}', treating as MEMBER", raw);
+            dev.ellipog.armature.Constants.LOG.warn("unknown team role '{}', treating as MEMBER", raw);
             return TeamRole.MEMBER;
         }
     }

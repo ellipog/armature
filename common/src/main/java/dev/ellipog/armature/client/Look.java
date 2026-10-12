@@ -557,7 +557,7 @@ public final class Look {
     public String saveAsTheme(String name) {
         Path directory = themesDirectory;
         if (directory == null) {
-            Constants.LOG.warn("armature: no theme directory was supplied, so the theme could not be"
+            Constants.LOG.warn("no theme directory was supplied, so the theme could not be"
                     + " saved. A mod that wants the editor's Save passes one to load.");
             return null;
         }
@@ -587,7 +587,7 @@ public final class Look {
             JsonWrite.atomically(directory.resolve(clean + ".json"), root.toString());
         }
         catch (IOException e) {
-            Constants.LOG.warn("armature: the theme could not be written to {}", directory, e);
+            Constants.LOG.warn("the theme could not be written to {}", directory, e);
             return null;
         }
 
@@ -717,7 +717,7 @@ public final class Look {
                 settings = read(Files.readString(path, StandardCharsets.UTF_8));
             }
             catch (IOException | RuntimeException e) {
-                Constants.LOG.warn("armature: {} could not be read, so the default appearance is in use."
+                Constants.LOG.warn("{} could not be read, so the default appearance is in use."
                         + " Deleting the file will stop this message.", path, e);
             }
         }
@@ -744,7 +744,7 @@ public final class Look {
         boolean chosen = root.has("chosen") && root.get("chosen").getAsBoolean();
         String theme = root.has("theme") ? root.get("theme").getAsString() : Themes.DEFAULT.name();
         if (Themes.any(theme) == null) {
-            Constants.LOG.warn("armature: \"{}\" is not a theme this build has, so {} is in use instead."
+            Constants.LOG.warn("\"{}\" is not a theme this build has, so {} is in use instead."
                     + " The ones it has are: {}", theme, Themes.DEFAULT.name(), Themes.names());
             theme = Themes.DEFAULT.name();
         }
@@ -759,7 +759,7 @@ public final class Look {
                     : root.getAsJsonObject("custom").entrySet()) {
                 String token = entry.getKey().trim();
                 if (!ThemeToken.exists(token)) {
-                    Constants.LOG.warn("armature: \"{}\" in {} is not a colour this build can set, so it"
+                    Constants.LOG.warn("\"{}\" in {} is not a colour this build can set, so it"
                             + " was dropped. The ones it has are: {}", token, FILE_NAME, ThemeToken.ids());
                     continue;
                 }
@@ -767,7 +767,7 @@ public final class Look {
                         ? Colour.fromHex(entry.getValue().getAsString())
                         : null;
                 if (argb == null) {
-                    Constants.LOG.warn("armature: the custom colour for \"{}\" in {} is not a hex colour",
+                    Constants.LOG.warn("the custom colour for \"{}\" in {} is not a hex colour",
                             token, FILE_NAME);
                     continue;
                 }
@@ -797,7 +797,7 @@ public final class Look {
                         ? CanvasBackground.fromJson(root.get("canvasBackground"), backgroundProblems)
                         : null;
         for (String problem : backgroundProblems) {
-            Constants.LOG.warn("armature: canvas background in {}: {}", FILE_NAME, problem);
+            Constants.LOG.warn("canvas background in {}: {}", FILE_NAME, problem);
         }
 
         return new Settings(theme, motion, chosen, custom, radius, textScale, background);
@@ -846,7 +846,7 @@ public final class Look {
         catch (IOException e) {
             // Not fatal and not worth stopping a frame for. The setting is live either way; it just
             // will not be there next time, which is worth a line so it is not a mystery later.
-            Constants.LOG.warn("armature: the appearance settings could not be saved to {}", file, e);
+            Constants.LOG.warn("the appearance settings could not be saved to {}", file, e);
         }
     }
 

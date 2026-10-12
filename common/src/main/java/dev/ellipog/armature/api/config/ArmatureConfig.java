@@ -118,7 +118,7 @@ public final class ArmatureConfig {
                 // `read` is total, so the RuntimeException here is the second guard -- an
                 // OutOfMemoryError's smaller cousins and a Gson that changed its mind. A contract
                 // is not a check, and this runs where a crash has no frame to report in.
-                Constants.LOG.warn("armature: {} could not be read, so the default settings are in"
+                Constants.LOG.warn("{} could not be read, so the default settings are in"
                         + " use. Fix or delete the file; it has not been changed.", file, e);
                 current = DEFAULTS;
                 return DEFAULTS;
@@ -131,10 +131,10 @@ public final class ArmatureConfig {
             // once, on first run -- and that is exactly the run where a half-written file would leave a
             // player with settings that neither parse nor exist. See JsonWrite.
             JsonWrite.atomically(file, DEFAULTS.write());
-            Constants.LOG.info("armature: wrote the default settings to {}", file);
+            Constants.LOG.info("wrote the default settings to {}", file);
         }
         catch (IOException e) {
-            Constants.LOG.warn("armature: the settings could not be written to {}. The defaults are in"
+            Constants.LOG.warn("the settings could not be written to {}. The defaults are in"
                     + " use for this run, and nothing will persist.", file, e);
         }
         return DEFAULTS;
@@ -167,21 +167,21 @@ public final class ArmatureConfig {
         try {
             JsonElement parsed = JsonParser.parseString(json);
             if (!parsed.isJsonObject()) {
-                Constants.LOG.warn("armature: the settings file should be a JSON object with a 'teams'"
+                Constants.LOG.warn("the settings file should be a JSON object with a 'teams'"
                         + " section in it; the defaults are in use");
                 return DEFAULTS;
             }
             root = parsed.getAsJsonObject();
         }
         catch (RuntimeException e) {
-            Constants.LOG.warn("armature: the settings file is not valid JSON, so the defaults are in"
+            Constants.LOG.warn("the settings file is not valid JSON, so the defaults are in"
                     + " use ({})", e.getMessage());
             return DEFAULTS;
         }
 
         for (String key : root.keySet()) {
             if (!TEAMS.equals(key)) {
-                Constants.LOG.warn("armature: \"{}\" in the settings is not a section this build"
+                Constants.LOG.warn("\"{}\" in the settings is not a section this build"
                         + " knows, so it was ignored", key);
             }
         }
@@ -193,7 +193,7 @@ public final class ArmatureConfig {
             return DEFAULTS;
         }
         if (!section.isJsonObject()) {
-            Constants.LOG.warn("armature: \"teams\" in the settings should be an object; the defaults"
+            Constants.LOG.warn("\"teams\" in the settings should be an object; the defaults"
                     + " are in use for it");
             return DEFAULTS;
         }
@@ -203,7 +203,7 @@ public final class ArmatureConfig {
     private static TeamSettings readTeams(JsonObject section) {
         for (String key : section.keySet()) {
             if (!TEAM_KEYS.contains(key)) {
-                Constants.LOG.warn("armature: \"{}\" in the teams settings is not a setting this build"
+                Constants.LOG.warn("\"{}\" in the teams settings is not a setting this build"
                         + " knows, so it was ignored. The ones it has are: {}", key, TEAM_KEYS);
             }
         }
@@ -220,7 +220,7 @@ public final class ArmatureConfig {
             return TeamSettings.DEFAULT.maxMembers();
         }
         if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
-            Constants.LOG.warn("armature: \"{}\" is not a number, so {} is in use",
+            Constants.LOG.warn("\"{}\" is not a number, so {} is in use",
                     MAX_MEMBERS, TeamSettings.DEFAULT.maxMembers());
             return TeamSettings.DEFAULT.maxMembers();
         }
@@ -228,13 +228,13 @@ public final class ArmatureConfig {
         double raw = value.getAsDouble();
         int wanted = (int) Math.floor(raw);
         if (wanted != raw) {
-            Constants.LOG.warn("armature: \"{}\" is {}, which is not a whole number; using {}",
+            Constants.LOG.warn("\"{}\" is {}, which is not a whole number; using {}",
                     MAX_MEMBERS, raw, wanted);
         }
 
         int clamped = TeamSettings.clampMaxMembers(wanted);
         if (clamped != wanted) {
-            Constants.LOG.warn("armature: \"{}\" is {}, and a party may be configured from {} to {}"
+            Constants.LOG.warn("\"{}\" is {}, and a party may be configured from {} to {}"
                             + " members; using {}", MAX_MEMBERS, wanted, TeamSettings.MIN_MAX_MEMBERS,
                     TeamSettings.MAX_MAX_MEMBERS, clamped);
         }
@@ -249,7 +249,7 @@ public final class ArmatureConfig {
         if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()) {
             return value.getAsBoolean();
         }
-        Constants.LOG.warn("armature: \"{}\" is not true or false, so {} is in use", key, fallback);
+        Constants.LOG.warn("\"{}\" is not true or false, so {} is in use", key, fallback);
         return fallback;
     }
 

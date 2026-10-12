@@ -35,7 +35,7 @@ public final class ArmatureFabric implements ModInitializer {
                 // A library we cannot link against is a library we do not have. Logged rather
                 // than thrown, because the fallback -- the seam reading zero -- is the
                 // documented behaviour for an instance without it.
-                Constants.LOG.warn("armature: TR Energy is present but its adapter could not be "
+                Constants.LOG.warn("TR Energy is present but its adapter could not be "
                         + "installed ({}); carried energy reads zero on this instance", e.toString());
             }
         }
@@ -51,7 +51,7 @@ public final class ArmatureFabric implements ModInitializer {
             return ArmatureApi.platform().isModLoaded(TrEnergyProvider.MOD_ID);
         }
         catch (RuntimeException e) {
-            Constants.LOG.debug("armature: cannot ask whether '{}' is loaded ({}); assuming not",
+            Constants.LOG.debug("cannot ask whether '{}' is loaded ({}); assuming not",
                     TrEnergyProvider.MOD_ID, e.toString());
             return false;
         }
