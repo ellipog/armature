@@ -73,6 +73,8 @@ public final class InspectPanels<V> {
             return rows == null ? List.of() : List.copyOf(rows);
         }
         String name = type == null ? "this value" : "\"" + type + "\"";
+        // English on purpose, like every string the toolkit words itself: dev chrome, and the
+        // toolkit ships no language files for a caller to translate through.
         return List.of(InspectRow.warning("inspect:unknown",
                 "No panel for " + name + " -- the value is shown as it is stored"));
     }

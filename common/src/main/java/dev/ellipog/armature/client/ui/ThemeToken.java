@@ -92,7 +92,12 @@ public record ThemeToken(String id, String label, Group group) {
             this.label = label;
         }
 
-        /** The name to show a person. */
+        /** The name to show a person.
+         *
+         * <p>English, deliberately: these labels are dev chrome for the theme inspector, and the
+         * toolkit ships no language files — see "Misuse speaks English" on
+         * {@link dev.ellipog.armature.api.teams.TeamManager} for the rule behind it.
+         */
         public String label() {
             return label;
         }

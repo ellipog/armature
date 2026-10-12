@@ -50,6 +50,13 @@ import java.util.UUID;
  * <p>Every method here is called on the server thread, and a third-party implementation may assume
  * that. Armature's own resolution runs on the server thread for exactly this reason — see
  * {@code TeamProviders}.
+ *
+ * <h2>Misuse speaks English</h2>
+ *
+ * <p>The exceptions below are programmer errors, worded in plain English: this toolkit ships no
+ * language files — it is game-free and owns no assets — so anything a player reads must be worded
+ * by the caller. Commands validate first and answer translatably; reaching one of these throws
+ * means a caller skipped that step.
  */
 public interface TeamManager {
 
