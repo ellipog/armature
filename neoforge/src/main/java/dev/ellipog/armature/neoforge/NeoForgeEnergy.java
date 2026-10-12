@@ -14,6 +14,9 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
  * <p>Each item contributes no more than {@code maxPerItem} when that is positive, in both
  * directions: the measurement caps and the drain caps in the same slot order, so what one counted
  * is what the other takes.
+ *
+ * <p>Fabric's twin reads the same slots through Team Reborn Energy's item lookup and caps the
+ * same way; what the two promise each other is written on {@link EnergyAccess}.
  */
 public final class NeoForgeEnergy implements EnergyAccess {
 

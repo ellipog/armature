@@ -23,6 +23,9 @@ import team.reborn.energy.api.EnergyStorage;
  * <p>Only ever loaded behind the presence check — see {@link TrEnergyProvider} for why the
  * holder exists — so a Fabric instance without the library never loads this class and the seam
  * keeps its silent zero.
+ *
+ * <p>NeoForge's twin reads the same slots through the energy-storage capability and caps the
+ * same way; what the two promise each other is written on {@link EnergyAccess}.
  */
 public final class FabricEnergy implements EnergyAccess {
 

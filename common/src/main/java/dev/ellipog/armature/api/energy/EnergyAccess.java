@@ -15,6 +15,14 @@ import net.minecraft.server.level.ServerPlayer;
  * the seam lives here rather than there so any mod on the suite can measure it without depending
  * on a consumer.
  *
+ * <h2>The parity contract both loaders honor</h2>
+ *
+ * <p>Every slot the inventory reports is read — main, armour and offhand alike, jetpacks included.
+ * Each item contributes no more than {@code maxPerItem} when that is positive, and the measurement
+ * caps and the drain caps in the same slot order, so what one counted is what the other takes.
+ * Totals saturate at {@code Integer.MAX_VALUE} rather than overflowing. A loader whose library is
+ * absent (TR Energy on Fabric) reads zero rather than failing.
+ *
  * @see EnergyAccesses
  */
 public interface EnergyAccess {
