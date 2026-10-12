@@ -13,6 +13,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -91,6 +92,19 @@ public final class TeamStore extends SavedData {
 
     public Collection<Team> all() {
         return List.copyOf(teams.values());
+    }
+
+    /**
+     * The teams as a live unmodifiable view, for the manager's own per-lookup scans.
+     *
+     * <p>Package-private: the copy in {@link #all()} stays the public answer, but the manager's
+     * {@code realTeamOf} and {@code invitesFor} walk this instead of copying the map on every
+     * call. Safe because every entry point runs on the server thread with no callbacks inside
+     * the scan — see {@code TeamManager}'s threading note — so the view cannot be mutated
+     * underneath its own walk.
+     */
+    Collection<Team> live() {
+        return Collections.unmodifiableCollection(teams.values());
     }
 
     public int size() {

@@ -132,6 +132,30 @@ public final class StoredTeamManager implements MutableTeamManager {
     }
 
     /**
+     * A direct scan of the store rather than the default walk over a copy.
+     *
+     * <p>The default would call {@link #teams()} — a full list copy per lookup — and a player who
+     * is in no team is the common case, so the copy most often finds nothing. Same answer, no copy.
+     */
+    @Override
+    public Optional<Team> realTeamOf(UUID player) {
+        for (Team team : store.live()) {
+            if (team.isMember(player)) {
+                return Optional.of(team);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The same scan for invitations: one sized list, no copy of the teams first.
+     */
+    @Override
+    public List<Team> invitesFor(UUID player) {
+        return store.live().stream().filter(team -> team.isInvited(player)).toList();
+    }
+
+    /**
      * True, and it is true on behalf of its own mutations only.
      *
      * <p>Every write below fires the matching {@link TeamEvents} event, so a listener on this manager

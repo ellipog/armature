@@ -163,65 +163,74 @@ public final class ArmatureEvents {
 
     public static final Event<ServerStarting> SERVER_STARTING = new Event<>(listeners ->
             (MinecraftServer server) -> {
-                for (ServerStarting listener : listeners) {
-                    listener.onServerStarting(server);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onServerStarting(server);
                 }
             });
 
     public static final Event<ServerStarted> SERVER_STARTED = new Event<>(listeners ->
             (MinecraftServer server) -> {
-                for (ServerStarted listener : listeners) {
-                    listener.onServerStarted(server);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onServerStarted(server);
                 }
             });
 
     public static final Event<ServerStopping> SERVER_STOPPING = new Event<>(listeners ->
             (MinecraftServer server) -> {
-                for (ServerStopping listener : listeners) {
-                    listener.onServerStopping(server);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onServerStopping(server);
                 }
             });
 
     public static final Event<PlayerTick> PLAYER_TICK = new Event<>(listeners ->
             (ServerPlayer player) -> {
-                for (PlayerTick listener : listeners) {
-                    listener.onPlayerTick(player);
+                // Indexed, not for-each: this is the hottest walk in the API. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onPlayerTick(player);
                 }
             });
 
     public static final Event<PlayerJoin> PLAYER_JOIN = new Event<>(listeners ->
             (ServerPlayer player) -> {
-                for (PlayerJoin listener : listeners) {
-                    listener.onPlayerJoin(player);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onPlayerJoin(player);
                 }
             });
 
     public static final Event<PlayerLeave> PLAYER_LEAVE = new Event<>(listeners ->
             (ServerPlayer player) -> {
-                for (PlayerLeave listener : listeners) {
-                    listener.onPlayerLeave(player);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onPlayerLeave(player);
                 }
             });
 
     public static final Event<EntityDeath> ENTITY_DEATH = new Event<>(listeners ->
             (LivingEntity entity, DamageSource source) -> {
-                for (EntityDeath listener : listeners) {
-                    listener.onEntityDeath(entity, source);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onEntityDeath(entity, source);
                 }
             });
 
     public static final Event<BlockBroken> BLOCK_BROKEN = new Event<>(listeners ->
             (ServerPlayer player, BlockState state) -> {
-                for (BlockBroken listener : listeners) {
-                    listener.onBlockBroken(player, state);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onBlockBroken(player, state);
                 }
             });
 
     public static final Event<CommandsRegister> COMMANDS_REGISTER = new Event<>(listeners ->
             (CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context,
              Commands.CommandSelection selection) -> {
-                for (CommandsRegister listener : listeners) {
-                    listener.onCommandsRegister(dispatcher, context, selection);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onCommandsRegister(dispatcher, context, selection);
                 }
             });
 }

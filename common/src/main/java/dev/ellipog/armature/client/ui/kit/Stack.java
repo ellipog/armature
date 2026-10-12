@@ -247,11 +247,14 @@ public final class Stack {
                 }
                 case TEXT -> {
                     // The wrap decides the height, and the height is the wrap's own answer -- not a
-                    // second estimate. See the class note.
-                    List<String> lines = TextWrap.wrap(element.text(), Math.max(0, width), measure);
+                    // second estimate. See the class note. The widths come along with the lines for
+                    // the same reason: re-measuring each line after wrapping walks every one twice.
+                    TextWrap.Wrapped wrapped = TextWrap.wrapMeasured(element.text(), Math.max(0, width),
+                            measure);
+                    List<String> lines = wrapped.lines();
                     int contentWidth = 0;
-                    for (String line : lines) {
-                        contentWidth = Math.max(contentWidth, measure.width(line));
+                    for (int lineWidth : wrapped.widths()) {
+                        contentWidth = Math.max(contentWidth, lineWidth);
                     }
                     outerHeight = lines.size() * measure.lineHeight() + element.insets().vertical();
                     slotWidth = element.align() == Align.STRETCH ? width : contentWidth;

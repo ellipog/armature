@@ -14,8 +14,10 @@ import java.util.function.Function;
  * <pre>{@code
  * public static final Event<PlayerJoin> PLAYER_JOIN = new Event<>(listeners ->
  *         player -> {
- *             for (PlayerJoin listener : listeners) {
- *                 listener.onPlayerJoin(player);
+ *             // Indexed, not for-each: a for-each allocates an iterator per fire, and tick
+ *             // events fire twenty times a second per player. See below.
+ *             for (int i = 0, n = listeners.size(); i < n; i++) {
+ *                 listeners.get(i).onPlayerJoin(player);
  *             }
  *         });
  * }</pre>
@@ -27,6 +29,15 @@ import java.util.function.Function;
  * <p>Listeners are held in a copy-on-write list: registering during a fire is safe, and
  * firing is a plain array walk with no locking. Events here fire every tick, so that
  * matters.
+ *
+ * <h2>The walk discipline, which is load-bearing rather than stylistic</h2>
+ *
+ * <p>Every invoker above walks its list <b>by index with the size captured once</b>, never with
+ * a for-each. Two reasons that agree: a for-each allocates an iterator on every fire, and this
+ * list is append-only (there is no unregister), so a captured count is exactly the snapshot a
+ * for-each would have taken — a listener registered mid-fire is seen next fire, never
+ * half-seen, and nothing can throw. A future edit "tidying" a walk back into a for-each
+ * reintroduces one allocation per player per tick; do not.
  *
  * <p>Not thread-safe in the sense that listeners may run on whichever thread fired the
  * event. Server events are on the server thread; a listener that touches game state must

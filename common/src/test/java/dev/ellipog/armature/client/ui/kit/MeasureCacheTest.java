@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * The memoizing measure: what it answers, what it does not ask twice, and what makes it start again.
@@ -181,5 +182,84 @@ class MeasureCacheTest {
         measure.width(first);
         assertEquals(before + 1, delegate.asks(first),
                 "the earliest entries were dropped, so this one is asked for again");
+    }
+
+    // ------------------------------------------------------------------
+    // Slices
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a slice answers what the substring would, and is asked for once")
+    void aSliceIsMeasuredOnce() {
+        Counting delegate = new Counting(5);
+        Measure measure = cached(delegate);
+        String line = "hello world";
+
+        // The shape of a caret offset: the same slice every frame, then the frame after.
+        assertEquals(25, measure.width(line, 0, 5));
+        assertEquals(25, measure.width(line, 0, 5));
+        assertEquals(30, measure.width(line, 0, 6));
+
+        assertEquals(1, delegate.asks("hello"), "the delegate saw the slice once, as a whole string");
+        assertEquals(1, delegate.asks("hello "), "and the longer slice once");
+        assertEquals(0, delegate.asks(line), "while the whole line was never measured for this");
+    }
+
+    @Test
+    @DisplayName("a whole-string slice is the whole-string entry, not a second one")
+    void wholeSliceIsTheWholeEntry() {
+        Counting delegate = new Counting(5);
+        Measure measure = cached(delegate);
+        String line = "hello";
+
+        assertEquals(measure.width(line), measure.width(line, 0, line.length()));
+        assertEquals(1, delegate.asks(line), "one entry, asked once however it was addressed");
+    }
+
+    @Test
+    @DisplayName("a slice is forgotten with the epoch, like every other width")
+    void slicesFollowTheEpoch() {
+        Counting delegate = new Counting(5);
+        Measure measure = cached(delegate);
+        String line = "hello world";
+
+        assertEquals(25, measure.width(line, 0, 5));
+        epoch++;
+        assertEquals(25, measure.width(line, 0, 5));
+        assertEquals(2, delegate.asks("hello"), "the slice was asked for again after the epoch moved");
+    }
+
+    @Test
+    @DisplayName("slices outside the string are refused, the same way a substring refuses them")
+    void slicesAreBoundsChecked() {
+        Measure measure = cached(new Counting(5));
+        assertThrows(StringIndexOutOfBoundsException.class, () -> measure.width("hello", -1, 2));
+        assertThrows(StringIndexOutOfBoundsException.class, () -> measure.width("hello", 2, 1));
+        assertThrows(StringIndexOutOfBoundsException.class, () -> measure.width("hello", 0, 6));
+        assertThrows(NullPointerException.class, () -> measure.width(null, 0, 0));
+    }
+
+    @Test
+    @DisplayName("equal content in a different object is a second entry: a missed hit, never a wrong one")
+    void slicesKeyOnIdentity() {
+        Counting delegate = new Counting(5);
+        Measure measure = cached(delegate);
+
+        // Same characters, two objects: the memo cannot tell without walking them, which is the cost
+        // it exists to avoid. In production the drawn line is the same object every frame until the
+        // text is edited, so the miss below is a test-only shape, not a frame cost.
+        String first = new String("hello world");
+        String second = new String("hello world");
+        assertEquals(measure.width(first, 0, 5), measure.width(second, 0, 5));
+        assertEquals(2, delegate.asks("hello"), "two objects, two entries, one right answer twice");
+    }
+
+    @Test
+    @DisplayName("a plain measure answers slices by copying, with the same values and the same errors")
+    void defaultSliceCopies() {
+        Measure measure = Measure.monospace(5, 9);
+        assertEquals(15, measure.width("hello world", 0, 3));
+        assertEquals(measure.width("hello"), measure.width("hello", 0, 5));
+        assertThrows(StringIndexOutOfBoundsException.class, () -> measure.width("hello", 0, 6));
     }
 }

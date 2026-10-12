@@ -185,6 +185,23 @@ public final class FtbTeams implements TeamProvider, PartySource {
                 .map(this::partyOf);
     }
 
+    /**
+     * The party with this id, without mapping the rest.
+     *
+     * <p>The default would build every party's member and invite maps through {@link #parties()}
+     * and then discard all but one. Comparing the effective id first maps only the hit — same
+     * answer, since {@code partyOf} takes its id from {@code getTeamId()} too.
+     */
+    @Override
+    public Optional<Party> byId(UUID id) {
+        for (Team team : FTBTeamsAPI.api().getManager().getTeams()) {
+            if (team.isPartyTeam() && team.getTeamId().equals(id)) {
+                return Optional.of(partyOf(team));
+            }
+        }
+        return Optional.empty();
+    }
+
     // ------------------------------------------------------------------
     // The mapping, driven from the adapter so there is only one of it
     // ------------------------------------------------------------------

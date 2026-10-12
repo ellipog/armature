@@ -55,7 +55,12 @@ public final class FabricEnergy implements EnergyAccess {
         }
         long remaining = amount;
         PlayerInventoryStorage inventory = PlayerInventoryStorage.of(player);
-        try (Transaction transaction = Transaction.openOuter()) {
+        // Opened on first successful extraction rather than up front: a drain that finds nothing
+        // stored pays no transaction at all, and the common case on a server without a single
+        // charged item is exactly that. Committed once iff opened, so the all-or-nothing
+        // semantics are unchanged -- extraction still lands or it all aborts together.
+        Transaction transaction = null;
+        try {
             for (SingleSlotStorage<ItemVariant> slot : inventory.getSlots()) {
                 if (remaining <= 0) {
                     break;
@@ -74,9 +79,19 @@ public final class FabricEnergy implements EnergyAccess {
                 if (capped <= 0) {
                     continue;
                 }
+                if (transaction == null) {
+                    transaction = Transaction.openOuter();
+                }
                 remaining -= storage.extract(Math.min(remaining, capped), transaction);
             }
-            transaction.commit();
+            if (transaction != null) {
+                transaction.commit();
+            }
+        }
+        finally {
+            if (transaction != null) {
+                transaction.close();
+            }
         }
         return (int) (amount - remaining);
     }

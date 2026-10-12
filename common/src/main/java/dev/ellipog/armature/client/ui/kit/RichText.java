@@ -345,17 +345,30 @@ public final class RichText {
     /**
      * How far a line starting at {@code from} can go: to the last space that fits, or -- for a word wider
      * than the column -- to the last character that fits, which is {@link TextWrap}'s own split rule.
+     *
+     * <p>Binary search rather than a character walk: {@link #styledWidth} is monotonic in its end, so
+     * the farthest fitting end is found in log steps with exactly the answer the walk gave. Each
+     * probe is one single pass (below) rather than one walk per character.
      */
     private static int fittingEnd(Paragraph paragraph, int from, int width, StyledWidth measure) {
         String text = paragraph.text();
         if (styledWidth(paragraph, from, text.length(), measure) <= width) {
             return text.length();
         }
-        int fits = from;
-        while (fits < text.length()
-                && styledWidth(paragraph, from, fits + 1, measure) <= width) {
-            fits++;
+        // `lo` fits (an empty span is widthless) and `hi` does not (checked above): the loop keeps
+        // that true and halves the distance, so `lo` lands on the walk's own answer.
+        int lo = from;
+        int hi = text.length();
+        while (hi - lo > 1) {
+            int mid = (lo + hi) >>> 1;
+            if (styledWidth(paragraph, from, mid, measure) <= width) {
+                lo = mid;
+            }
+            else {
+                hi = mid;
+            }
         }
+        int fits = lo;
         if (fits <= from) {
             return from;
         }
@@ -370,17 +383,41 @@ public final class RichText {
         return space > from ? space : fits;
     }
 
-    /** The width of a span of the block's visible text, through the runs that cover it. */
+    /**
+     * The width of a span of the block's visible text, through the runs that cover it.
+     *
+     * <p>One pass over the runs in order rather than a lookup per step: the old walk asked
+     * {@code runAt} per piece, which scanned the runs per character position, and the callers above
+     * asked per character — quadratic in runs times length for a long styled paragraph. The pieces
+     * are the same ones in the same order — plain gaps at the font's size, covered spans at their
+     * run's — so the sum is unchanged.
+     */
     public static int styledWidth(Paragraph paragraph, int from, int to, StyledWidth measure) {
+        if (from >= to) {
+            return 0;
+        }
+        float scale = scale(paragraph);
+        String text = paragraph.text();
         int total = 0;
         int at = from;
-        while (at < to) {
-            Run run = runAt(paragraph, at);
-            int end = run == null ? to : Math.min(to, run.end());
-            String slice = paragraph.text().substring(at, end);
-            total += Math.round(measure.width(slice, run != null && run.bold(), run != null && run.italic())
-                    * scale(paragraph));
+        for (Run run : paragraph.runs()) {
+            if (run.end() <= at || run.start() >= to) {
+                continue;
+            }
+            if (at < run.start()) {
+                int end = Math.min(run.start(), to);
+                total += Math.round(measure.width(text.substring(at, end), false, false) * scale);
+                at = end;
+            }
+            if (at >= to) {
+                break;
+            }
+            int end = Math.min(run.end(), to);
+            total += Math.round(measure.width(text.substring(at, end), run.bold(), run.italic()) * scale);
             at = end;
+        }
+        if (at < to) {
+            total += Math.round(measure.width(text.substring(at, to), false, false) * scale);
         }
         return total;
     }

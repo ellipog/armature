@@ -3,6 +3,7 @@ package dev.ellipog.armature.client;
 import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.client.render.TextEpoch;
 import dev.ellipog.armature.client.ui.kit.Colour;
+import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.TextArea;
 
 import net.minecraft.Util;
@@ -206,9 +207,28 @@ public final class ArmatureTextArea extends AbstractWidget {
      * it: {@code GuiGraphicsRenderer.textWidth} is {@code font.width(text) * TextScale.get()}, and a text
      * area that wrapped against the unscaled font while the renderer drew it scaled would break its lines in
      * places the drawn text does not.
+     *
+     * <p>Remembered across frames rather than walked per call: the wrap asks per word, and the drawing
+     * asks per span per visible line per frame, for the same answers. The epoch is the client's own,
+     * so a font reload or a text-scale move empties it.
      */
+    private static final Measure WIDTHS = Measure.cachedOver(
+            text -> TextScale.of(Minecraft.getInstance().font.width(text)),
+            () -> Minecraft.getInstance().font.lineHeight,
+            TextEpoch::now);
+
     private static int textWidth(String text) {
-        return TextScale.of(Minecraft.getInstance().font.width(text));
+        return WIDTHS.width(text);
+    }
+
+    /**
+     * The width of a slice, for a selection edge or a caret: indices, not a copy.
+     *
+     * <p>The same memo one slice deeper — the drawn line is the same object every frame until the
+     * text is edited, so the slice hits where a substring paid a copy and a walk every frame.
+     */
+    private static int textWidth(String text, int from, int to) {
+        return WIDTHS.width(text, from, to);
     }
 
     /** The pitch the lines are drawn at: the caller's, or the font's own when none was asked for. */
@@ -264,8 +284,8 @@ public final class ArmatureTextArea extends AbstractWidget {
                     int from = Math.max(span.start(), model.selectionStart());
                     int to = Math.min(span.end(), model.selectionEnd());
                     if (from < to) {
-                        int markX = x + textWidth(whole.substring(span.start(), from));
-                        int markTo = x + textWidth(whole.substring(span.start(), to));
+                        int markX = x + textWidth(whole, span.start(), from);
+                        int markTo = x + textWidth(whole, span.start(), to);
                         r.fill(markX, y - 1, markTo, y + lineHeight - 1,
                                 Colour.alphaOf(textInk(), 0.35F));
                     }
@@ -275,7 +295,7 @@ public final class ArmatureTextArea extends AbstractWidget {
 
                 if (isFocused() && model.caret() >= span.start() && model.caret() <= span.end()
                         && model.caretVisible(Util.getMillis())) {
-                    int caretX = x + textWidth(whole.substring(span.start(), model.caret()));
+                    int caretX = x + textWidth(whole, span.start(), model.caret());
                     r.fill(caretX, y - 1, caretX + 1, y + lineHeight - 1, textInk());
                 }
             }

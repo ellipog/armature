@@ -50,14 +50,62 @@ public final class JsonDocument {
     private final String source;
     private final JsonElement root;
     private final Map<String, JsonLocation> locations;
-    private final String[] lines;
+    /** Offset in {@link #source} of each line's first character; {@code lineStarts[0]} is 0. */
+    private final int[] lineStarts;
 
-    private JsonDocument(String name, String source, JsonElement root, Map<String, JsonLocation> locations) {
+    private JsonDocument(String name, String source, JsonElement root, Map<String, JsonLocation> locations,
+                         int[] lineStarts) {
         this.name = name;
         this.source = source;
         this.root = root;
         this.locations = locations;
-        this.lines = source.split("\n", -1);
+        this.lineStarts = lineStarts;
+    }
+
+    /**
+     * Offsets of every line start in a source, in one pass.
+     *
+     * <p>Shared by the parser (which finds an error's line by binary search instead of rescanning
+     * from the start per error) and by {@link #lineText} (which slices instead of splitting the
+     * whole file into strings per parse). One int array rather than N line strings.
+     */
+    static int[] lineStarts(String source) {
+        int count = 1;
+        for (int i = 0; i < source.length(); i++) {
+            if (source.charAt(i) == '\n') {
+                count++;
+            }
+        }
+        int[] starts = new int[count];
+        starts[0] = 0;
+        int at = 1;
+        for (int i = 0; i < source.length(); i++) {
+            if (source.charAt(i) == '\n' && at < count) {
+                starts[at++] = i + 1;
+            }
+        }
+        return starts;
+    }
+
+    /**
+     * The 1-based line containing {@code offset}, by binary search over {@link #lineStarts}.
+     *
+     * <p>The count of line starts at or before the offset, which is exactly what the old
+     * rescan-from-zero computed per error — one line per newline seen, starting at one.
+     */
+    static int lineOf(int[] starts, int offset) {
+        int lo = 0;
+        int hi = starts.length;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (starts[mid] <= offset) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        return lo;
     }
 
     /**
@@ -82,12 +130,14 @@ public final class JsonDocument {
 
     /** The exact text a line came from, for rendering an error. Empty for a line out of range. */
     public String lineText(int line) {
-        if (line < 1 || line > lines.length) {
+        if (line < 1 || line > lineStarts.length) {
             return "";
         }
+        int start = lineStarts[line - 1];
+        int end = line < lineStarts.length ? lineStarts[line] - 1 : source.length();
         // A tab would misalign the caret under it, so expand as we go. Cheap, and the alignment
         // is the whole point of printing the line.
-        return lines[line - 1].replace("\t", "    ");
+        return source.substring(start, end).replace("\t", "    ");
     }
 
     public Optional<JsonElement> get(String path) {
@@ -211,6 +261,8 @@ public final class JsonDocument {
         private final String src;
         private final Map<String, JsonLocation> locations = new LinkedHashMap<>();
         private final Deque<String> path = new ArrayDeque<>();
+        /** Every line start, so {@link #fail} finds a line by binary search, not by rescanning. */
+        private final int[] starts;
         private int pos;
         private int line = 1;
         private int column = 1;
@@ -219,6 +271,7 @@ public final class JsonDocument {
         Parser(String name, String src) {
             this.name = name;
             this.src = src;
+            this.starts = lineStarts(src);
             this.path.push("$");
         }
 
@@ -232,7 +285,7 @@ public final class JsonDocument {
             if (!atEnd()) {
                 throw fail("unexpected text after the end of the document");
             }
-            return new JsonDocument(name, src, root, locations);
+            return new JsonDocument(name, src, root, locations, starts);
         }
 
         // ---------------- values ----------------
@@ -557,20 +610,12 @@ public final class JsonDocument {
         }
 
         private JsonParseException fail(String detail) {
-            String text = "";
-            int currentLine = 1;
-            int lineStart = 0;
-            for (int i = 0; i < src.length() && i <= pos; i++) {
-                if (src.charAt(i) == '\n') {
-                    currentLine++;
-                    lineStart = i + 1;
-                }
-            }
-            int lineEnd = src.indexOf('\n', lineStart);
-            if (lineEnd < 0) {
-                lineEnd = src.length();
-            }
-            text = src.substring(lineStart, lineEnd).replace("\t", "    ");
+            // Inclusive of pos: a newline exactly at pos (the rewound unterminated string) counts,
+            // which is what the old rescan did with `i <= pos`. Same lines, same carets, no rescan.
+            int currentLine = lineOf(starts, Math.min(pos + 1, src.length()));
+            int lineStart = starts[currentLine - 1];
+            int lineEnd = currentLine < starts.length ? starts[currentLine] - 1 : src.length();
+            String text = src.substring(lineStart, lineEnd).replace("\t", "    ");
             return new JsonParseException(detail, new JsonLocation(currentLine, column, currentPath()), text);
         }
     }

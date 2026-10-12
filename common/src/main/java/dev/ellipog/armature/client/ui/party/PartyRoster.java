@@ -222,19 +222,26 @@ public final class PartyRoster {
         // Sorted for the reason in the class note, and by mapping to a comparable tuple rather than by
         // an int comparator: `Comparator.comparingInt(...).reversed()` on authority alone leaves the
         // equal-rank case in the source's order, which is the unspecified order this exists to escape.
-        List<Map.Entry<UUID, TeamRole>> ordered = new ArrayList<>(team.members().entrySet());
+        //
+        // Names are resolved once per member up front rather than inside the comparator: the sort asks
+        // per comparison -- O(n log n) lookups for n members -- and the function can reach a player
+        // list or a profile cache. Same values, same order, one ask each.
+        List<NamedMember> ordered = new ArrayList<>(team.members().size());
+        for (Map.Entry<UUID, TeamRole> entry : team.members().entrySet()) {
+            ordered.add(new NamedMember(entry.getKey(), entry.getValue(), names.apply(entry.getKey())));
+        }
         ordered.sort(Comparator
-                .comparing((Map.Entry<UUID, TeamRole> entry) -> !entry.getKey().equals(team.owner()))
-                .thenComparing(entry -> -entry.getValue().authority())
-                .thenComparing(entry -> names.apply(entry.getKey())));
+                .comparing((NamedMember member) -> !member.id().equals(team.owner()))
+                .thenComparing(member -> -member.role().authority())
+                .thenComparing(NamedMember::name));
 
         List<Member> rows = new ArrayList<>(ordered.size());
-        for (Map.Entry<UUID, TeamRole> entry : ordered) {
-            UUID id = entry.getKey();
+        for (NamedMember named : ordered) {
+            UUID id = named.id();
             rows.add(new Member(
                     id,
-                    names.apply(id),
-                    entry.getValue(),
+                    named.name(),
+                    named.role(),
                     id.equals(viewer),
                     id.equals(team.owner()),
                     team.canActOn(viewer, id),
@@ -243,6 +250,10 @@ public final class PartyRoster {
         }
 
         return new PartyRoster(team, viewer, rows, team.persistent(), memberLimit);
+    }
+
+    /** A member with its display name resolved: what the sort compares, so it compares values. */
+    private record NamedMember(UUID id, TeamRole role, String name) {
     }
 
     // ------------------------------------------------------------------

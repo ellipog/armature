@@ -14,7 +14,7 @@ import dev.ellipog.armature.client.ui.shape.Shapes;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -940,7 +940,7 @@ public final class ArmatureTheme {
     private record SurfaceKey(int width, int height, int radius, int corners) {
     }
 
-    private static final Map<SurfaceKey, Plans.Plan> SURFACES = new HashMap<>();
+    private static final Map<SurfaceKey, Plans.Plan> SURFACES = new LinkedHashMap<>();
 
     /**
      * A rounded rectangle's rectangles, remembered by its own four numbers.
@@ -964,10 +964,26 @@ public final class ArmatureTheme {
         Plans.Plan built = Plans.merge(
                 (row, size) -> roundedSpan(row, width, height, radius, corners), height);
         if (SURFACES.size() >= SURFACE_PLAN_LIMIT) {
-            SURFACES.clear();
+            halve(SURFACES);
         }
         SURFACES.put(key, built);
         return built;
+    }
+
+    /**
+     * Drops the eldest half of the entries rather than emptying the table.
+     *
+     * <p>Same argument as {@code Plans}: clearing all 256 at once refills over the next frames as
+     * every panel rebuilds its rectangles together. Eldest-half because the table is
+     * insertion-ordered.
+     */
+    private static void halve(Map<SurfaceKey, Plans.Plan> table) {
+        var it = table.keySet().iterator();
+        int remove = table.size() / 2;
+        for (int i = 0; i < remove && it.hasNext(); i++) {
+            it.next();
+            it.remove();
+        }
     }
 
     /** This table's name in the hit/miss report. A constant, so a probe allocates nothing. */

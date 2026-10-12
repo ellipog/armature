@@ -6,6 +6,7 @@ import dev.ellipog.armature.client.ui.kit.Viewport;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,7 +23,7 @@ import java.util.UUID;
  * unchanged. Without it, it is every draw call in a toolkit and a screen, twice, with no way to tell
  * which were missed.
  *
- * <h2>Nineteen abstract methods and four defaults, because that is what was actually being used</h2>
+ * <h2>Nineteen abstract methods and five defaults, because that is what was actually being used</h2>
  *
  * <p>Not a guess at what a UI toolkit might need. The first cut was the complete set of operations that
  * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and a screen between them
@@ -284,6 +285,26 @@ public interface GuiRenderer {
 
     /** The width of this string on one line, in pixels. Never negative. */
     int textWidth(String text);
+
+    /**
+     * The width of a slice of a string, without the caller copying it first.
+     *
+     * <p>The default copies and measures, which is what the call sites did by hand — so every
+     * current caller keeps its answer. The game renderer overrides it to remember slices without
+     * copying them; see {@code Measure#width(String, int, int)}. A default rather than an abstract
+     * method, like {@link #centredText} and the {@link #clip} overloads: one fewer method in every
+     * future implementation, and no way for the two to disagree.
+     *
+     * @throws StringIndexOutOfBoundsException if the slice is not inside the string
+     */
+    default int textWidth(String text, int from, int to) {
+        Objects.requireNonNull(text, "text");
+        if (from < 0 || to < from || to > text.length()) {
+            throw new StringIndexOutOfBoundsException(
+                    "slice [" + from + ", " + to + ") of a " + text.length() + "-character string");
+        }
+        return textWidth(text.substring(from, to));
+    }
 
     /** The height of one line of text. What a wrapped line advances the cursor by. */
     int lineHeight();

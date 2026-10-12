@@ -287,4 +287,81 @@ class RichTextTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new RichText.Paragraph(RichText.Kind.PARAGRAPH, "x", List.of(), 2));
     }
+
+    // ------------------------------------------------------------------
+    // The wrap search
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("the binary search lands on the linear walk's own answer, at every width")
+    void binarySearchMatchesTheLinearWalk() {
+        // The retired implementation, kept as the spec: a character walk asking styledWidth per
+        // prefix, with the same word-boundary tail the production code keeps. If the binary search
+        // ever disagrees with this, the search is wrong, not the walk.
+        List<RichText.Paragraph> documents = List.of(
+                only("plain prose with no styling at all in it"),
+                only("a **bold** word and an *italic* one and `code` too"),
+                only("**everything is bold here yes all of it**"),
+                only("# A **bold** heading with prose"),
+                only("- a **bullet** with *styling* and a [link](https://x.y) inside"));
+        for (RichText.Paragraph document : documents) {
+            for (int width = 1; width < 200; width += 7) {
+                int at = width;
+                assertEquals(linesLinear(document, at), linesOf(document, at),
+                        () -> "width " + at + " of '" + document.text() + "'");
+            }
+        }
+    }
+
+    /** The lines the retired linear search produced, through the public wrap of each piece. */
+    private static List<String> linesLinear(RichText.Paragraph paragraph, int width) {
+        List<String> lines = new ArrayList<>();
+        String text = paragraph.text();
+        if (text.isEmpty()) {
+            return List.of("");
+        }
+        int from = 0;
+        while (from < text.length()) {
+            int end = linearEnd(paragraph, from, Math.max(1, width));
+            if (end <= from) {
+                end = from + 1;
+            }
+            lines.add(text.substring(from, end));
+            from = end;
+            while (from < text.length() && text.charAt(from) == ' ') {
+                from++;
+            }
+        }
+        return lines;
+    }
+
+    /** The old character walk, verbatim in behavior: the farthest prefix that fits. */
+    private static int linearEnd(RichText.Paragraph paragraph, int from, int width) {
+        String text = paragraph.text();
+        if (RichText.styledWidth(paragraph, from, text.length(), SIX) <= width) {
+            return text.length();
+        }
+        int fits = from;
+        while (fits < text.length()
+                && RichText.styledWidth(paragraph, from, fits + 1, SIX) <= width) {
+            fits++;
+        }
+        if (fits <= from) {
+            return from;
+        }
+        if (fits >= text.length() || text.charAt(fits) == ' ') {
+            return fits;
+        }
+        int space = text.lastIndexOf(' ', fits - 1);
+        return space > from ? space : fits;
+    }
+
+    /** The production wrap, read back as strings for comparison with the linear reference. */
+    private static List<String> linesOf(RichText.Paragraph paragraph, int width) {
+        List<String> lines = new ArrayList<>();
+        for (RichText.Line line : RichText.wrap(paragraph, width, SIX)) {
+            lines.add(paragraph.text().substring(line.start(), line.end()));
+        }
+        return lines;
+    }
 }

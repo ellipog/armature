@@ -206,6 +206,55 @@ class PartyTeamAdapterTest {
                         "mod's id rather than a sentence");
     }
 
+    @Test
+    @DisplayName("byId asks the source's lookup rather than mapping every party")
+    void byIdUsesTheSourcesLookup() {
+        UUID wanted = UUID.randomUUID();
+        FakeParties source = new FakeParties()
+                .with(party(wanted, "alpha", UUID.randomUUID()))
+                .with(party(UUID.randomUUID(), "beta", UUID.randomUUID()));
+
+        TeamManager adapter = new PartyTeamAdapter(MOD_ID, source, false);
+
+        assertTrue(adapter.byId(wanted).map(team -> team.id().equals(wanted)).orElse(false),
+                "the hit comes back mapped");
+        assertEquals(1, source.byIdCalls, "the source's own lookup ran once");
+        assertEquals(0, source.partiesCalls,
+                "and the full list was never built, which is the whole saving: mapping every party "
+                        + "to find one builds each one's member and invite maps for nothing");
+    }
+
+    @Test
+    @DisplayName("byId is empty for an id nobody holds")
+    void byIdEmptyForUnknown() {
+        FakeParties source = new FakeParties()
+                .with(party(UUID.randomUUID(), "alpha", UUID.randomUUID()));
+
+        assertTrue(new PartyTeamAdapter(MOD_ID, source, false).byId(UUID.randomUUID()).isEmpty(),
+                "an id nobody has must not resolve to something");
+    }
+
+    @Test
+    @DisplayName("a source with no byId of its own still answers from its list")
+    void defaultByIdScansTheList() {
+        UUID wanted = UUID.randomUUID();
+        PartySource plain = new PartySource() {
+            @Override
+            public Collection<Party> parties() {
+                return List.of(party(wanted, "alpha", UUID.randomUUID()));
+            }
+
+            @Override
+            public Optional<Party> forMember(UUID player) {
+                return Optional.empty();
+            }
+        };
+
+        assertEquals(wanted, plain.byId(wanted).map(PartySource.Party::id).orElse(null),
+                "the default finds the hit");
+        assertTrue(plain.byId(UUID.randomUUID()).isEmpty(), "and nothing for an unknown id");
+    }
+
     // ------------------------------------------------------------------
 
     private static PartySource.Party party(UUID id, String name, UUID owner) {
@@ -237,6 +286,8 @@ class PartyTeamAdapterTest {
 
         private final Map<UUID, Party> parties = new LinkedHashMap<>();
         private int forMemberCalls;
+        private int partiesCalls;
+        private int byIdCalls;
 
         FakeParties with(Party party) {
             parties.put(party.id(), party);
@@ -245,6 +296,7 @@ class PartyTeamAdapterTest {
 
         @Override
         public Collection<Party> parties() {
+            partiesCalls++;
             return List.copyOf(parties.values());
         }
 
@@ -254,6 +306,12 @@ class PartyTeamAdapterTest {
             return parties.values().stream()
                     .filter(party -> party.members().containsKey(player))
                     .findFirst();
+        }
+
+        @Override
+        public Optional<Party> byId(UUID id) {
+            byIdCalls++;
+            return Optional.ofNullable(parties.get(id));
         }
     }
 }

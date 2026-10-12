@@ -136,4 +136,33 @@ class TextWrapTest {
             }
         }
     }
+
+    @Test
+    void measuredWrapAgreesWithWrapThenMeasure() {
+        // The two entry points must not become separate answers: wrapMeasured is wrap plus the widths
+        // recorded on emission, so its lines match wrap() and its widths match measuring afterwards.
+        // swept, because the emission sites differ per rule (blank lines, long-word splits, breaks).
+        String text = "alpha beta gamma\ndelta  epsilon\n\nsupercalifragilisticexpialidocious zeta";
+        for (int width = 0; width <= 120; width += 6) {
+            TextWrap.Wrapped measured = TextWrap.wrapMeasured(text, width, SIX);
+            List<String> lines = TextWrap.wrap(text, width, SIX);
+            assertEquals(lines, measured.lines(), "same lines at width " + width);
+            assertEquals(lines.size(), measured.widths().size(), "one width per line");
+            for (int i = 0; i < lines.size(); i++) {
+                assertEquals(SIX.width(lines.get(i)), measured.widths().get(i),
+                        "line " + i + " at width " + width);
+            }
+        }
+    }
+
+    @Test
+    void measuredWrapOfNothingIsNothing() {
+        assertEquals(new TextWrap.Wrapped(List.of(), List.of()), TextWrap.wrapMeasured("", 100, SIX));
+    }
+
+    @Test
+    void measuredWrapRefusesNulls() {
+        assertThrows(NullPointerException.class, () -> TextWrap.wrapMeasured(null, 10, SIX));
+        assertThrows(NullPointerException.class, () -> TextWrap.wrapMeasured("x", 10, null));
+    }
 }

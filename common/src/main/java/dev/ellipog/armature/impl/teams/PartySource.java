@@ -84,4 +84,14 @@ public interface PartySource {
      * party makes the solo fallback meaningless and hands a lone player a party's progress.
      */
     Optional<Party> forMember(UUID player);
+
+    /**
+     * The party with this id, if the source knows one.
+     *
+     * <p>A default that scans {@link #parties()}; a source with a cheaper lookup overrides it, so
+     * a by-id read maps only the hit instead of every party. See {@code PartyTeamAdapter.byId}.
+     */
+    default Optional<Party> byId(UUID id) {
+        return parties().stream().filter(party -> party.id().equals(id)).findFirst();
+    }
 }

@@ -48,19 +48,35 @@ public final class FabricEvents {
             }
         });
 
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                ArmatureEvents.PLAYER_JOIN.invoker().onPlayerJoin(handler.player));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            // The tick path above guards the same way: a server where nothing listens pays nothing.
+            if (!ArmatureEvents.PLAYER_JOIN.hasListeners()) {
+                return;
+            }
+            ArmatureEvents.PLAYER_JOIN.invoker().onPlayerJoin(handler.player);
+        });
 
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                ArmatureEvents.PLAYER_LEAVE.invoker().onPlayerLeave(handler.player));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            if (!ArmatureEvents.PLAYER_LEAVE.hasListeners()) {
+                return;
+            }
+            ArmatureEvents.PLAYER_LEAVE.invoker().onPlayerLeave(handler.player);
+        });
 
-        ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) ->
-                ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(entity, source));
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+            if (!ArmatureEvents.ENTITY_DEATH.hasListeners()) {
+                return;
+            }
+            ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(entity, source);
+        });
 
         // AFTER fires once the block is gone, on either logical side: the
         // ServerPlayer check is what keeps a client's own prediction from
         // reaching server listeners, like the death hook's server-only source.
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+            if (!ArmatureEvents.BLOCK_BROKEN.hasListeners()) {
+                return;
+            }
             if (player instanceof ServerPlayer serverPlayer) {
                 ArmatureEvents.BLOCK_BROKEN.invoker().onBlockBroken(serverPlayer, state);
             }

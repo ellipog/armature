@@ -50,12 +50,18 @@ public final class NeoForgeEvents {
         });
 
         bus.addListener((PlayerEvent.PlayerLoggedInEvent event) -> {
+            if (!ArmatureEvents.PLAYER_JOIN.hasListeners()) {
+                return;
+            }
             if (event.getEntity() instanceof ServerPlayer player) {
                 ArmatureEvents.PLAYER_JOIN.invoker().onPlayerJoin(player);
             }
         });
 
         bus.addListener((PlayerEvent.PlayerLoggedOutEvent event) -> {
+            if (!ArmatureEvents.PLAYER_LEAVE.hasListeners()) {
+                return;
+            }
             if (event.getEntity() instanceof ServerPlayer player) {
                 ArmatureEvents.PLAYER_LEAVE.invoker().onPlayerLeave(player);
             }
@@ -65,8 +71,12 @@ public final class NeoForgeEvents {
         // processed, while it can still be cancelled; Fabric reports it after. The event
         // carries what was killed and by what, which is all a progression engine needs, but
         // anything that has to see the world in one particular state cannot rely on it.
-        bus.addListener((LivingDeathEvent event) ->
-                ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(event.getEntity(), event.getSource()));
+        bus.addListener((LivingDeathEvent event) -> {
+            if (!ArmatureEvents.ENTITY_DEATH.hasListeners()) {
+                return;
+            }
+            ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(event.getEntity(), event.getSource());
+        });
 
         // BreakEvent is cancellable and fires before the break: a cancelled
         // event is a protected block, so only an uncancelled one reaches
@@ -79,6 +89,9 @@ public final class NeoForgeEvents {
         // stays as well, so the guarantee does not silently depend on the
         // flags above surviving a future edit.
         bus.addListener(EventPriority.LOWEST, false, (BlockEvent.BreakEvent event) -> {
+            if (!ArmatureEvents.BLOCK_BROKEN.hasListeners()) {
+                return;
+            }
             if (!event.isCanceled() && event.getPlayer() instanceof ServerPlayer player) {
                 ArmatureEvents.BLOCK_BROKEN.invoker().onBlockBroken(player, event.getState());
             }

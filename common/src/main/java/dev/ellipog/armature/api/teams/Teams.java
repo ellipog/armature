@@ -2,8 +2,9 @@ package dev.ellipog.armature.api.teams;
 
 import net.minecraft.server.MinecraftServer;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.UUID;
 
 /**
@@ -53,8 +54,11 @@ public final class Teams {
      *
      * <p>Bound in a static initialiser rather than looked up per call: this runs on every team
      * lookup, and a reflective lookup per call would be a real cost on the hot path for no gain.
+     * A {@link MethodHandle} rather than a {@code Method}, for the same reason one step further:
+     * the handle is invoked directly instead of through {@code Method.invoke}'s wrapping and
+     * access checks on every call.
      */
-    private static final Method RESOLVE = bindResolver();
+    private static final MethodHandle RESOLVE = bindResolver();
 
     private Teams() {
     }
@@ -68,24 +72,20 @@ public final class Teams {
      */
     public static TeamManager of(MinecraftServer server) {
         try {
-            return (TeamManager) RESOLVE.invoke(null, server);
+            return (TeamManager) RESOLVE.invokeExact(server);
         }
-        catch (IllegalAccessException e) {
-            throw new IllegalStateException("Armature could not reach its own team resolver. This is "
-                    + "an access problem rather than a missing source, which means the resolver was "
-                    + "found and could not be used.", e);
-        }
-        catch (InvocationTargetException e) {
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            // The resolver's own failure, not a reflection failure -- rethrown as-is so the stack
-            // trace names the source that broke rather than a call through Method.invoke.
-            if (cause instanceof RuntimeException runtime) {
+        catch (Throwable e) {
+            // The handle surfaces the resolver's own throwables directly rather than wrapped in
+            // an InvocationTargetException, so there is only one unwrap: the resolver's failure
+            // is rethrown as-is so the stack trace names the source that broke, and anything else
+            // (which cannot happen from this resolver, but a contract is not a check) is loud.
+            if (e instanceof RuntimeException runtime) {
                 throw runtime;
             }
-            if (cause instanceof Error error) {
+            if (e instanceof Error error) {
                 throw error;
             }
-            throw new IllegalStateException("Armature's team resolver failed.", cause);
+            throw new IllegalStateException("Armature's team resolver failed.", e);
         }
     }
 
@@ -99,12 +99,13 @@ public final class Teams {
         return of(server).teamOf(player);
     }
 
-    private static Method bindResolver() {
+    private static MethodHandle bindResolver() {
         try {
             Class<?> providers = Class.forName("dev.ellipog.armature.impl.teams.TeamProviders");
-            return providers.getMethod("of", MinecraftServer.class);
+            return MethodHandles.lookup().findStatic(providers, "of",
+                    MethodType.methodType(TeamManager.class, MinecraftServer.class));
         }
-        catch (ClassNotFoundException | NoSuchMethodException e) {
+        catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException e) {
             // Loud, and named. A no-op fallback here would present as "teams always empty on this
             // server", which reads as a game bug rather than as an Armature build problem.
             throw new ExceptionInInitializerError("Armature's team resolver is missing from this jar: "

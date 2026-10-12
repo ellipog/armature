@@ -36,6 +36,25 @@ public interface Measure {
     /** The width of this string, in pixels. Never negative. */
     int width(String text);
 
+    /**
+     * The width of a slice of this string, without the caller copying it first.
+     *
+     * <p>The default copies and measures, which is exactly what the call sites did by hand before
+     * this existed — so every current caller keeps its answer. A memoizing measure overrides it to
+     * remember slices without copying them; see {@code CachedMeasure}. Either way a caller that
+     * measures a span or a caret offset passes indices rather than a fresh string per frame.
+     *
+     * @throws StringIndexOutOfBoundsException if the slice is not inside the string
+     */
+    default int width(String text, int from, int to) {
+        Objects.requireNonNull(text, "text");
+        if (from < 0 || to < from || to > text.length()) {
+            throw new StringIndexOutOfBoundsException(
+                    "slice [" + from + ", " + to + ") of a " + text.length() + "-character string");
+        }
+        return width(text.substring(from, to));
+    }
+
     /** The height of one line of text, in pixels. What a wrapped line advances the cursor by. */
     int lineHeight();
 

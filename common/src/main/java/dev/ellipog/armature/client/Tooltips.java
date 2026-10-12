@@ -1,6 +1,7 @@
 package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiRenderer;
+import dev.ellipog.armature.client.render.TextEpoch;
 import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.TextWrap;
 
@@ -123,11 +124,36 @@ public final class Tooltips {
     private Tooltips() {
     }
 
+    /**
+     * Widths over the renderer in force, remembered across frames.
+     *
+     * <p>One memo shared by every tooltip pass in a frame: folding, placing and drawing all ask the
+     * same handful of widths, and an adapter built per call paid an allocation per pass for identical
+     * answers. The epoch folds in the renderer's identity as well as the client's own (see
+     * {@code ArmatureButton.measure} for why that half is load-bearing): a recording renderer in a
+     * test measures differently from the client's, and widths must never cross between them.
+     *
+     * <p>Client-thread only, like all drawing: the renderer in force is a static because this class
+     * is all statics, and each pass sets it before measuring.
+     */
+    private static GuiRenderer measuring;
+
+    private static final Measure SHARED = Measure.cachedOver(
+            text -> measuring.textWidth(text),
+            () -> measuring.lineHeight(),
+            () -> TextEpoch.now() * 31L + System.identityHashCode(measuring));
+
+    private static Measure measureOf(GuiRenderer renderer) {
+        measuring = renderer;
+        return SHARED;
+    }
+
     /** The box's width for these lines: the widest line plus the padding. */
     public static int width(GuiRenderer r, List<String> lines) {
+        Measure measure = measureOf(r);
         int widest = 0;
         for (String line : lines) {
-            widest = Math.max(widest, r.textWidth(line));
+            widest = Math.max(widest, measure.width(line));
         }
         return widest + PAD * 2;
     }
@@ -150,7 +176,7 @@ public final class Tooltips {
      * logic; everything else is {@code TextWrap}'s.
      */
     public static List<String> folded(GuiRenderer r, List<String> lines, int screenWidth) {
-        return folded(lines, lineRoom(screenWidth), Measure.of(r::textWidth, r.lineHeight()));
+        return folded(lines, lineRoom(screenWidth), measureOf(r));
     }
 
     /** The same, over a {@link Measure} and a room: the arithmetic without a renderer. */
@@ -230,7 +256,7 @@ public final class Tooltips {
      */
     public static void draw(GuiRenderer r, List<String> lines, int mouseX, int mouseY,
                             int screenWidth, int screenHeight) {
-        Measure measure = Measure.of(r::textWidth, r.lineHeight());
+        Measure measure = measureOf(r);
         Shape shape = shape(lines, screenWidth, screenHeight, measure);
         if (shape == null) {
             return;
@@ -262,7 +288,7 @@ public final class Tooltips {
      */
     public static void drawAt(GuiRenderer r, List<String> lines, int anchorX, int anchorY,
                               int anchorWidth, int anchorHeight, int screenWidth, int screenHeight) {
-        Measure measure = Measure.of(r::textWidth, r.lineHeight());
+        Measure measure = measureOf(r);
         Shape shape = shape(lines, screenWidth, screenHeight, measure);
         if (shape == null) {
             return;

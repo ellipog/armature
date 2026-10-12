@@ -72,9 +72,39 @@ public final class TextWrap {
         // measure the same, and the blank line the author wrote at the end of a description vanishes
         // from the height while still being there in the file.
         for (String paragraph : text.split("\n", -1)) {
-            wrapParagraph(paragraph, width, measure, lines);
+            wrapParagraph(paragraph, width, measure, lines, null);
         }
         return List.copyOf(lines);
+    }
+
+    /**
+     * The wrap and each line's width together, for callers that need both.
+     *
+     * <p>A stack laying out a paragraph needs the lines <i>and</i> how wide the widest is: wrapping
+     * and then re-measuring every line walks each one twice. The widths here are recorded as each
+     * line is emitted — one measurement per line, never two — so a layout that sizes to content
+     * pays the same as one that only wraps.
+     */
+    public record Wrapped(List<String> lines, List<Integer> widths) {
+    }
+
+    /**
+     * Wraps like {@link #wrap}, and remembers how wide each line was.
+     *
+     * <p>The same single pass, not a wrap followed by a measuring loop: see {@link Wrapped}.
+     */
+    public static Wrapped wrapMeasured(String text, int width, Measure measure) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(measure, "measure");
+        List<String> lines = new ArrayList<>();
+        List<Integer> widths = new ArrayList<>();
+        if (!text.isEmpty()) {
+            // Same split as `wrap`, including the trailing-newline paragraph.
+            for (String paragraph : text.split("\n", -1)) {
+                wrapParagraph(paragraph, width, measure, lines, widths);
+            }
+        }
+        return new Wrapped(List.copyOf(lines), List.copyOf(widths));
     }
 
     /**
@@ -87,9 +117,10 @@ public final class TextWrap {
         return wrap(text, width, measure).size() * measure.lineHeight();
     }
 
-    private static void wrapParagraph(String paragraph, int width, Measure measure, List<String> out) {
+    private static void wrapParagraph(String paragraph, int width, Measure measure, List<String> out,
+                                       List<Integer> widthsOrNull) {
         if (paragraph.isBlank()) {
-            out.add("");
+            emit(out, widthsOrNull, measure, "");
             return;
         }
 
@@ -113,10 +144,10 @@ public final class TextWrap {
                 if (line.length() > 0) {
                     // The part of the word that is still on the current line would itself overflow, so
                     // the line ends here rather than later.
-                    out.add(line.toString());
+                    emit(out, widthsOrNull, measure, line.toString());
                     line.setLength(0);
                 }
-                out.add(remaining.substring(0, fit));
+                emit(out, widthsOrNull, measure, remaining.substring(0, fit));
                 remaining = remaining.substring(fit);
             }
 
@@ -132,14 +163,28 @@ public final class TextWrap {
                 line.append(' ').append(remaining);
             }
             else {
-                out.add(line.toString());
+                emit(out, widthsOrNull, measure, line.toString());
                 line.setLength(0);
                 line.append(remaining);
             }
         }
 
         if (line.length() > 0) {
-            out.add(line.toString());
+            emit(out, widthsOrNull, measure, line.toString());
+        }
+    }
+
+    /**
+     * One wrapped line, and its width when somebody is keeping score.
+     *
+     * <p>The width is measured on emission rather than re-derived later: the caller that sizes to
+     * content (a stack) gets it for the price of the wrap, and the caller that only wraps (everyone
+     * else) pays nothing — a null collector skips the measurement entirely.
+     */
+    private static void emit(List<String> out, List<Integer> widthsOrNull, Measure measure, String line) {
+        out.add(line);
+        if (widthsOrNull != null) {
+            widthsOrNull.add(measure.width(line));
         }
     }
 

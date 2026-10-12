@@ -130,57 +130,65 @@ public final class TeamEvents {
 
     public static final Event<TeamCreated> TEAM_CREATED = new Event<>(listeners ->
             (MinecraftServer server, Team team) -> {
-                for (TeamCreated listener : listeners) {
-                    listener.onTeamCreated(server, team);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onTeamCreated(server, team);
                 }
             });
 
     public static final Event<MemberJoined> MEMBER_JOINED = new Event<>(listeners ->
             (MinecraftServer server, Team team, UUID player) -> {
-                for (MemberJoined listener : listeners) {
-                    listener.onMemberJoined(server, team, player);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onMemberJoined(server, team, player);
                 }
             });
 
     public static final Event<MemberLeft> MEMBER_LEFT = new Event<>(listeners ->
             (MinecraftServer server, Team team, UUID player, Reason reason) -> {
-                for (MemberLeft listener : listeners) {
-                    listener.onMemberLeft(server, team, player, reason);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onMemberLeft(server, team, player, reason);
                 }
             });
 
     public static final Event<TeamDisbanded> TEAM_DISBANDED = new Event<>(listeners ->
             (MinecraftServer server, Team team) -> {
-                for (TeamDisbanded listener : listeners) {
-                    listener.onTeamDisbanded(server, team);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onTeamDisbanded(server, team);
                 }
             });
 
     public static final Event<TeamRenamed> TEAM_RENAMED = new Event<>(listeners ->
             (MinecraftServer server, Team team) -> {
-                for (TeamRenamed listener : listeners) {
-                    listener.onTeamRenamed(server, team);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onTeamRenamed(server, team);
                 }
             });
 
     public static final Event<OwnerTransferred> OWNER_TRANSFERRED = new Event<>(listeners ->
             (MinecraftServer server, Team team, UUID previousOwner) -> {
-                for (OwnerTransferred listener : listeners) {
-                    listener.onOwnerTransferred(server, team, previousOwner);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onOwnerTransferred(server, team, previousOwner);
                 }
             });
 
     public static final Event<PolicyChanged> POLICY_CHANGED = new Event<>(listeners ->
             (MinecraftServer server, Team team) -> {
-                for (PolicyChanged listener : listeners) {
-                    listener.onPolicyChanged(server, team);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onPolicyChanged(server, team);
                 }
             });
 
     public static final Event<InviteChanged> INVITE_CHANGED = new Event<>(listeners ->
             (MinecraftServer server, Team team, UUID target, InviteKind kind) -> {
-                for (InviteChanged listener : listeners) {
-                    listener.onInviteChanged(server, team, target, kind);
+                // Indexed, not for-each: no iterator per fire. See Event.
+                for (int i = 0, n = listeners.size(); i < n; i++) {
+                    listeners.get(i).onInviteChanged(server, team, target, kind);
                 }
             });
 }

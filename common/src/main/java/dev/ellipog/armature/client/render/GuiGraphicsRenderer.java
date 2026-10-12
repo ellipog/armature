@@ -27,10 +27,14 @@ import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.WeakHashMap;
 
 /**
  * 1.21.1's {@link GuiRenderer}: the one file in either mod that names {@code GuiGraphics}, and the
@@ -298,6 +302,18 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * <p>Straight into the width memo's slice table rather than through the default's copy: the
+     * callers are the field and the text area measuring selections and carets per frame, and the
+     * slice they ask about is the same object every frame until the text is edited.
+     */
+    @Override
+    public int textWidth(String text, int from, int to) {
+        return WIDTHS.width(text, from, to);
+    }
+
+    /**
      * The widths this client's font has already answered.
      *
      * <p>Static because a record cannot hold instance state, and correct because there is one font: two
@@ -400,31 +416,69 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      * <p>A blit draws the particle icon and nothing else, so a model whose quads do not all use that one
      * sprite would be drawn wrong: a two-layer item — a base plus an overlay — would lose the overlay. That
      * is not a tint, it is a missing layer, so it is its own gate.
+     *
+     * <h2>Read once per model, asked once per frame</h2>
+     *
+     * <p>Everything here but the colour is a property of the model: the flags, the missing check, the
+     * sprite gates, and <i>which</i> tint indices the quads carry. Those are read once per model into
+     * {@link #MODEL_FACTS} and reused every frame; only the colour lookup runs per frame, over the
+     * recorded indices rather than over a fresh quad walk. A model is replaced, not mutated, on a
+     * resource reload, so a memorised model is never a stale one — and a collected model takes its
+     * entry with it.
      */
     private static IconPlan.Facts factsOf(Minecraft minecraft, BakedModel model, ItemStack stack) {
+        ModelFacts known = MODEL_FACTS.computeIfAbsent(model, m -> readModelFacts(minecraft, m));
+        boolean tinted = false;
+        for (int tintIndex : known.tintedIndices()) {
+            if (minecraft.itemColors.getColor(stack, tintIndex) != -1) {
+                tinted = true;
+                break;
+            }
+        }
+        return new IconPlan.Facts(known.customRenderer(), known.gui3d(), known.usesBlockLight(),
+                tinted, known.missingModel(), known.hasParticleIcon(), known.oneSprite());
+    }
+
+    /**
+     * A model's share of the icon decision: every fact but the colour.
+     *
+     * <p>The tint indices travel as indices rather than as a verdict because the verdict needs the
+     * stack: whether an index <i>carries a colour</i> is asked per frame in {@link #factsOf}, and it
+     * is the only per-frame work left there.
+     */
+    private record ModelFacts(boolean customRenderer, boolean gui3d, boolean usesBlockLight,
+                              boolean missingModel, boolean hasParticleIcon, boolean oneSprite,
+                              int[] tintedIndices) {
+    }
+
+    /** Model facts by model, forgotten with the model. See {@link #factsOf}. */
+    private static final Map<BakedModel, ModelFacts> MODEL_FACTS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    /** The one quad walk per model: flags, gates and tint indices, colour excluded. */
+    private static ModelFacts readModelFacts(Minecraft minecraft, BakedModel model) {
         List<BakedQuad> quads = model.getQuads(null, null, RandomSource.create(42L));
         TextureAtlasSprite icon = model.getParticleIcon();
 
-        boolean tinted = false;
         boolean oneSprite = !quads.isEmpty();
+        List<Integer> tinted = new ArrayList<>();
         for (BakedQuad quad : quads) {
             // No early break: the sprite gate has to see every quad, and the list is a handful.
-            if (!tinted && quad.isTinted()
-                    && minecraft.itemColors.getColor(stack, quad.getTintIndex()) != -1) {
-                tinted = true;
+            if (quad.isTinted() && !tinted.contains(quad.getTintIndex())) {
+                tinted.add(quad.getTintIndex());
             }
             if (icon == null || quad.getSprite() != icon) {
                 oneSprite = false;
             }
         }
-        return new IconPlan.Facts(
+        return new ModelFacts(
                 model.isCustomRenderer(),
                 model.isGui3d(),
                 model.usesBlockLight(),
-                tinted,
                 minecraft.getModelManager().getMissingModel() == model,
                 icon != null,
-                oneSprite);
+                oneSprite,
+                tinted.stream().mapToInt(Integer::intValue).toArray());
     }
 
     /**

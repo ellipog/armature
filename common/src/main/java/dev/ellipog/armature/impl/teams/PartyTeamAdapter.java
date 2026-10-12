@@ -80,10 +80,9 @@ public final class PartyTeamAdapter implements TeamManager {
 
     @Override
     public Optional<Team> byId(UUID id) {
-        return source.parties().stream()
-                .filter(party -> party.id().equals(id))
-                .findFirst()
-                .map(PartyTeamAdapter::toTeam);
+        // Through the source's own lookup, which maps only the hit: filtering the mapped teams
+        // here would build every party's member and invite maps to find one.
+        return source.byId(id).map(PartyTeamAdapter::toTeam);
     }
 
     /**

@@ -3,7 +3,7 @@ package dev.ellipog.armature.client.ui.shape;
 import dev.ellipog.armature.client.ui.CacheHits;
 
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -82,7 +82,7 @@ public final class Plans {
     private record ShapeKey(Shape shape, int size) {
     }
 
-    private static final Map<ShapeKey, Plan> SHAPES = new HashMap<>();
+    private static final Map<ShapeKey, Plan> SHAPES = new LinkedHashMap<>();
 
     private Plans() {
     }
@@ -104,10 +104,27 @@ public final class Plans {
         }
         Plan built = merge(shape::spans, size);
         if (SHAPES.size() >= LIMIT) {
-            SHAPES.clear();
+            halve(SHAPES);
         }
         SHAPES.put(key, built);
         return built;
+    }
+
+    /**
+     * Drops the eldest half of the entries rather than emptying the table.
+     *
+     * <p>Clearing all 512 at once refills over the next frames — every panel and node rebuilding
+     * its rectangles together, which is a periodic frame spike for no reason. Eldest-half because
+     * the table is insertion-ordered: the shapes being drawn right now were added recently, and
+     * the bound still holds, never exceeding the limit plus one.
+     */
+    private static void halve(Map<ShapeKey, Plan> table) {
+        var it = table.keySet().iterator();
+        int remove = table.size() / 2;
+        for (int i = 0; i < remove && it.hasNext(); i++) {
+            it.next();
+            it.remove();
+        }
     }
 
     /** This table's name in the hit/miss report. A constant, so a probe allocates nothing. */

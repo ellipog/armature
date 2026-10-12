@@ -15,6 +15,15 @@ import net.minecraft.server.level.ServerPlayer;
  * the seam lives here rather than there so any mod on the suite can measure it without depending
  * on a consumer.
  *
+ * <h2>One call walks the whole inventory, so callers throttle</h2>
+ *
+ * <p>Both implementations read every slot the inventory reports on every call — there is no
+ * cheaper probe for "does this player carry any energy at all". So a caller that polls here
+ * every tick pays a full walk twenty times a second per player: measure on events, or gate on
+ * something cheaper first, rather than polling. This seam deliberately offers no rate limit of
+ * its own; the throttling lives with the caller, which is the only one that knows what
+ * "often enough" means for its own mechanic.
+ *
  * <h2>The parity contract both loaders honor</h2>
  *
  * <p>Every slot the inventory reports is read — main, armour and offhand alike, jetpacks included.

@@ -403,14 +403,14 @@ public final class ArmatureTextField extends AbstractWidget {
             if (model.hasSelection()) {
                 // Behind the text, in the text's own colour at a third of it: a field knows its text and its
                 // box and nothing else, so the mark is made from what it has rather than from a theme.
-                int from = textX + r.textWidth(model.value().substring(0, model.selectionStart()));
-                int to = textX + r.textWidth(model.value().substring(0, model.selectionEnd()));
+                int from = textX + r.textWidth(model.value(), 0, model.selectionStart());
+                int to = textX + r.textWidth(model.value(), 0, model.selectionEnd());
                 r.fill(from, line - 1, to, line + 9, Colour.alphaOf(textInk(), 0.35F));
             }
             r.text(model.value(), textX, line, textInk());
             if (isFocused() && model.caretVisible(Util.getMillis())) {
-                int caret = textX + r.textWidth(model.value().substring(0, Math.min(model.caret(),
-                        model.length())));
+                int caret = textX + r.textWidth(model.value(), 0, Math.min(model.caret(),
+                        model.length()));
                 r.fill(caret, line - 1, caret + 1, line + 9, textInk());
             }
         }

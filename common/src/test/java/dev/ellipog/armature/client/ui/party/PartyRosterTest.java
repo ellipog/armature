@@ -94,6 +94,23 @@ class PartyRosterTest {
     class Order {
 
         @Test
+        @DisplayName("each member's name is resolved once, not once per comparison")
+        void namesResolvedOnce() {
+            Map<UUID, Integer> asks = new HashMap<>();
+            PartyRoster roster = PartyRoster.of(party(), OWNER,
+                    id -> {
+                        asks.merge(id, 1, Integer::sum);
+                        return nameOf(id);
+                    },
+                    EVERYBODY);
+
+            assertEquals(3, roster.memberCount());
+            assertEquals(Map.of(OWNER, 1, OFFICER, 1, MEMBER, 1), asks,
+                    "the sort used to ask per comparison -- O(n log n) lookups into a player list "
+                            + "or a profile cache for n members");
+        }
+
+        @Test
         @DisplayName("the owner comes first, then by rank, whatever order the members map holds")
         void ownerFirstThenByRank() {
             PartyRoster roster = PartyRoster.of(party(), OWNER, PartyRosterTest::nameOf, EVERYBODY);
