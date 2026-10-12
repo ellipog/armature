@@ -183,7 +183,7 @@ public final class ArmatureNetwork {
      *
      * <p>No rate limit, no dedup: the caller throttles. A send per tick per player will get that
      * player kicked for packet spam, so anything recurrent coalesces before it calls here — see
-     * how Tenet's tree broadcast collapses to one per tick rather than one per edit.
+     * how a consumer's tree broadcast collapses to one per tick rather than one per edit.
      */
     public static void sendToPlayer(ServerPlayer player, CustomPacketPayload payload) {
         NetworkBackend installed = backend;
