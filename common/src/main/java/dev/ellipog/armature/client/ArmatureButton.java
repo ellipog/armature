@@ -164,6 +164,30 @@ public class ArmatureButton extends AbstractWidget {
     private static final int LABEL_INSET = 6;
 
     /**
+     * How far a suffix sits from its control's right edge.
+     *
+     * <p>Four rather than the label's six, and that asymmetry is deliberate rather than drift: the
+     * label's inset keeps text off a filled row's border, while the suffix is the row's own margin
+     * note and sits where a row's end already is. Four is what the overlays this replaces used.
+     */
+    private static final int SUFFIX_INSET = 4;
+
+    /**
+     * The gap a suffix keeps between itself and the label.
+     *
+     * <p>The label's own inset, so the text breathes the same on both sides of the boundary: six
+     * from the left edge to the label, six from the label to the note, four from the note to the
+     * right edge.
+     */
+    private static final int SUFFIX_GAP = 6;
+
+    /** A right-aligned note, or null for a label that takes the whole row. See {@link #suffix}. */
+    private String suffix;
+
+    /** A pinned colour for the suffix, or null to follow the label. See {@link #suffixColour}. */
+    private Integer suffixColour;
+
+    /**
      * Which theme ink an ordinary label is drawn in, resolved while drawing.
      *
      * <p>An enum rather than a captured colour, and that is the fix rather than a nicety: a colour read
@@ -266,6 +290,33 @@ public class ArmatureButton extends AbstractWidget {
     /** A raw colour for the label, pinned rather than resolved from the theme. Rarely what you want. */
     public ArmatureButton textColour(int colour) {
         this.textColour = colour;
+        return this;
+    }
+
+    /**
+     * A short note drawn right-aligned at the row's right edge, clearing the label out of its way.
+     *
+     * <h2>Why the button owns this rather than the screen drawing over it</h2>
+     *
+     * <p>Because the button truncates the label to the room there is, and a note drawn on top by
+     * someone else does not move that truncation: a long label runs straight under the note and
+     * the two overlap. A suffix shortens the truncation first, so the label always ends before
+     * the note begins. Null or empty clears it, and a button without one draws what it always drew.
+     */
+    public ArmatureButton suffix(String note) {
+        this.suffix = note == null || note.isEmpty() ? null : note;
+        return this;
+    }
+
+    /**
+     * A raw colour for the suffix, pinned rather than resolved from the theme.
+     *
+     * <p>Null follows the label's own colour; an explicit colour keeps the note's meaning across
+     * variants — a count that must read as a call to action keeps its accent on a selected row
+     * rather than borrowing the selected ink.
+     */
+    public ArmatureButton suffixColour(Integer colour) {
+        this.suffixColour = colour;
         return this;
     }
 
@@ -586,6 +637,17 @@ public class ArmatureButton extends AbstractWidget {
         int textLeft = getX() + iconSlot;
         int textWidth = width - iconSlot;
 
+        // A suffix clears the label out of its way before anything is truncated: the note keeps
+        // its inset and its gap, and the label takes what is left. Without this the truncation
+        // below fits the label to the whole row and a long one runs straight under the note.
+        int suffixWidth = suffix == null ? 0 : renderer.textWidth(suffix);
+        int suffixRoom = suffix == null ? 0 : SUFFIX_INSET + suffixWidth + SUFFIX_GAP;
+        // Measured from where the text starts rather than from the row's edge: the label sits six
+        // in, so a room counted from zero ends the text on the note's first pixel. Without a suffix
+        // this is the old four-pixels-short-of-the-edge room, to the pixel.
+        int labelRoom = suffix == null ? Math.max(0, textWidth - 4)
+                : Math.max(0, textWidth - LABEL_INSET - suffixRoom);
+
         // Truncated to the space there actually is, by pixel width rather than by character count. A
         // control cannot know how long its label will be -- a chapter title comes from the data file
         // -- so without this a long label is drawn straight through the control's edge and reads as a
@@ -594,14 +656,17 @@ public class ArmatureButton extends AbstractWidget {
         // `Measure.truncate` rather than a font call, so the truncation rule is testable and lives
         // beside the wrap rule it is a counterpart of. Both answer "what fits in this width", one by
         // breaking a paragraph and one by cutting a line.
-        String shown = Measure.truncate(label, Math.max(0, textWidth - 4), measure(renderer));
+        String shown = Measure.truncate(label, labelRoom, measure(renderer));
         // Two pixels in from the left rather than flush against it. A label touching its own edge
         // reads as text that has overflowed rather than as text that has been placed, and the same
         // two pixels is what the centred branch leaves on the narrower side. See `alignLeft` for which
         // of the two a caller wants and why a column needs the one it needs.
+        //
+        // Centred against the room the label may use rather than the whole row, so a suffix does not
+        // pull the label off centre: without one the room is the row and this is the old formula.
         int textX = alignLeft
                 ? textLeft + LABEL_INSET
-                : textLeft + (textWidth - renderer.textWidth(shown)) / 2;
+                : textLeft + (textWidth - suffixRoom - renderer.textWidth(shown)) / 2;
         // Shadowed on a sprite, plain on a fill: vanilla draws its button labels with the
         // game's drop shadow, while every flat label in this toolkit sits on an opaque backdrop
         // where a shadow would be a smudge. See GuiRenderer.shadowedText for why the two are
@@ -611,6 +676,20 @@ public class ArmatureButton extends AbstractWidget {
         }
         else {
             renderer.text(shown, textX, getY() + (height - 8) / 2, colour);
+        }
+        if (suffix != null) {
+            // At the row's right edge, where the overlay this replaces drew it: same inset, so a
+            // count sits pixel-identical with or without the truncation beside it. The label's own
+            // colour only when no colour was pinned — a note that must read as a call to action
+            // keeps its accent on every variant rather than borrowing the row's ink.
+            int suffixX = getX() + width - SUFFIX_INSET - suffixWidth;
+            int suffixInk = suffixColour != null ? suffixColour : colour;
+            if (vanillaButton) {
+                renderer.shadowedText(suffix, suffixX, getY() + (height - 8) / 2, suffixInk, 1F);
+            }
+            else {
+                renderer.text(suffix, suffixX, getY() + (height - 8) / 2, suffixInk);
+            }
         }
     }
 

@@ -217,4 +217,69 @@ class ArmatureButtonTest {
         assertEquals(Themes.VANILLA.title(), r.texts().get(0).argb(),
                 "so its label stays the theme's title ink, unshadowed");
     }
+
+    @Test
+    @DisplayName("a suffix shortens the label so the two never overlap")
+    void suffixClearsTheLabel() {
+        // The report this locks: a chapter row's "(3)" rewards count was painted over the label
+        // by someone else, and a long title ran straight under it. The button truncates around
+        // the note instead, so the title always ends before the count begins.
+        ArmatureButton button = new ArmatureButton(10, 0, 100, 16,
+                Component.literal("A very long chapter title"), () -> {
+                }).alignLeft(true);
+        button.suffix("(12)");
+
+        RecordingRenderer r = RecordingRenderer.create();
+        button.draw(r, 0L);
+
+        assertEquals(2, r.texts().size(), "label and note, and nothing else");
+        RecordingRenderer.Call note = r.texts().get(1);
+        assertEquals("(12)", note.text());
+        assertEquals(10 + 100 - 4 - 4 * 6, note.x(), "at the row's right edge, four in");
+        RecordingRenderer.Call label = r.texts().get(0);
+        assertTrue(label.x() + label.text().length() * 6 + 6 <= note.x(),
+                "the label ends a gap before the note: '" + label.text() + "'");
+    }
+
+    @Test
+    @DisplayName("no suffix draws what it always drew, and clearing restores it")
+    void noSuffixIsToday() {
+        ArmatureButton button = new ArmatureButton(10, 0, 100, 16,
+                Component.literal("A very long chapter title"), () -> {
+                }).alignLeft(true);
+
+        RecordingRenderer plain = RecordingRenderer.create();
+        button.draw(plain, 0L);
+        assertEquals(1, plain.texts().size(), "a label and nothing else");
+
+        button.suffix("(12)");
+        button.suffix(null);
+        RecordingRenderer cleared = RecordingRenderer.create();
+        button.draw(cleared, 0L);
+        assertEquals(plain.texts().stream().map(RecordingRenderer.Call::text).toList(),
+                cleared.texts().stream().map(RecordingRenderer.Call::text).toList(),
+                "clearing the note draws the label it always drew");
+    }
+
+    @Test
+    @DisplayName("a pinned suffix colour stays pinned, otherwise the note follows the label")
+    void suffixColour() {
+        ArmatureButton pinned = new ArmatureButton(0, 0, 100, 16, Component.literal("Row"), () -> {
+        }).alignLeft(true);
+        pinned.suffix("(3)");
+        pinned.suffixColour(0xFF123456);
+
+        RecordingRenderer r = RecordingRenderer.create();
+        pinned.draw(r, 0L);
+        assertEquals(0xFF123456, r.texts().get(1).argb(), "a pinned colour is the note's");
+
+        ArmatureButton following = new ArmatureButton(0, 0, 100, 16, Component.literal("Row"), () -> {
+        }).alignLeft(true);
+        following.suffix("(3)");
+
+        RecordingRenderer plain = RecordingRenderer.create();
+        following.draw(plain, 0L);
+        assertEquals(plain.texts().get(0).argb(), plain.texts().get(1).argb(),
+                "unpinned, the note wears the label's own ink on every variant");
+    }
 }
