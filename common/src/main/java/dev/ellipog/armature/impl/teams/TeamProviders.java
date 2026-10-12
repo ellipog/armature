@@ -197,7 +197,7 @@ public final class TeamProviders {
 
         TeamProvider winner = present.get(0);
         TeamManager manager = winner.create(server);
-        Constants.LOG.info("armature: teams come from '{}'", manager.name());
+        Constants.LOG.info("teams come from '{}'", manager.name());
 
         for (String rival : rivals(present, winner)) {
             // The both-installed case, said out loud. It is not merely information: the choice above
