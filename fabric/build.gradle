@@ -1,6 +1,6 @@
 plugins {
     id 'multiloader-loader'
-    id 'fabric-loom'
+    id 'net.fabricmc.fabric-loom'
 }
 repositories {
     // Team Reborn Energy's own maven. Filtered to teamreborn on purpose: this is the one
@@ -13,12 +13,11 @@ repositories {
 }
 dependencies {
     minecraft "com.mojang:minecraft:${minecraft_version}"
-    mappings loom.layered {
-        officialMojangMappings()
-        parchment("org.parchmentmc.data:parchment-${parchment_minecraft}:${parchment_version}@zip")
-    }
-    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+    // No mappings block: 26.x is unobfuscated (official Mojang names are the names), and Loom
+    // refuses layered mappings in a non-obfuscated environment. Parchment publishes nothing
+    // for 26.x either, so there is nothing to layer.
+    implementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
 
     // Team Reborn Energy, for the energy adapter's classes only -- see the note in
     // gradle.properties. `compileOnly`, so it never reaches the jar or the published POM:
@@ -35,10 +34,6 @@ dependencies {
 }
 
 loom {
-    def aw = project(':common').file("src/main/resources/${mod_id}.accesswidener")
-    if (aw.exists()) {
-        accessWidenerPath.set(aw)
-    }
     mixin {
         defaultRefmapName.set("${mod_id}.refmap.json")
     }

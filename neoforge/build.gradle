@@ -5,15 +5,7 @@ plugins {
 
 neoForge {
     version = neoforge_version
-    // Automatically enable neoforge AccessTransformers if the file exists
-    def at = project(':common').file('src/main/resources/META-INF/accesstransformer.cfg')
-    if (at.exists()) {
-        accessTransformers.from(at.absolutePath)
-    }
-    parchment {
-        minecraftVersion = parchment_minecraft
-        mappingsVersion = parchment_version
-    }
+    // No access-transformer block: 26.3 needs no widening (the item-colours field it widened is gone).
     runs {
         configureEach {
             systemProperty('neoforge.enabledGameTestNamespaces', mod_id)

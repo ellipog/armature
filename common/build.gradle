@@ -5,15 +5,8 @@ plugins {
 
 neoForge {
     neoFormVersion = neo_form_version
-    // Automatically enable AccessTransformers if the file exists
-    def at = file('src/main/resources/META-INF/accesstransformer.cfg')
-    if (at.exists()) {
-        accessTransformers.from(at.absolutePath)
-    }
-    parchment {
-        minecraftVersion = parchment_minecraft
-        mappingsVersion = parchment_version
-    }
+    // No access-transformer block: 26.3 needs no widening (the item-colours field it widened is gone).
+    // No parchment block: 26.x is unobfuscated, Parchment publishes nothing for it.
 }
 
 dependencies {
