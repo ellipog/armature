@@ -8,7 +8,7 @@ import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -582,10 +582,7 @@ class GuiRendererTest {
         // the label and the icon are drawn in one order for a reason -- a fill that lands after the
         // label covers it -- and deferring the flush is the one thing that could quietly change it.
         //
-        // Verified against the 1.21.1 sources first: `fill` and `drawString` both end in
-        // `flushIfUnmanaged`, so an unmanaged context pays one `endBatch` per rectangle and a managed one
-        // pays none; text is `RenderType.text` where a fill is `RenderType.gui`, so a label still ends
-        // the run of fills around it. That is why this asserts *order* rather than "one submission".
+        // That is why this asserts *order* rather than "one submission".
         RecordingRenderer r = RecordingRenderer.create();
 
         r.batched(() -> {
@@ -615,18 +612,14 @@ class GuiRendererTest {
     }
 
     @Test
-    @DisplayName("the context's own region call is not re-entrant, which is why the adapter counts depth")
+    @DisplayName("nested regions stay visible as two on a context that has them")
     void theContextsRegionIsNotReentrant() {
-        // This asserts the **model**, and the model is where the hazard belongs. `RecordingRenderer` mirrors
-        // `GuiGraphics.drawManaged`, which sets the managed flag false on the way out whatever it was on the
-        // way in — it is not re-entrant — so a region opened inside another one *ends the outer one*. A
-        // frame-wide region would then be worth nothing from the first control that batched inside it, and
-        // silently: the frame keeps drawing, and keeps paying a submission per fill.
-        //
-        // The guard for that is `GuiGraphicsRenderer.batched`'s depth count, and it cannot be asserted here
-        // at all — it needs a real `GuiGraphics`, and this project has no headless one. So the split is
-        // deliberate: the hazard is pinned on the model, and the guard is verified by reading the version's
-        // own source (GuiGraphics.drawManaged) rather than by a test that would only be testing itself.
+        // This asserts the **model**, and the model is where the hazard belongs. `RecordingRenderer`
+        // models a context with explicit batch regions: a region opened inside another one ends the
+        // outer one, so two nested calls are two regions, visibly. The game extractor has no regions
+        // left to guard -- extraction preserves order with nothing to flush -- and its `batched`
+        // calls straight through; what this pins is that a caller's nesting stays explicit on a
+        // context where regions exist, rather than collapsing silently.
         RecordingRenderer r = RecordingRenderer.create();
 
         r.batched(() -> {
@@ -640,8 +633,8 @@ class GuiRendererTest {
         });
 
         assertEquals(2, r.batches(),
-                "two nested calls are two regions on the context itself — which is exactly what the "
-                        + "adapter's depth count exists to prevent");
+                "two nested calls are two regions on a regioned context -- callers must still open "
+                        + "and close symmetrically, even where the game no longer needs them to");
     }
 
     // ------------------------------------------------------------------
@@ -805,8 +798,8 @@ class GuiRendererTest {
         // difference is exactly what a caller deciding whether to pre-check an id needs to know.
         RecordingRenderer r = RecordingRenderer.create();
 
-        r.texture(ResourceLocation.fromNamespaceAndPath("pack", "textures/gui/star.png"), 0, 0, 8, 8);
-        r.sprite(ResourceLocation.fromNamespaceAndPath("minecraft", "block/sculk"), 20, 30, 16, 24,
+        r.texture(Identifier.fromNamespaceAndPath("pack", "textures/gui/star.png"), 0, 0, 8, 8);
+        r.sprite(Identifier.fromNamespaceAndPath("minecraft", "block/sculk"), 20, 30, 16, 24,
                 0x80FFFFFF);
 
         assertEquals(1, r.sprites().size(), "one sprite, one call");
@@ -830,7 +823,7 @@ class GuiRendererTest {
         RecordingRenderer r = RecordingRenderer.create();
 
         try (GuiRenderer.Scoped turn = r.turned(100, 50, -90F)) {
-            r.sprite(ResourceLocation.fromNamespaceAndPath("minecraft", "block/sculk"), 0, 0, 8, 8,
+            r.sprite(Identifier.fromNamespaceAndPath("minecraft", "block/sculk"), 0, 0, 8, 8,
                     0xFFFFFFFF);
         }
         r.fill(0, 0, 1, 1, 0xFF000000);

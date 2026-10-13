@@ -3,7 +3,7 @@ package dev.ellipog.armature.api.net;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -114,7 +114,7 @@ public final class ArmatureNetwork {
      * id, which is what the linear scan answered before — duplicates are still accepted here
      * rather than refused, because refusing them would be a new behavior.
      */
-    private static final Map<ResourceLocation, Registration<?>> BY_ID = new LinkedHashMap<>();
+    private static final Map<Identifier, Registration<?>> BY_ID = new LinkedHashMap<>();
 
     private static NetworkBackend backend;
 
@@ -224,7 +224,7 @@ public final class ArmatureNetwork {
     }
 
     /** The payload declared under an id, if any. Diagnostics. */
-    public static Optional<Registration<?>> byId(ResourceLocation id) {
+    public static Optional<Registration<?>> byId(Identifier id) {
         return Optional.ofNullable(BY_ID.get(id));
     }
 }

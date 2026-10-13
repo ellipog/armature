@@ -40,9 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * it.
  *
  * <p>What this therefore does <i>not</i> cover is the per-mod file that reads the real objects —
- * {@code FtbTeams} and {@code OpenPacTeams}. Those need their mod on the classpath and, for a party to
- * exist at all, a player to have formed one. See TESTING.md for what was and was not seen on a real
- * boot, said plainly rather than implied by this file's existence.
+ * {@code OpenPacTeams}. It needs its mod on the classpath and, for a party to exist at all, a
+ * player to have formed one. See TESTING.md for what was and was not seen on a real boot, said
+ * plainly rather than implied by this file's existence.
  */
 class PartyTeamAdapterTest {
 

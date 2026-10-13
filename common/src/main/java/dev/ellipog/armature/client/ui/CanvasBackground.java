@@ -3,7 +3,7 @@ package dev.ellipog.armature.client.ui;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.Locale;
@@ -346,8 +346,8 @@ public record CanvasBackground(Kind kind, Space space, int spacing, Tuning tunin
             return "";
         }
         String lowered = trimmed.toLowerCase(Locale.ROOT);
-        ResourceLocation parsed = ResourceLocation.tryParse(
-                lowered.indexOf(':') < 0 ? ResourceLocation.DEFAULT_NAMESPACE + ":" + lowered : lowered);
+        Identifier parsed = Identifier.tryParse(
+                lowered.indexOf(':') < 0 ? Identifier.DEFAULT_NAMESPACE + ":" + lowered : lowered);
         if (parsed == null) {
             return "";
         }

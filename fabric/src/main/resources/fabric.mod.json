@@ -23,7 +23,6 @@
     },
     "license": "${license}",
     "environment": "*",
-    "accessWidener": "armature.accesswidener",
     "entrypoints": {
         "main": [
             "dev.ellipog.armature.fabric.ArmatureFabric"

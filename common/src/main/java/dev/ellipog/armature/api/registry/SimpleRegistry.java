@@ -1,6 +1,6 @@
 package dev.ellipog.armature.api.registry;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -11,7 +11,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * A registry of ordinary Java objects, keyed by {@link ResourceLocation}.
+ * A registry of ordinary Java objects, keyed by {@link Identifier}.
  *
  * <h2>What this is not</h2>
  *
@@ -35,7 +35,7 @@ import java.util.TreeSet;
 public final class SimpleRegistry<T> {
 
     private final String what;
-    private final Map<ResourceLocation, T> byId = new LinkedHashMap<>();
+    private final Map<Identifier, T> byId = new LinkedHashMap<>();
 
     private SimpleRegistry(String what) {
         this.what = what;
@@ -51,7 +51,7 @@ public final class SimpleRegistry<T> {
      *
      * @throws IllegalStateException if the id is already taken
      */
-    public void register(ResourceLocation id, T value) {
+    public void register(Identifier id, T value) {
         T existing = byId.putIfAbsent(id, value);
         if (existing != null) {
             throw new IllegalStateException("Two " + what + " are registered under " + id
@@ -61,16 +61,16 @@ public final class SimpleRegistry<T> {
         }
     }
 
-    public Optional<T> get(ResourceLocation id) {
+    public Optional<T> get(Identifier id) {
         return Optional.ofNullable(byId.get(id));
     }
 
-    public boolean contains(ResourceLocation id) {
+    public boolean contains(Identifier id) {
         return byId.containsKey(id);
     }
 
     /** Sorted, so error messages listing the options read the same way every time. */
-    public Set<ResourceLocation> ids() {
+    public Set<Identifier> ids() {
         return Collections.unmodifiableSet(new TreeSet<>(byId.keySet()));
     }
 

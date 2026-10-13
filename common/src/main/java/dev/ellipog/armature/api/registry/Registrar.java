@@ -1,7 +1,7 @@
 package dev.ellipog.armature.api.registry;
 
 import net.minecraft.core.Registry;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.function.Supplier;
 
@@ -54,5 +54,5 @@ public interface Registrar {
      *         {@link #forMod}'s mod id
      * @throws IllegalStateException if {@code id} is already registered in {@code registry}
      */
-    <T> void register(Registry<T> registry, ResourceLocation id, Supplier<? extends T> value);
+    <T> void register(Registry<T> registry, Identifier id, Supplier<? extends T> value);
 }

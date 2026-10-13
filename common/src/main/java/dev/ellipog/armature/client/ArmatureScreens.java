@@ -5,7 +5,7 @@ import dev.ellipog.armature.api.client.ArmatureClient;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -31,7 +31,7 @@ import java.util.function.Supplier;
  */
 public final class ArmatureScreens implements ArmatureClient.ScreenOpener {
 
-    private static final Map<ResourceLocation, Supplier<Screen>> FACTORIES = new LinkedHashMap<>();
+    private static final Map<Identifier, Supplier<Screen>> FACTORIES = new LinkedHashMap<>();
 
     private ArmatureScreens() {
     }
@@ -57,7 +57,7 @@ public final class ArmatureScreens implements ArmatureClient.ScreenOpener {
      *         replacing the existing screen — two mods colliding here is a bug worth hearing
      *         about
      */
-    public static void register(ResourceLocation id, Supplier<Screen> factory) {
+    public static void register(Identifier id, Supplier<Screen> factory) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(factory, "factory");
         if (FACTORIES.containsKey(id)) {
@@ -68,14 +68,16 @@ public final class ArmatureScreens implements ArmatureClient.ScreenOpener {
     }
 
     @Override
-    public boolean open(ResourceLocation id) {
+    public boolean open(Identifier id) {
         Supplier<Screen> factory = FACTORIES.get(id);
         if (factory == null) {
             Constants.LOG.warn("No screen is registered under {}, so nothing was opened. Known screens: {}",
                     id, FACTORIES.keySet());
             return false;
         }
-        Minecraft.getInstance().setScreen(factory.get());
+        // `setScreenAndShow` is the whole of the old `setScreen` on this version: the setter that
+        // also shows. There is no quieter one to call by mistake.
+        Minecraft.getInstance().setScreenAndShow(factory.get());
         return true;
     }
 }

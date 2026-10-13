@@ -24,8 +24,8 @@ package dev.ellipog.armature.api.teams;
  * that says nothing behaves that way. A stored party from before this record existed loads with the
  * default — see {@code TeamStore}, whose format version 1 has no policy to read.
  *
- * <p>{@link #DEFAULT} is also what an adapter reports for a foreign party: FTB Teams and Open
- * Parties and Claims keep their own rules, and this record is not consulted for them. A caller that
+ * <p>{@link #DEFAULT} is also what the adapter reports for a foreign party: Open Parties and
+ * Claims keeps its own rules, and this record is not consulted for it. A caller that
  * wants to know whether a source can be <i>asked</i> to change any of this asks
  * {@code TeamManager.supports(TeamFeature.POLICY)}.
  *

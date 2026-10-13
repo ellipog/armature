@@ -12,9 +12,10 @@ import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 import dev.ellipog.armature.impl.teams.TeamProvider;
 
-import net.minecraft.Util;
+import net.minecraft.util.Util;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.NameAndId;
 
 import xaero.pac.common.parties.party.api.IPartyPlayerInfoAPI;
 import xaero.pac.common.parties.party.member.PartyMemberRank;
@@ -30,7 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Open Parties and Claims, read as a source of parties — and, unlike FTB, written to.
+ * Open Parties and Claims, read as a source of parties — and written to.
  *
  * <h2>A consumer, not a registration</h2>
  *
@@ -38,10 +39,10 @@ import java.util.UUID;
  * and <b>none for parties</b>. There is no party event to subscribe to. So this does the only thing
  * available: it reads {@code OpenPACServerAPI.get(server)} and asks it questions.
  *
- * <p>That is a real constraint rather than a preference, and it is why this class is a consumer while
- * {@code FtbTeams} is both a consumer and an event bridge. There is nowhere to put a registration, so
- * none is attempted — an addon that implemented OPAC's player-party-system interface in order to look
- * subscribed would be claiming a role in OPAC's own dispatch that does not exist for parties.
+ * <p>That is a real constraint rather than a preference, and it is why this class is only a
+ * consumer: there is nowhere to put a registration, so none is attempted — an addon that
+ * implemented OPAC's player-party-system interface in order to look subscribed would be claiming
+ * a role in OPAC's own dispatch that does not exist for parties.
  *
  * <h2>{@code firesEvents()} is false, and that is the true answer</h2>
  *
@@ -248,17 +249,17 @@ public final class OpenPacTeams implements MutableTeamManager {
 
         GameProfile profile = profileOf(owner);
         if (profile == null) {
-            // createPartyForOwner takes a GameProfile, so a player this server has no profile for
+            // createPartyForOwner takes a name and an id, so a player this server has no profile for
             // cannot own a party -- and their name has to come from somewhere.
             throw new IllegalStateException("No profile is known for " + owner + ", so Open Parties and "
                     + "Claims cannot create a party for them. They have to have joined this server at "
                     + "least once.");
         }
 
-        IServerPartyAPI party = parties.createPartyForOwner(profile);
+        IServerPartyAPI party = parties.createPartyForOwner(new NameAndId(profile));
         if (party == null) {
             throw new IllegalStateException("Open Parties and Claims declined to create a party for "
-                    + profile.getName() + "; it has its own config for who may form one.");
+                    + profile.name() + "; it has its own config for who may form one.");
         }
 
         if (!name.isEmpty() && !name.equals(party.getDefaultName())) {
@@ -483,17 +484,19 @@ public final class OpenPacTeams implements MutableTeamManager {
     // ------------------------------------------------------------------
 
     private GameProfile profileOf(UUID player) {
-        return server.getProfileCache().get(player).orElse(null);
+        // The profile resolver behind the server's services, synchronously: the old
+        // `getProfileCache` is gone, and this is the sanctioned sync lookup that stands in for it.
+        return server.services().profileResolver().fetchById(player).orElse(null);
     }
 
     /** A player's name, from the player list when online and the profile cache otherwise. */
     private String nameOf(UUID player) {
         ServerPlayer online = server.getPlayerList().getPlayer(player);
         if (online != null) {
-            return online.getGameProfile().getName();
+            return online.getGameProfile().name();
         }
         GameProfile cached = profileOf(player);
-        return cached == null ? null : cached.getName();
+        return cached == null ? null : cached.name();
     }
 
     /**

@@ -39,7 +39,7 @@ import java.util.UUID;
  *
  * <p>{@link #rename}, {@link #transferOwnership}, {@link #setPolicy}, {@link #joinPublic},
  * {@link #declineInvite} and {@link #cancelInvite} are newer operations a source may or may not be
- * able to offer — Open Parties and Claims cannot rename a party at all, and FTB Teams is read-only
+ * able to offer — Open Parties and Claims cannot rename a party at all, and is read-only
  * here by design. They throw by default like the six, but "can this source do it" is a different
  * question from "does this source write at all", so it is asked with {@link #supports} rather than
  * folded into {@link #managesMembership()}. A caller offers a control only where the answer is yes;
@@ -79,7 +79,7 @@ public interface TeamManager {
     /**
      * What is providing these teams, for a log line and for the refusal message above.
      *
-     * <p>Short and lowercase: {@code "stored"}, {@code "ftbteams"}, {@code "openpartiesandclaims"}.
+     * <p>Short and lowercase: {@code "stored"}, {@code "openpartiesandclaims"}.
      * It is an id rather than a sentence because it ends up in both.
      */
     String name();

@@ -4,7 +4,7 @@ import dev.ellipog.armature.client.ArmatureTheme;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
@@ -162,7 +162,7 @@ public final class RecordingRenderer implements GuiRenderer {
     private final int charWidth;
     private final int lineHeight;
     private final boolean iconsDraw;
-    private final Map<ResourceLocation, GuiRenderer.TextureSize> textureSizes = new HashMap<>();
+    private final Map<Identifier, GuiRenderer.TextureSize> textureSizes = new HashMap<>();
 
     private int openClips;
     private int deepestClip;
@@ -325,7 +325,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * recording that dropped it could not tell the pinned star from the empty one.
      */
     @Override
-    public void texture(ResourceLocation texture, int x, int y, int width, int height) {
+    public void texture(Identifier texture, int x, int y, int width, int height) {
         calls.add(new Call(Op.TEXTURE, x, y, x + width, y + height, 0, texture.toString()));
     }
 
@@ -338,7 +338,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * centred cover unassertable, which is exactly the pair of draw calls this operation exists for.
      */
     @Override
-    public void scaled(ResourceLocation texture, int x, int y, int width, int height,
+    public void scaled(Identifier texture, int x, int y, int width, int height,
                        float u, float v, int sourceWidth, int sourceHeight,
                        int textureWidth, int textureHeight, int argb) {
         calls.add(new Call(Op.TEXTURE, x, y, x + width, y + height, argb, texture.toString(),
@@ -356,7 +356,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * element asked for could not hold either behaviour.
      */
     @Override
-    public void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb) {
+    public void sprite(Identifier atlasSprite, int x, int y, int width, int height, int argb) {
         if (atlasSprite == null) {
             calls.add(new Call(Op.SPRITE, x, y, x + width, y + height, argb, ""));
             return;
@@ -372,7 +372,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * from a block-atlas picture could not hold either lookup's behaviour.
      */
     @Override
-    public void guiSprite(ResourceLocation guiSprite, int x, int y, int width, int height) {
+    public void guiSprite(Identifier guiSprite, int x, int y, int width, int height) {
         calls.add(new Call(Op.GUI_SPRITE, x, y, x + width, y + height, 0,
                 guiSprite == null ? "" : guiSprite.toString()));
     }
@@ -384,12 +384,12 @@ public final class RecordingRenderer implements GuiRenderer {
      * wants a tile at 24 by 16 says so, and a test that wants the unseeded path says nothing — which
      * is the only way "an image with no readable size draws nothing" can be driven without a client.
      */
-    public void putTextureSize(ResourceLocation texture, int width, int height) {
+    public void putTextureSize(Identifier texture, int width, int height) {
         textureSizes.put(texture, new GuiRenderer.TextureSize(width, height));
     }
 
     /** The stamp this recorder reports per texture; see {@link #putTextureSize} and {@link #textureStamp}. */
-    private final Map<ResourceLocation, Long> textureStamps = new HashMap<>();
+    private final Map<Identifier, Long> textureStamps = new HashMap<>();
 
     /**
      * Declares that a texture's resource has been replaced, the way a pack reload does.
@@ -399,7 +399,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * that reads no resource manager — nothing it reported can go stale — so a test that wants the
      * invalidation has to say the resource moved.
      */
-    public void bumpTextureStamp(ResourceLocation texture) {
+    public void bumpTextureStamp(Identifier texture) {
         textureStamps.merge(texture, 1L, Long::sum);
     }
 
@@ -410,7 +410,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * resource manager should report.
      */
     @Override
-    public long textureStamp(ResourceLocation texture) {
+    public long textureStamp(Identifier texture) {
         return textureStamps.getOrDefault(texture, 0L);
     }
 
@@ -422,7 +422,7 @@ public final class RecordingRenderer implements GuiRenderer {
      * caller must survive.
      */
     @Override
-    public Optional<GuiRenderer.TextureSize> textureSize(ResourceLocation texture) {
+    public Optional<GuiRenderer.TextureSize> textureSize(Identifier texture) {
         return Optional.ofNullable(textureSizes.get(texture));
     }
 

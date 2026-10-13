@@ -5,7 +5,7 @@ import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.kit.Colour;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -242,7 +242,7 @@ public final class CanvasBackgroundArt {
      * <p>Keyed with the resource stamp the size was read against — see {@link #textureSizeOf} for why the
      * stamp is part of the entry rather than an invalidation hook.
      */
-    private static final Map<ResourceLocation, Sized> TEXTURE_SIZES = new HashMap<>();
+    private static final Map<Identifier, Sized> TEXTURE_SIZES = new HashMap<>();
 
     /** One remembered size, and the resource stamp it was read against. */
     private record Sized(GuiRenderer.TextureSize size, long stamp) {
@@ -254,7 +254,7 @@ public final class CanvasBackgroundArt {
         if (image.texture().isEmpty()) {
             return;
         }
-        ResourceLocation id = ResourceLocation.tryParse(image.texture());
+        Identifier id = Identifier.tryParse(image.texture());
         if (id == null) {
             return;
         }
@@ -289,7 +289,7 @@ public final class CanvasBackgroundArt {
      * <p>A renderer that reports a constant stamp — a recording renderer, say — never invalidates, which is
      * the right answer for one that reads no resource manager: nothing it reported can go stale.
      */
-    private static GuiRenderer.TextureSize textureSizeOf(GuiRenderer r, ResourceLocation id) {
+    private static GuiRenderer.TextureSize textureSizeOf(GuiRenderer r, Identifier id) {
         long stamp = r.textureStamp(id);
         Sized cached = TEXTURE_SIZES.get(id);
         if (cached != null && cached.stamp() == stamp) {
@@ -325,7 +325,7 @@ public final class CanvasBackgroundArt {
      * (one blit over the visible rectangle) and ignores the space.
      */
     private static void tile(GuiRenderer r, Viewport view, CanvasBackground background,
-                             CanvasBackground.Image image, ResourceLocation id,
+                             CanvasBackground.Image image, Identifier id,
                              GuiRenderer.TextureSize size, int ink,
                              int x0, int y0, int x1, int y1) {
         if (background.space() == CanvasBackground.Space.GRAPH) {
@@ -360,7 +360,7 @@ public final class CanvasBackgroundArt {
      * the same "content units zoom, screen units do not" rule {@link #stepPixels} states.
      */
     private static void tileGraph(GuiRenderer r, Viewport view, CanvasBackground.Image image,
-                                  ResourceLocation id, GuiRenderer.TextureSize size, int ink,
+                                  Identifier id, GuiRenderer.TextureSize size, int ink,
                                   int x0, int y0, int x1, int y1) {
         float contentWidth = image.tileSize();
         float contentHeight = contentWidth * (float) size.height() / size.width();
@@ -412,7 +412,7 @@ public final class CanvasBackgroundArt {
      * arithmetic is written as a source rectangle rather than a scale factor because that is what the
      * seam's blit takes, and because "what part of the file is on screen" is the thing to check.
      */
-    private static void cover(GuiRenderer r, ResourceLocation id, GuiRenderer.TextureSize size,
+    private static void cover(GuiRenderer r, Identifier id, GuiRenderer.TextureSize size,
                               int ink, int x0, int y0, int x1, int y1) {
         int colour = inkAt(ink, 1F);
         if (Colour.invisible(colour)) {

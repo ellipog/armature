@@ -128,13 +128,17 @@ names no client type at all:
 
 ```java
 ArmatureClient.registerKeyMapping(
-        ResourceLocation.fromNamespaceAndPath("mymod", "panel"),
+        Identifier.fromNamespaceAndPath("mymod", "panel"),
         InputConstants.KEY_P,
-        "key.categories.mymod",
+        Identifier.fromNamespaceAndPath("mymod", "main"),
         () -> ArmatureClient.openScreen(PANEL_SCREEN_ID));
 
 ArmatureScreens.register(PANEL_SCREEN_ID, MyPanelScreen::new);
 ```
+
+The category is an id whose label is `key.category.<namespace>.<path>`, so the language file
+carries `key.category.mymod.main` (on 1.21.1 this was a translation-key string, and old
+`key.categories.*` keys do not transfer).
 
 The loader subprojects supply the backend; common code never mentions one. The backend surface is
 small on purpose: `install` (once, since a second install throws), `tick`, `translationKey` and

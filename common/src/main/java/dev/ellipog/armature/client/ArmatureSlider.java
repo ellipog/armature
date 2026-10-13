@@ -7,13 +7,11 @@ import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Slider;
 import dev.ellipog.armature.client.ui.kit.Tween;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
-
-import org.lwjgl.glfw.GLFW;
 
 /**
  * A themed slider: a message on the left, a track on the right, and a thumb you drag.
@@ -88,12 +86,11 @@ public class ArmatureSlider extends AbstractWidget {
     }
 
     @Override
-    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // The one forced signature, wrapped and delegated exactly as ArmatureSwitch does — see the
-        // seam note there, including why the drawing is batched: a slider is a track, a fill and a
-        // handle, each a run of rows, and unmanaged each row's fill is its own submission.
+    protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            float partialTick) {
+        // The one forced signature, wrapped and delegated exactly as ArmatureSwitch does.
         GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
-        long now = net.minecraft.Util.getMillis();
+        long now = net.minecraft.util.Util.getMillis();
         renderer.batched(() -> {
             draw(renderer, now);
             return null;
@@ -102,7 +99,7 @@ public class ArmatureSlider extends AbstractWidget {
 
     /** Draws this slider at the current time. The modal redraw pass and a preview both use it. */
     public void draw(GuiRenderer renderer) {
-        draw(renderer, net.minecraft.Util.getMillis());
+        draw(renderer, net.minecraft.util.Util.getMillis());
     }
 
     /** Draws this slider, taking the time so a test can drive the hover without sleeping. */
@@ -192,13 +189,13 @@ public class ArmatureSlider extends AbstractWidget {
     }
 
     @Override
-    public void onClick(double mouseX, double mouseY) {
-        setFromPointer(mouseX);
+    public void onClick(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        setFromPointer(event.x());
     }
 
     @Override
-    protected void onDrag(double mouseX, double mouseY, double dragX, double dragY) {
-        setFromPointer(mouseX);
+    protected void onDrag(net.minecraft.client.input.MouseButtonEvent event, double dragX, double dragY) {
+        setFromPointer(event.x());
     }
 
     private void setFromPointer(double mouseX) {
@@ -210,18 +207,19 @@ public class ArmatureSlider extends AbstractWidget {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
         // Arrows move by one step — the smallest move a drag can make — so the keyboard and the mouse
-        // reach exactly the same values.
-        if (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_DOWN) {
+        // reach exactly the same values. Asked through the event's own predicates rather than key
+        // constants: the constants changed values with the SDL move, and these cannot go stale.
+        if (event.isLeft() || event.isDown()) {
             step(-1);
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_RIGHT || keyCode == GLFW.GLFW_KEY_UP) {
+        if (event.isRight() || event.isUp()) {
             step(1);
             return true;
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
 
     private void step(int direction) {

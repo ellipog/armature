@@ -5,13 +5,18 @@ import dev.ellipog.armature.api.teams.TeamInvite;
 import dev.ellipog.armature.api.teams.TeamPolicy;
 import dev.ellipog.armature.api.teams.TeamRole;
 
-import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.storage.LevelResource;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -50,7 +55,26 @@ import java.util.UUID;
  */
 public final class TeamStore extends SavedData {
 
-    private static final String DATA_NAME = "armature_teams";
+    /**
+     * The store's serialised form. A plain tag codec over {@link #save} and {@link #load} rather
+     * than a field-by-field codec: the format is versioned by hand (see the version key in
+     * {@link #save}), with a version 1 reader that a generated codec could not express, and the
+     * {@code registries} neither side takes mean there is nothing a fancier codec would use.
+     */
+    public static final com.mojang.serialization.Codec<TeamStore> CODEC =
+            CompoundTag.CODEC.xmap(TeamStore::load, store -> store.save(new CompoundTag()));
+
+    private static final SavedDataType<TeamStore> TYPE = new SavedDataType<>(
+            Identifier.fromNamespaceAndPath("armature", "teams"),
+            TeamStore::new,
+            CODEC,
+            // Null, deliberately: DataFixTypes is vanilla's migration table, and this is our own
+            // format with its own version key, so there is nothing for it to migrate. Same null the
+            // 1.21.1 `SavedData.Factory` took, for the same reason.
+            null);
+
+    /** The 1.21.1 file name, flat under the data folder. Only used once, to move it (see below). */
+    private static final String LEGACY_FILE = "armature_teams.dat";
 
     private final Map<UUID, Team> teams = new LinkedHashMap<>();
 
@@ -59,15 +83,44 @@ public final class TeamStore extends SavedData {
 
     /** The store for this server. On the overworld, so teams are global rather than per-dimension. */
     public static TeamStore of(MinecraftServer server) {
-        // Three arguments, not two. SavedData.Factory in 1.21.1 takes the constructor, the loader
-        // and a nullable DataFixTypes -- verified with javap against the actual artefact rather
-        // than guessed (.utils/find_savedata.py), because the compiler error for the two-argument
-        // form does not say what is missing.
-        //
-        // The null is deliberate: DataFixTypes is the vanilla datafixer's migration table, and this
-        // is our own format with its own version key, so there is nothing for it to migrate.
-        return server.overworld().getDataStorage().computeIfAbsent(
-                new SavedData.Factory<>(TeamStore::new, TeamStore::load, null), DATA_NAME);
+        moveLegacyStoreIfPresent(server);
+        ServerLevel overworld = server.overworld();
+        return overworld.getDataStorage().computeIfAbsent(TYPE);
+    }
+
+    /**
+     * Moves a 1.21.1 store file into the namespaced place 26.x reads from, once.
+     *
+     * <p>The old storage wrote {@code data/armature_teams.dat}; the new one resolves the type id to
+     * {@code data/armature/teams.dat}. Without this, a server upgrading versions would start with no
+     * teams — parties gone, and anything keyed by them orphaned — while the old file sat beside the
+     * new one looking intact. A move rather than a copy, so there is never a moment with two live
+     * files; if it throws, the legacy file is untouched and the next boot tries again, and the
+     * failure is logged rather than left as a silent empty store.
+     *
+     * <p>The namespace-as-subdirectory layout is read off the version's own path resolution rather
+     * than assumed, but a world upgrade has not run through it yet: the first 1.21.1-to-26.3 server
+     * move should confirm a team survives it (see the port card's in-game list).
+     */
+    private static void moveLegacyStoreIfPresent(MinecraftServer server) {
+        Path data = server.getWorldPath(LevelResource.ROOT).resolve("data");
+        Path legacy = data.resolve(LEGACY_FILE);
+        Path current = data.resolve("armature").resolve("teams.dat");
+        try {
+            if (Files.isRegularFile(legacy)
+                    && !Files.isRegularFile(current)) {
+                Files.createDirectories(current.getParent());
+                Files.move(legacy, current);
+                dev.ellipog.armature.Constants.LOG.info(
+                        "moved stored teams from {} to {} (1.21.1 to 26.x storage layout)",
+                        legacy.getFileName(), current);
+            }
+        }
+        catch (IOException e) {
+            dev.ellipog.armature.Constants.LOG.warn(
+                    "could not move stored teams from {} (leaving it for the next boot): {}",
+                    legacy, e.toString());
+        }
     }
 
     public Optional<Team> byId(UUID id) {
@@ -115,8 +168,11 @@ public final class TeamStore extends SavedData {
     // Persistence
     // ------------------------------------------------------------------
 
-    @Override
-    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+    /**
+     * Writes the store. Called by {@link #CODEC}, not overridden from anywhere: 26.x storage
+     * serialises through the type's codec, and this is the encoder half.
+     */
+    public CompoundTag save(CompoundTag tag) {
         // Version 2 added invitations with a sender and a time, and the party policy. A version 1
         // file loads as owner-sent invitations with no time and the default policy -- see load.
         tag.putInt("version", 2);
@@ -176,12 +232,12 @@ public final class TeamStore extends SavedData {
      * would invite a second <i>production</i> way to build a store, which is a second way for it to
      * be wrong; package-private invites exactly one caller, from the test in this package.
      */
-    static TeamStore load(CompoundTag tag, HolderLookup.Provider registries) {
+    static TeamStore load(CompoundTag tag) {
         TeamStore store = new TeamStore();
 
-        ListTag list = tag.getList("teams", Tag.TAG_COMPOUND);
+        ListTag list = tag.getListOrEmpty("teams");
         for (int i = 0; i < list.size(); i++) {
-            CompoundTag entry = list.getCompound(i);
+            CompoundTag entry = list.getCompoundOrEmpty(i);
 
             UUID id = readUuid(entry, "id");
             UUID owner = readUuid(entry, "owner");
@@ -194,14 +250,14 @@ public final class TeamStore extends SavedData {
             }
 
             Map<UUID, TeamRole> members = new LinkedHashMap<>();
-            ListTag memberList = entry.getList("members", Tag.TAG_COMPOUND);
+            ListTag memberList = entry.getListOrEmpty("members");
             for (int m = 0; m < memberList.size(); m++) {
-                CompoundTag memberTag = memberList.getCompound(m);
+                CompoundTag memberTag = memberList.getCompoundOrEmpty(m);
                 UUID player = readUuid(memberTag, "player");
                 if (player == null) {
                     continue;
                 }
-                members.put(player, readRole(memberTag.getString("role")));
+                members.put(player, readRole(memberTag.getStringOr("role", "")));
             }
 
             // An owner who is not in the member list is a corrupt file. Putting them back is the
@@ -211,9 +267,9 @@ public final class TeamStore extends SavedData {
             }
 
             Map<UUID, TeamInvite> invites = new LinkedHashMap<>();
-            ListTag inviteList = entry.getList("invites", Tag.TAG_COMPOUND);
+            ListTag inviteList = entry.getListOrEmpty("invites");
             for (int n = 0; n < inviteList.size(); n++) {
-                CompoundTag inviteTag = inviteList.getCompound(n);
+                CompoundTag inviteTag = inviteList.getCompoundOrEmpty(n);
                 UUID invited = readUuid(inviteTag, "player");
                 if (invited == null) {
                     continue;
@@ -221,22 +277,24 @@ public final class TeamStore extends SavedData {
                 // Version 1 stored a bare id: no sender and no time. The owner and zero are the two
                 // honest substitutes -- see TeamInvite on why zero rather than a made-up time.
                 UUID inviter = readUuid(inviteTag, "inviter");
-                invites.put(invited, new TeamInvite(inviter == null ? owner : inviter, inviteTag.getLong("at")));
+                invites.put(invited, new TeamInvite(inviter == null ? owner : inviter,
+                        inviteTag.getLongOr("at", 0L)));
             }
 
             // Absent on a version 1 file, whose parties predate both switches. The default is what
             // such a party behaved as, and it is what a solo team gets -- see TeamPolicy.
             TeamPolicy policy = entry.contains("openJoin") || entry.contains("membersCanInvite")
-                    ? new TeamPolicy(entry.getBoolean("openJoin"), entry.getBoolean("membersCanInvite"))
+                    ? new TeamPolicy(entry.getBooleanOr("openJoin", false),
+                            entry.getBooleanOr("membersCanInvite", false))
                     : TeamPolicy.DEFAULT;
 
-            store.teams.put(id, new Team(id, entry.getString("name"), owner,
-                    members, invites, policy, entry.getLong("createdAt"), true));
+            store.teams.put(id, new Team(id, entry.getStringOr("name", ""), owner,
+                    members, invites, policy, entry.getLongOr("createdAt", 0L), true));
         }
 
-        ListTag retiredList = tag.getList("retired", Tag.TAG_COMPOUND);
+        ListTag retiredList = tag.getListOrEmpty("retired");
         for (int i = 0; i < retiredList.size(); i++) {
-            UUID id = readUuid(retiredList.getCompound(i), "id");
+            UUID id = readUuid(retiredList.getCompoundOrEmpty(i), "id");
             if (id != null) {
                 store.retired.add(id);
             }
@@ -246,7 +304,7 @@ public final class TeamStore extends SavedData {
     }
 
     private static UUID readUuid(CompoundTag tag, String key) {
-        String raw = tag.getString(key);
+        String raw = tag.getStringOr(key, "");
         if (raw.isEmpty()) {
             return null;
         }

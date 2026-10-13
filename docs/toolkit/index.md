@@ -3,7 +3,7 @@
 Armature's other half is a UI toolkit, and it is built on one decision: **every draw call goes through
 one interface.** `GuiRenderer` knows about fills, text, item icons, player faces, blur and scissor
 rectangles. The only game types it names are the item stack and the texture id a caller already
-holds. `render/GuiGraphicsRenderer` is its 1.21.1 implementation, and no drawing call in the toolkit
+holds. `render/GuiGraphicsRenderer` is its 26.3 implementation, and no drawing call in the toolkit
 names the graphics context: the controls are ordinary `AbstractWidget`s, for the input and narration
 the game already gives them, and what they draw they draw through the seam.
 

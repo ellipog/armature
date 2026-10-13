@@ -51,8 +51,7 @@ public interface PartySource {
      * {@code persistent} is always true for a real party, and {@code createdAt} is zero because no
      * parties mod exposes a creation time.
      *
-     * @param id      the party's id. For FTB this is {@code getTeamId()}, not {@code getId()} — see
-     *                {@code FtbTeams}, where the difference is the whole reason the adapter filters
+     * @param id      the party's id in its own mod's terms
      * @param name    the party's name as its own mod shows it
      * @param owner   who owns it. Never {@code null}, and never a sentinel: a source that cannot say
      *                must say so by leaving the owner out of {@code members} instead, because an id

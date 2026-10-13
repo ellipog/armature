@@ -3,7 +3,7 @@ package dev.ellipog.armature.client.render;
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Objects;
@@ -16,12 +16,12 @@ import java.util.UUID;
  *
  * <h2>What this is for, in one paragraph</h2>
  *
- * <p>26.1 renames the drawing context and changes how a screen is asked to draw:
- * {@code GuiGraphics} becomes {@code GuiGraphicsExtractor}, {@code Screen#render} becomes
- * {@code Screen#extractRenderState}, {@code renderBackground} becomes {@code Screen#extractBackground}.
- * With this seam that port is <b>one file</b> — {@link GuiGraphicsRenderer} — and both mods compile
- * unchanged. Without it, it is every draw call in a toolkit and a screen, twice, with no way to tell
- * which were missed.
+ * <p>26.1 renamed the drawing context and changed how a screen is asked to draw:
+ * {@code GuiGraphics} became {@code GuiGraphicsExtractor}, {@code Screen#render} became
+ * {@code Screen#extractRenderState}, {@code renderBackground} became {@code Screen#extractBackground}.
+ * With this seam that port was <b>one file</b> — {@link GuiGraphicsRenderer} — and both mods compiled
+ * with their draw calls untouched. Without it, it would have been every draw call in a toolkit and a
+ * screen, twice, with no way to tell which were missed.
  *
  * <h2>Nineteen abstract methods and five defaults, because that is what was actually being used</h2>
  *
@@ -95,12 +95,14 @@ import java.util.UUID;
  *
  * <h2>How a caller gets one</h2>
  *
- * <p>From the two places a {@code GuiGraphics} is handed to this codebase — a {@code Screen}'s
- * {@code render} and a widget's {@code renderWidget} — both of which wrap and delegate immediately:
+ * <p>From the two places an extractor is handed to this codebase — a {@code Screen}'s
+ * {@code extractRenderState} and a widget's {@code extractWidgetRenderState} — both of which wrap
+ * and delegate immediately:
  *
  * <pre>
  * &#64;Override
- * protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+ * protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+ *         float partialTick) {
  *     draw(new GuiGraphicsRenderer(graphics), partialTick);
  * }
  * </pre>
@@ -373,7 +375,7 @@ public interface GuiRenderer {
      * @return the size, or empty when the asset is absent or the bytes are not a PNG — so a caller
      *     draws nothing rather than a stretched rectangle of whatever the resource manager did find
      */
-    Optional<TextureSize> textureSize(ResourceLocation texture);
+    Optional<TextureSize> textureSize(Identifier texture);
 
     /**
      * A number that changes when the resource behind a texture does, for a caller that caches its size.
@@ -395,7 +397,7 @@ public interface GuiRenderer {
      * <p>The number has no meaning of its own, exactly like {@code TextEpoch}: it is only ever asked "is
      * this the same as last time".
      */
-    default long textureStamp(ResourceLocation texture) {
+    default long textureStamp(Identifier texture) {
         return 0L;
     }
 
@@ -419,7 +421,7 @@ public interface GuiRenderer {
      * passing a tint must pass {@code 0xFF} in its RGB to mean "only fade me". This is the same
      * contract {@code fill} has with its colour, one multiplication further up the pipeline.
      */
-    void scaled(ResourceLocation texture, int x, int y, int width, int height,
+    void scaled(Identifier texture, int x, int y, int width, int height,
                 float u, float v, int sourceWidth, int sourceHeight,
                 int textureWidth, int textureHeight, int argb);
 
@@ -434,7 +436,7 @@ public interface GuiRenderer {
      * what a caller says. There is no atlas coordinate to get wrong, so a bad path is a texture the
      * game reports as missing rather than a silent wrong picture.
      */
-    void texture(ResourceLocation texture, int x, int y, int width, int height);
+    void texture(Identifier texture, int x, int y, int width, int height);
 
     /**
      * Draws a stitched-atlas sprite into a rectangle, in a tint.
@@ -463,7 +465,7 @@ public interface GuiRenderer {
      *
      * @param argb the tint, multiplied channel by channel as {@link #scaled}'s is; white means untouched
      */
-    void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb);
+    void sprite(Identifier atlasSprite, int x, int y, int width, int height, int argb);
 
     /**
      * Draws a vanilla GUI sprite into a rectangle, nine-sliced by its own metadata.
@@ -473,7 +475,7 @@ public interface GuiRenderer {
      * <p>Because the two live in different atlases. {@link #sprite} draws from the block atlas,
      * which is where item and block pictures are stitched; a GUI sprite — {@code widget/button},
      * {@code tooltip/background} — lives in the GUI atlas, which is stitched from
-     * {@code textures/gui/sprites} and resolved through {@code GuiGraphics.blitSprite} rather
+     * {@code textures/gui/sprites} and resolved through the extractor's {@code blitSprite} rather
      * than through an atlas lookup. A caller holding a widget id could not draw one through
      * {@link #sprite} at all: the block atlas answers it with its missing marker.
      *
@@ -489,7 +491,7 @@ public interface GuiRenderer {
      *
      * @param guiSprite the sprite id, like {@code minecraft:widget/button}
      */
-    void guiSprite(ResourceLocation guiSprite, int x, int y, int width, int height);
+    void guiSprite(Identifier guiSprite, int x, int y, int width, int height);
 
     // ------------------------------------------------------------------
     // Turning
@@ -512,12 +514,13 @@ public interface GuiRenderer {
      *
      * <h2>What was checked before believing it, and it is the whole method</h2>
      *
-     * <p>A scope is worthless if the drawing inside it ignores the transform. This version's
-     * {@code GuiGraphics.innerBlit} reads {@code pose.last().pose()} and builds all four of its vertices with
-     * that matrix, so a turn set before a blit turns the blit. The same reading settles the one hazard it
-     * would otherwise have: a vertex is baked when it is <i>queued</i> rather than when it is submitted, so a
-     * tint change inside this scope — and the flush that comes with it — cannot submit anything under the
-     * wrong angle.
+     * <p>A scope is worthless if the drawing inside it ignores the transform. On 1.21.1 this was
+     * read off the version's {@code innerBlit}, which built all four vertices with the pose's
+     * matrix; on this version every blit positions through the same 2D pose stack, so a turn set
+     * before a blit turns the blit. The same shape settles the one hazard it would otherwise have:
+     * a vertex is baked when it is <i>queued</i> rather than when it is submitted, so a tint change
+     * inside this scope cannot submit anything under the wrong angle. A turned picture has not been
+     * seen on screen on this version yet -- that is in-game verification, not this file.
      *
      * @param pivotX  the point the turn is about, in screen pixels
      * @param pivotY  the same, vertically

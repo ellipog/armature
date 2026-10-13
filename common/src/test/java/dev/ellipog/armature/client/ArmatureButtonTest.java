@@ -5,7 +5,6 @@ import dev.ellipog.armature.client.render.RecordingRenderer;
 import dev.ellipog.armature.client.ui.Themes;
 
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -92,11 +91,11 @@ class ArmatureButtonTest {
 
         RecordingRenderer shipped = RecordingRenderer.create();
         new ArmatureButton(0, 0, 20, 20, Component.literal("Book"), () -> {
-        }).icon(new ItemStack(Items.STONE)).draw(shipped, 0L);
+        }).icon(MinecraftTestBootstrap.stackOf(Items.STONE)).draw(shipped, 0L);
 
         RecordingRenderer element = RecordingRenderer.create();
         new ArmatureButton(0, 0, 16, 16, Component.literal("Book"), () -> {
-        }).icon(new ItemStack(Items.STONE)).iconInset(2).draw(element, 0L);
+        }).icon(MinecraftTestBootstrap.stackOf(Items.STONE)).iconInset(2).draw(element, 0L);
 
         // The recorder holds the box in its coordinates: x, y and the size, which is the pair this rule
         // is about. A test of the appearance would need a client; a test of the inset does not.
@@ -116,7 +115,7 @@ class ArmatureButtonTest {
     void textureDrawsInTheIconBox() {
         RecordingRenderer file = RecordingRenderer.create();
         new ArmatureButton(0, 0, 20, 20, Component.literal("Book"), () -> {
-        }).texture(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pack", "textures/gui/emblem.png"))
+        }).texture(net.minecraft.resources.Identifier.fromNamespaceAndPath("pack", "textures/gui/emblem.png"))
                 .draw(file, 0L);
 
         assertEquals(1, file.textures().size(), "one blit, not an item");
@@ -128,8 +127,8 @@ class ArmatureButtonTest {
         MinecraftTestBootstrap.boot();
         RecordingRenderer both = RecordingRenderer.create();
         new ArmatureButton(0, 0, 20, 20, Component.literal("Book"), () -> {
-        }).icon(new ItemStack(Items.STONE))
-                .texture(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pack",
+        }).icon(MinecraftTestBootstrap.stackOf(Items.STONE))
+                .texture(net.minecraft.resources.Identifier.fromNamespaceAndPath("pack",
                         "textures/gui/emblem.png"))
                 .draw(both, 0L);
 

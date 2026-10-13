@@ -1,7 +1,7 @@
 package dev.ellipog.armature.api.data;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Set;
 
@@ -22,7 +22,7 @@ import java.util.Set;
 public interface TypeSpec<T> {
 
     /** The id that appears in a file's {@code "type"} field. Namespaced by the mod that owns it. */
-    ResourceLocation id();
+    Identifier id();
 
     /**
      * Reads and writes this type.

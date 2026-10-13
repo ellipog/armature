@@ -1,6 +1,6 @@
 package dev.ellipog.armature.api.client;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,10 +47,10 @@ public final class ArmatureClient {
         /**
          * @return true if a screen was registered under this id and was opened
          */
-        boolean open(ResourceLocation id);
+        boolean open(Identifier id);
     }
 
-    private record Declaration(ResourceLocation id, int defaultKeyCode, String category, Runnable onPress) {
+    private record Declaration(Identifier id, int defaultKeyCode, Identifier category, Runnable onPress) {
         Declaration {
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(category, "category");
@@ -74,12 +74,16 @@ public final class ArmatureClient {
      * @param id             names the key: the translation key becomes
      *                       {@code key.<namespace>.<path>}, and the namespace is expected to
      *                       be your mod id
-     * @param defaultKeyCode a GLFW key code — read {@code InputConstants.KEY_B} in your client
+     * @param defaultKeyCode an SDL scancode — read {@code InputConstants.KEY_B} in your client
      *                       code, since it is a client class
-     * @param category       the group it appears under in Controls, itself a translation key
+     * @param category       the group it appears under in Controls, as an id: its label is
+     *                       {@code key.category.<namespace>.<path>}, so add that key to your
+     *                       language file (on 1.21.1 this was a translation-key string;
+     *                       {@code key.categories.*} keys do not transfer, see the port notes)
      * @param onPress        runs on the client thread, once per press
      */
-    public static void registerKeyMapping(ResourceLocation id, int defaultKeyCode, String category, Runnable onPress) {
+    public static void registerKeyMapping(Identifier id, int defaultKeyCode, Identifier category,
+            Runnable onPress) {
         Declaration declaration = new Declaration(id, defaultKeyCode, category, onPress);
         KeyMappingBackend installed = backend;
         if (installed == null) {
@@ -117,7 +121,7 @@ public final class ArmatureClient {
     }
 
     /** The translation key a mapping id maps to — {@code key.example.open_my_screen}. */
-    public static String translationKey(ResourceLocation id) {
+    public static String translationKey(Identifier id) {
         return "key." + id.getNamespace() + "." + id.getPath();
     }
 
@@ -141,7 +145,7 @@ public final class ArmatureClient {
      *         which is a bug in the calling mod rather than something to handle quietly, so it
      *         is also logged.
      */
-    public static boolean openScreen(ResourceLocation id) {
+    public static boolean openScreen(Identifier id) {
         ScreenOpener opener = screenOpener;
         if (opener == null) {
             return false;

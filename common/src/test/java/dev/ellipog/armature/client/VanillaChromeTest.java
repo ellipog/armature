@@ -3,7 +3,7 @@ package dev.ellipog.armature.client;
 import dev.ellipog.armature.client.render.RecordingRenderer;
 import dev.ellipog.armature.client.ui.Themes;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -125,10 +125,10 @@ class VanillaChromeTest {
         // Pinned against the 1.21.1 client jar, which ships exactly these widget sprites. An id
         // added from a newer version's assets is a missing-texture box in this one — the tooltip
         // pair is the case that proved it, so no tooltip id may ever live here.
-        assertEquals(ResourceLocation.tryParse("minecraft:widget/button"), VanillaChrome.BUTTON);
-        assertEquals(ResourceLocation.tryParse("minecraft:widget/button_disabled"),
+        assertEquals(Identifier.tryParse("minecraft:widget/button"), VanillaChrome.BUTTON);
+        assertEquals(Identifier.tryParse("minecraft:widget/button_disabled"),
                 VanillaChrome.BUTTON_DISABLED);
-        assertEquals(ResourceLocation.tryParse("minecraft:widget/button_highlighted"),
+        assertEquals(Identifier.tryParse("minecraft:widget/button_highlighted"),
                 VanillaChrome.BUTTON_HIGHLIGHTED);
     }
 

@@ -15,12 +15,9 @@ import net.minecraft.server.MinecraftServer;
  *
  * <h2>Why {@code isPresent} is asked rather than assumed</h2>
  *
- * <p>A loaded mod is not the same as an <i>available source</i>, and the difference is not pedantry —
- * it is the difference between two parties mods being installed and either of them having a party
- * yet. FTB Teams holds a permanent team per player and creates one on first join, so "the manager is
- * loaded" says nothing about whether anybody has formed a party; OPAC's API is added to the server
- * by a mixin, so a loaded OPAC that has not been injected into <i>this</i> server object will throw
- * on the first call rather than answer.
+ * <p>A loaded mod is not the same as an <i>available source</i>, and the difference is not pedantry:
+ * OPAC's API is added to the server by a mixin, so a loaded OPAC that has not been injected into
+ * <i>this</i> server object will throw on the first call rather than answer.
  *
  * <p>So a source is asked, and a source that cannot be asked is a source that is not used. That is
  * also why {@code TeamProviders} catches whatever the question throws: the honest reading of an
@@ -38,8 +35,7 @@ import net.minecraft.server.MinecraftServer;
 public interface TeamProvider {
 
     /**
-     * The mod this source belongs to — {@code "ftbteams"}, {@code "openpartiesandclaims"},
-     * {@code "stored"}.
+     * The mod this source belongs to — {@code "openpartiesandclaims"}, {@code "stored"}.
      *
      * <p>An id rather than a display name, because it is also the string {@code isModLoaded} takes
      * and the string the resolution log prints.

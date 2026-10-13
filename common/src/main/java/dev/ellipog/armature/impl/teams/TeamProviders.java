@@ -4,7 +4,6 @@ import dev.ellipog.armature.Constants;
 import dev.ellipog.armature.api.ArmatureApi;
 import dev.ellipog.armature.api.event.ArmatureEvents;
 import dev.ellipog.armature.api.teams.TeamManager;
-import dev.ellipog.armature.impl.teams.ftb.FtbTeamsProvider;
 import dev.ellipog.armature.impl.teams.opac.OpenPacTeamsProvider;
 
 import net.minecraft.server.MinecraftServer;
@@ -37,33 +36,25 @@ import java.util.function.Supplier;
  *       this file cannot know: that <i>its</i> parties are the parties. {@link #register} is the
  *       escape hatch for a mod Armature ships no adapter for, and an explicit statement beats a
  *       guess.</li>
- *   <li><b>FTB Teams</b>, if it is loaded, its manager is up, and it holds at least one party.</li>
- *   <li><b>Open Parties and Claims</b>, on the same three conditions.</li>
+ *   <li><b>Open Parties and Claims</b>, if it is loaded, its manager is up, and it holds at least
+ *       one party.</li>
  *   <li><b>Armature's own store</b>, which is always available and needs nothing installed.</li>
  * </ol>
  *
- * <p><b>Ties go to FTB</b>, because it is first, and the tie is a real possibility: both mods can be
- * installed at once, and neither defers to the other. The honest statement is that this is a
- * <b>heuristic</b> — see the note at the end of this comment — and it is reported rather than
- * silently resolved, so a server operator reading the log knows which one their players are getting.
+ * <p>"Holds at least one party" is the third condition, and it is not a detail: a source that has
+ * nothing to offer is passed over rather than preferred, or a server with no parties in it would
+ * answer every team question with a party-shaped team. The adapter also filters its own list, for
+ * the same reason.
  *
- * <p>"Holds at least one party" is the third condition of each, and it is not a detail. FTB Teams
- * keeps a permanent team per player, created on first join and never removed, and
- * {@code isManagerLoaded()} becomes true as soon as its manager is up — on a server where everybody
- * plays alone. Resolving to FTB there would mean a server with no parties in it answering every team
- * question with a party-shaped team, so a source that has nothing to offer is passed over rather
- * than preferred. Each adapter also filters its own list, for the same reason: an unfiltered FTB
- * {@code getTeams()} reports every player who has ever logged in as a party.
- *
- * <h2>The two built-ins are named by a factory, not by an instance</h2>
+ * <h2>The built-in is named by a factory, not by an instance</h2>
  *
  * <p>{@link Builtin} holds a mod id and a {@link Supplier} rather than a ready-made provider, and
- * that is load-bearing rather than stylistic. Both adapters name third-party types in their method
+ * that is load-bearing rather than stylistic. The adapter names third-party types in its method
  * signatures, and the JVM loads and verifies a class before any of it runs — so a field or a local
- * holding a {@code new FtbTeams()} would load FTB's classes while verifying the branch that
- * correctly decided not to use them. With a factory, the only names this class puts in its own
- * bytecode are the two provider classes, whose fields are declared as {@link TeamProvider} and
- * which therefore resolve nothing third-party at all. Each adapter's own class is loaded on first
+ * holding a {@code new OpenPacTeams()} would load OPAC's classes while verifying the branch that
+ * correctly decided not to use them. With a factory, the only name this class puts in its own
+ * bytecode is the provider class, whose fields are declared as {@link TeamProvider} and
+ * which therefore resolves nothing third-party at all. The adapter's own class is loaded on first
  * read of its provider's {@code INSTANCE}, which happens inside the guard.
  *
  * <p>The mod ids come from those provider classes, so there is one spelling of each, and neither
@@ -86,14 +77,11 @@ import java.util.function.Supplier;
  *
  * <h2>The caveat, stated plainly</h2>
  *
- * <p><b><a id="heuristic">When both parties mods are installed, this choice is a heuristic the public
- * API cannot resolve.</a></b> OPAC exposes its parties through an addon gateway that hands out a
- * listener manager for claims and nothing for parties, and the one call that <i>would</i> settle the
- * question — {@code PlayerPartySystemManager.getPrimarySystemName()}, which names which of its
- * registered systems is primary, and would also reveal that OPAC can read FTB's parties through its
- * own bridge — lives on an internal type rather than on the API. Preferring FTB is a reasonable guess
- * when neither mod has told us anything, and a config key is the real answer: the server operator is
- * the only one who knows which mod their players actually use.
+ * <p><b>With one foreign source there is no tie to break among built-ins.</b> If a consumer
+ * registers its own provider, {@link #rivals} still reports the alternatives worth knowing about —
+ * but nothing built in can tie with anything else any more, so the choice needs no heuristic and
+ * the log needs no tie report. A config key for "which parties mod" died with the second adapter:
+ * there is only one left to choose.
  */
 public final class TeamProviders {
 
@@ -114,7 +102,6 @@ public final class TeamProviders {
      * reports cannot drift apart.
      */
     private static final List<Builtin> BUILTINS = List.of(
-            new Builtin(FtbTeamsProvider.MOD_ID, () -> FtbTeamsProvider.INSTANCE),
             new Builtin(OpenPacTeamsProvider.MOD_ID, () -> OpenPacTeamsProvider.INSTANCE));
 
     /**

@@ -28,7 +28,7 @@ import java.util.Map;
  * <h2>Drained, not read</h2>
  *
  * <p>The numbers are a <b>rate over a window</b>, so they are consumed by whoever reports them — the same
- * contract as {@code IconPlan.drain} and {@code LineArt.drainWalked}. A cumulative total could not answer
+ * contract as {@code LineArt.drainWalked}. A cumulative total could not answer
  * "is this hitting <i>now</i>", which is the only form of the question a frame's cache can be asked.
  *
  * <h2>Off, and what it costs when off</h2>

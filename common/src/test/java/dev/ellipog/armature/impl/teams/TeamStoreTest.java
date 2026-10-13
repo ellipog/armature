@@ -7,7 +7,6 @@ import dev.ellipog.armature.api.teams.TeamRole;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -60,8 +59,8 @@ class TeamStoreTest {
         // The round trip, which is the whole point: a record held only in memory would let the
         // retirement evaporate at the next world save, and the failure would be invisible until a
         // player's new party inherited finished progress from an old one.
-        CompoundTag saved = store.save(new CompoundTag(), null);
-        TeamStore reloaded = TeamStore.load(saved, null);
+        CompoundTag saved = store.save(new CompoundTag());
+        TeamStore reloaded = TeamStore.load(saved);
 
         assertTrue(reloaded.isRetired(team.id()), "the retirement survived the save and the load");
         assertTrue(reloaded.byId(team.id()).isEmpty(), "and the team it belonged to did not come back");
@@ -85,7 +84,7 @@ class TeamStoreTest {
                 .withInvite(invited, owner, 200L);
         store.put(team);
 
-        Team reloaded = TeamStore.load(store.save(new CompoundTag(), null), null).byId(team.id())
+        Team reloaded = TeamStore.load(store.save(new CompoundTag())).byId(team.id())
                 .orElseThrow(() -> new AssertionError("the team should have come back from its own save"));
 
         assertEquals(team, reloaded,
@@ -106,15 +105,15 @@ class TeamStoreTest {
         TeamStore store = new TeamStore();
         store.put(Team.created(UUID.randomUUID(), "the crew", UUID.randomUUID(), 0L));
 
-        CompoundTag saved = store.save(new CompoundTag(), null);
+        CompoundTag saved = store.save(new CompoundTag());
 
         // Empty the id, which is what a truncated or hand-edited file looks like. The loader's job is
         // to survive it: a team nobody can join or leave is worse than a team that is gone, and a
         // warning naming the entry is better than a NullPointerException from somewhere else.
-        CompoundTag entry = saved.getList("teams", Tag.TAG_COMPOUND).getCompound(0);
+        CompoundTag entry = saved.getListOrEmpty("teams").getCompoundOrEmpty(0);
         entry.putString("id", "");
 
-        TeamStore reloaded = TeamStore.load(saved, null);
+        TeamStore reloaded = TeamStore.load(saved);
 
         assertEquals(0, reloaded.size(), "the unreadable team was dropped");
         assertNotNull(reloaded, "and the store itself loaded cleanly");
@@ -135,7 +134,7 @@ class TeamStoreTest {
                 .withInvite(invited, owner, 733L);
         store.put(team);
 
-        Team reloaded = TeamStore.load(store.save(new CompoundTag(), null), null).byId(team.id())
+        Team reloaded = TeamStore.load(store.save(new CompoundTag())).byId(team.id())
                 .orElseThrow(() -> new AssertionError("the team should have come back"));
 
         assertEquals(new TeamPolicy(true, false), reloaded.policy(),
@@ -181,7 +180,7 @@ class TeamStoreTest {
         versionOne.putInt("version", 1);
         versionOne.put("teams", teams);
 
-        Team loaded = TeamStore.load(versionOne, null).byId(id)
+        Team loaded = TeamStore.load(versionOne).byId(id)
                 .orElseThrow(() -> new AssertionError("a version 1 team must still load"));
 
         assertEquals(owner, loaded.owner());

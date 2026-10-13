@@ -1,6 +1,6 @@
 package dev.ellipog.armature.api.client;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * A loader's key-mapping system, reduced to the two things Armature needs from it.
@@ -34,11 +34,12 @@ public interface KeyMappingBackend {
      *
      * @param id                     gives the key its name — {@code key.<namespace>.<path>} —
      *                               which is also where the translatable text goes
-     * @param defaultKeyCode         a GLFW key code; the player can rebind it afterwards
-     * @param categoryTranslationKey the group it appears under in Controls
+     * @param defaultKeyCode         an SDL scancode; the player can rebind it afterwards
+     * @param category               the Controls group, as an id (its label is
+     *                               {@code key.category.<namespace>.<path>})
      * @param onPress                runs on the client thread, once per press
      */
-    void declare(ResourceLocation id, int defaultKeyCode, String categoryTranslationKey, Runnable onPress);
+    void declare(Identifier id, int defaultKeyCode, Identifier category, Runnable onPress);
 
     /**
      * Called once per client tick. Must fire {@code onPress} for every key pressed since the

@@ -8,7 +8,7 @@ import dev.ellipog.armature.api.client.KeyMappingBackend;
 import dev.ellipog.armature.client.ArmatureScreens;
 
 import net.minecraft.client.KeyMapping;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -64,23 +64,23 @@ public final class ArmatureNeoForgeClient {
         private final List<Request> queue = new ArrayList<>();
         private final List<Bound> bound = new ArrayList<>();
 
-        private record Request(ResourceLocation id, int defaultKeyCode, String category, Runnable onPress) {
+        private record Request(Identifier id, int defaultKeyCode, Identifier category, Runnable onPress) {
         }
 
         private record Bound(KeyMapping mapping, Runnable onPress) {
         }
 
         @Override
-        public void declare(ResourceLocation id, int defaultKeyCode, String categoryTranslationKey, Runnable onPress) {
-            queue.add(new Request(id, defaultKeyCode, categoryTranslationKey, onPress));
+        public void declare(Identifier id, int defaultKeyCode, Identifier category, Runnable onPress) {
+            queue.add(new Request(id, defaultKeyCode, category, onPress));
         }
 
         void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {            for (Request request : queue) {
                 KeyMapping mapping = new KeyMapping(
                         ArmatureClient.translationKey(request.id()),
-                        InputConstants.Type.KEYSYM,
+                        InputConstants.Type.KEYBOARD,
                         request.defaultKeyCode(),
-                        request.category());
+                        KeyMapping.Category.register(request.category()));
                 event.register(mapping);
                 bound.add(new Bound(mapping, request.onPress()));
             }

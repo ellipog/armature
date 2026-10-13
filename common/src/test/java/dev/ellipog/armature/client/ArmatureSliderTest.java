@@ -3,12 +3,14 @@ package dev.ellipog.armature.client;
 import dev.ellipog.armature.client.render.RecordingRenderer;
 import dev.ellipog.armature.client.ui.Themes;
 
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.network.chat.Component;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.lwjgl.glfw.GLFW;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -86,12 +88,15 @@ class ArmatureSliderTest {
     void input() {
         ArmatureSlider slider = slider(1.0D);
 
-        slider.onClick(trackLeft() + 1, Y + 4);
+        // Button 1 is the left button on SDL (0 on the old GLFW constants): the click that means.
+        slider.onClick(new MouseButtonEvent(trackLeft() + 1, Y + 4, new MouseButtonInfo(1, 0)), false);
         assertEquals(1.0D, slider.value(), 1e-9, "a click at the track's left end is the minimum");
 
-        slider.keyPressed(GLFW.GLFW_KEY_RIGHT, 0, 0);
+        slider.keyPressed(new KeyEvent(
+                com.mojang.blaze3d.platform.InputConstants.KEY_RIGHT, 0, 0));
         assertEquals(1.05D, slider.value(), 1e-9, "one step right");
-        slider.keyPressed(GLFW.GLFW_KEY_LEFT, 0, 0);
+        slider.keyPressed(new KeyEvent(
+                com.mojang.blaze3d.platform.InputConstants.KEY_LEFT, 0, 0));
         assertEquals(1.0D, slider.value(), 1e-9, "and one back");
     }
 }

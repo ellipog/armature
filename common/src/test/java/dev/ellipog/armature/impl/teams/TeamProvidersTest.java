@@ -28,13 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>The one thing that cannot be tested here, said plainly</h2>
  *
- * <p>That the precedence is <i>right</i>. Deciding between FTB Teams and Open Parties and Claims when
- * both are installed is a heuristic, because the call that would settle it —
- * {@code PlayerPartySystemManager.getPrimarySystemName()}, which names which of OPAC's registered
- * systems is primary — lives on an internal type rather than on OPAC's public API. So the assertion
- * below is that the tie goes to FTB and that the loser is reported; it is not, and cannot be, an
- * assertion that FTB is the correct answer for a given server. A config key is the real answer, and
- * the class comment says so.
+ * <p>Whether the built-in order is <i>right</i> when a consumer registers its own source alongside
+ * OPAC: two parties mods is a judgement call no list can settle, and a config key would be the real
+ * answer. So the assertions below are that the order is the documented one and that the loser is
+ * reported; they are not, and cannot be, an assertion about which mod a given server should run.
  */
 class TeamProvidersTest {
 
@@ -56,33 +53,30 @@ class TeamProvidersTest {
     }
 
     @Test
-    @DisplayName("when two sources are present the tie goes to FTB, and the loser is reported")
-    void theTieGoesToFtb() {
+    @DisplayName("when a parties mod is present it wins over the stored fallback")
+    void thePartiesModWinsOverStored() {
         TeamManager chosen = TeamProviders.choose(null, List.of(
-                source("ftbteams", true),
                 source("openpartiesandclaims", true),
                 source(StoredTeamManager.NAME, true)));
 
-        assertEquals("ftbteams", chosen.name(),
-                "precedence is explicit registration, then FTB, then OPAC, then stored -- so with both " +
-                        "parties mods installed the first one in the list wins");
+        assertEquals("openpartiesandclaims", chosen.name(),
+                "precedence is explicit registration, then the parties mod, then stored");
 
-        // The loser being *present* is the case worth pinning: it is the only situation in which this
-        // choice is a guess rather than a fact, and choose() logs it. Silence here would mean a server
-        // operator reading the log cannot tell which mod their players are actually getting.
+        // The loser being *present* is the case worth pinning: choose() logs it. Silence here would
+        // mean a server operator reading the log cannot tell which mod their players are actually
+        // getting.
     }
 
     @Test
     @DisplayName("a source that is only a lower candidate does not become the answer by being present")
     void presenceAloneDoesNotWin() {
         TeamManager chosen = TeamProviders.choose(null, List.of(
-                source("ftbteams", false),
-                source("openpartiesandclaims", true),
+                source("openpartiesandclaims", false),
                 source(StoredTeamManager.NAME, true)));
 
-        assertEquals("openpartiesandclaims", chosen.name(),
-                "FTB being loaded is not the same as FTB having a party -- isPresent is asked, and a " +
-                        "source that says no is passed over rather than preferred");
+        assertEquals(StoredTeamManager.NAME, chosen.name(),
+                "a parties mod being loaded is not the same as it having a party -- isPresent is "
+                        + "asked, and a source that says no is passed over rather than preferred");
     }
 
     @Test
@@ -117,29 +111,31 @@ class TeamProvidersTest {
     @Test
     @DisplayName("the stored fallback is a floor, not a rival, so it is never warned about")
     void theStoredFallbackIsNotARival() {
-        TeamProvider ftb = source("ftbteams", true);
+        TeamProvider parties = source("openpartiesandclaims", true);
         TeamProvider fallback = StoredTeamManager.provider();
 
         // The property that drives the warning. A parties mod is a real alternative to another parties
         // mod; the stored source is what answers when nothing else can, and it says yes on every
         // server. So the first is a rival and the second is not.
-        assertFalse(ftb.isFallback(), "a parties mod is a genuine alternative");
+        assertFalse(parties.isFallback(), "a parties mod is a genuine alternative");
         assertTrue(fallback.isFallback(), "the stored source is the floor of the chain");
 
         // Measured on a real boot, which is how this was found: the warning named 'stored' on a server
         // running exactly ONE parties mod, and told the operator they had two. A line that is always
         // present and always wrong is worse than no line, because it teaches the reader to skip it.
-        assertEquals(List.<String>of(), TeamProviders.rivals(List.of(ftb, fallback), ftb),
+        assertEquals(List.<String>of(), TeamProviders.rivals(List.of(parties, fallback), parties),
                 "nothing to report: the loser is the fallback, and it is present everywhere");
 
-        TeamProvider opac = source("openpartiesandclaims", true);
-        assertEquals(List.of("openpartiesandclaims"),
-                TeamProviders.rivals(List.of(ftb, opac, fallback), ftb),
-                "but a second parties mod IS worth reporting -- that is the case the message exists for, "
-                        + "and it is the only case where the choice between sources is a guess");
+        // A second parties mod can still arrive by explicit registration, and then it IS worth
+        // reporting -- that is the case the message exists for, and the only case where the choice
+        // between sources is a guess.
+        TeamProvider custom = source("custom", true);
+        assertEquals(List.of("custom"),
+                TeamProviders.rivals(List.of(parties, custom, fallback), parties),
+                "but a second parties mod IS worth reporting");
 
-        assertEquals(List.of("ftbteams", "openpartiesandclaims"),
-                TeamProviders.rivals(List.of(ftb, opac, fallback), fallback),
+        assertEquals(List.of("openpartiesandclaims", "custom"),
+                TeamProviders.rivals(List.of(parties, custom, fallback), fallback),
                 "and if the fallback ever won, every real alternative is worth naming -- which cannot "
                         + "happen while it is last in the chain, so this pins the intent rather than a "
                         + "reachable state");
@@ -150,8 +146,8 @@ class TeamProvidersTest {
     void aChainWithNoFallbackIsRefused() {
         IllegalStateException thrown = assertThrows(IllegalStateException.class, () ->
                 TeamProviders.choose(null, List.of(
-                        source("ftbteams", false),
-                        source("openpartiesandclaims", false))));
+                        source("openpartiesandclaims", false),
+                        source("custom", false))));
 
         assertTrue(thrown.getMessage().contains("fallback"),
                 () -> "the message should say what is missing, which is the stored source at the end. "

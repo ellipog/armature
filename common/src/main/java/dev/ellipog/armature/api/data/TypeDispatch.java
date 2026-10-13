@@ -3,7 +3,7 @@ package dev.ellipog.armature.api.data;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.MapCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Collection;
 import java.util.function.Function;
@@ -68,7 +68,7 @@ public final class TypeDispatch {
      */
     public static <T> Codec<T> codec(String kind,
                                      String typeField,
-                                     Function<? super T, ResourceLocation> idOf,
+                                     Function<? super T, Identifier> idOf,
                                      Supplier<Collection<TypeSpec<T>>> specs) {
         return codec(kind, typeField, idOf, specs, null);
     }
@@ -105,10 +105,10 @@ public final class TypeDispatch {
      */
     public static <T> Codec<T> codec(String kind,
                                      String typeField,
-                                     Function<? super T, ResourceLocation> idOf,
+                                     Function<? super T, Identifier> idOf,
                                      Supplier<Collection<TypeSpec<T>>> specs,
-                                     Function<ResourceLocation, T> unknown) {
-        return ResourceLocation.CODEC.dispatch(typeField, idOf, id -> {
+                                     Function<Identifier, T> unknown) {
+        return Identifier.CODEC.dispatch(typeField, idOf, id -> {
             TypeSpec<T> spec = find(specs.get(), id);
             // Assigned to an explicitly typed local rather than returned per branch. Java cannot infer
             // E across a lambda with two branches whose return types come from different generic
@@ -136,7 +136,7 @@ public final class TypeDispatch {
         });
     }
 
-    private static <T> TypeSpec<T> find(Collection<TypeSpec<T>> available, ResourceLocation id) {
+    private static <T> TypeSpec<T> find(Collection<TypeSpec<T>> available, Identifier id) {
         for (TypeSpec<T> spec : available) {
             if (spec.id().equals(id)) {
                 return spec;

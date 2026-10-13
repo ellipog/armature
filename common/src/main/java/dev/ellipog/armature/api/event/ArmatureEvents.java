@@ -38,7 +38,7 @@ import net.minecraft.world.level.block.state.BlockState;
  *       ({@code LivingDeathEvent}, while it can still be cancelled).</li>
  *   <li>{@link #BLOCK_BROKEN} fires <b>after</b> the break on Fabric
  *       ({@code PlayerBlockBreakEvents.AFTER}) and <b>before</b> it on NeoForge
- *       ({@code BlockEvent.BreakEvent}, while it can still be cancelled) — but only
+ *       ({@code BreakBlockEvent}, while it can still be cancelled) — but only
  *       forwarded when the break actually happens: a cancelled NeoForge event never
  *       reaches a listener.</li>
  * </ul>

@@ -1,54 +1,47 @@
 package dev.ellipog.armature.client.render;
 
-import com.mojang.authlib.GameProfile;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
-
 import dev.ellipog.armature.client.TextScale;
 import dev.ellipog.armature.client.ui.kit.Measure;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.sprite.SpriteId;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.Component;
-import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.resources.PlayerSkin;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
-import net.minecraft.util.RandomSource;
-import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ResolvableProfile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.WeakHashMap;
 
 /**
- * 1.21.1's {@link GuiRenderer}: the one file in either mod that names {@code GuiGraphics}, and the
+ * 26.3's {@link GuiRenderer}: the one file in either mod that names {@code GuiGraphicsExtractor}, and the
  * one file that has to change when the version does.
  *
- * <h2>What the port costs, stated now while it is knowable</h2>
+ * <h2>What the port cost, now that it is knowable</h2>
  *
- * <p>26.1 renames the context to {@code GuiGraphicsExtractor} and moves drawing to an extraction
- * phase — {@code Screen#render} becomes {@code Screen#extractRenderState}. How much of that lands on
- * this file is not knowable until the version exists, so what is written down here is what <i>is</i>
- * known: every call in this class is a direct one-to-one translation of something either mod used to
- * call on {@code GuiGraphics} itself. There is no invented API to re-derive, no batching to unwind,
- * and no state this class keeps. The methods are short for that reason, and it is the property the
- * seam is worth having for.
+ * <p>26.1 renamed the context to {@code GuiGraphicsExtractor} and moved drawing to an extraction
+ * phase, where {@code Screen#render} became {@code Screen#extractRenderState}. As predicted, that
+ * landed on this file: every method below is a direct one-to-one translation of the 1.21.1 body
+ * onto the extractor's calls. There is no invented API to re-derive, and no state this class
+ * keeps. The methods are short for that reason, and it is the property the seam is worth
+ * having for.
+ *
+ * <p>Three things did not translate one-to-one, and each says so where it lives: batching is gone
+ * (extraction preserves submission order, so {@link #flush} is a no-op and {@link #batched} calls
+ * straight through), the tint travels as a colour argument rather than pipeline state, and the pose
+ * is a 2D matrix stack rather than a {@code PoseStack}.
  *
  * <h2>Why a record</h2>
  *
@@ -64,18 +57,15 @@ import java.util.WeakHashMap;
  *
  * <h2>Two things about {@link #icon} that are not obvious</h2>
  *
- * <p>{@code renderItem} draws at a <b>fixed</b> 16 screen pixels: it translates to
- * {@code (x + 8, y + 8, 150)} and scales by {@code (16, -16, 16)}, and there is no size parameter. It
- * does, however, inherit the transform — it pushes onto the same {@code PoseStack} that
- * {@code pose()} hands out. So translating to the box's corner and scaling by {@code box / 16} makes
- * the item's own internal scale land exactly on {@code box}. Verified by reading
- * {@code GuiGraphics.renderItem} in the artefact this project compiles against rather than assumed,
- * because "does the parent transform apply" is wrong about half the time.
+ * <p>{@code item} draws at a <b>fixed</b> 16 screen pixels, and there is no size parameter. It does,
+ * however, inherit the transform: translating to the box's corner and scaling by {@code box / 16}
+ * makes the item's own internal scale land exactly on {@code box}. The pose is 2D now, so there is
+ * no z to hold at 1 the way the old {@code PoseStack} version had to.
  *
- * <p>And {@code renderItem} reaches through {@code minecraft.player} and {@code minecraft.level} for
- * the model, so a null level is a crash rather than a blank icon. One guard here covers every caller.
+ * <p>And the item draw reads the level for the model, so a null level is a crash rather than a blank
+ * icon. One guard here covers every caller.
  */
-public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
+public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiRenderer {
 
     public GuiGraphicsRenderer {
         Objects.requireNonNull(graphics, "graphics");
@@ -98,76 +88,32 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     /**
      * {@inheritDoc}
      *
-     * <p>{@code GuiGraphics.flush} is the batching flush, and it is the right one here rather than
-     * {@code BufferSource.endBatch()}: this wrapper cannot see the buffer source, and asking the
-     * context to flush is the same act expressed at the level this class is allowed to know about.
+     * <p>Deliberately empty. On 1.21.1 this flushed the context's batch, because fills queued behind
+     * an item icon could otherwise submit out of order. Extraction records every operation in call
+     * order, so "drawn later" already means "on top" with nothing to flush — and the extractor
+     * offers no flush to call. The seam keeps the method so callers still mark their layering
+     * boundaries in the same place on every version.
      */
     @Override
     public void flush() {
-        graphics.flush();
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>{@code GuiGraphics.drawManaged} is the whole of the implementation: it flushes, marks the context
-     * managed so every fill and label inside skips its own flush, runs the supplier, and flushes once at the
-     * end. It is deprecated in this version, and used deliberately — it is the only switch that suppresses the
-     * per-call flush, and the alternative is the behaviour the seam's {@link #batched} exists to fix.
+     * <p>On 1.21.1 this wrapped the context's {@code drawManaged} region (with a re-entrancy guard,
+     * because that call was not re-entrant) to turn one submission per fill into one per region.
+     * Extraction has no per-call flush to suppress, so this calls straight through. The seam keeps
+     * the method so a region that must draw as one unit still says so, and a future version that
+     * batches again has the call sites marked.
      *
-     * <p>The supplier's value is captured through an array because {@code drawManaged} takes a
-     * {@code Runnable}: the context's signature cannot return what the caller drew, and this wrapper can.
-     *
-     * <h2>Regions nest, and they have to</h2>
-     *
-     * <p>{@code drawManaged} is <b>not</b> re-entrant: it sets the managed flag false on the way out
-     * whatever it was on the way in, so a region opened inside another one <i>ends the outer one</i> — the
-     * rest of the frame would then pay a flush per fill again, silently, and a whole-frame region would be
-     * worth nothing the moment anything inside it batched. Since that is now exactly the arrangement (a
-     * frame-wide region with the canvas's and the controls' regions inside it), the depth is counted here:
-     * only the outermost region touches the context, and an inner one is just the supplier's call.
-     *
-     * <h2>Why the count is static, on a record</h2>
-     *
-     * <p>Because that is the only place it can live that is <i>right</i>. A record has no instance fields,
-     * and an instance field would be wrong anyway: the flag this counter guards lives in the
-     * {@code GuiGraphics}, and a screen holds two renderers over one context — the plain one and the
-     * counting one wrapped around it — so a per-instance count would let the inner wrapper open a second
-     * region inside the outer one, which is the exact fault this prevents. One context is drawn at a time
-     * on the client thread, so one counter is the honest model of it.
-     *
-     * <p>And it is <b>not covered by a test</b>, which is worth saying rather than leaving to be assumed:
-     * the guard needs a real {@code GuiGraphics}, and this project has no headless one. What is pinned is
-     * the hazard — {@code GuiRendererTest.theContextsRegionIsNotReentrant} asserts that the seam's model of
-     * the context is not re-entrant, so the reason for this code cannot quietly disappear — and the guard
-     * itself is verified by reading the version's own {@code drawManaged}.
+     * <p>{@code GuiRendererTest.theContextsRegionIsNotReentrant} still pins the seam's model: with no
+     * context region left underneath, nesting is trivially safe, which is what the test now asserts.
      */
     @Override
     public <T> T batched(java.util.function.Supplier<T> draw) {
-        if (batchDepth++ > 0) {
-            try {
-                return draw.get();
-            }
-            finally {
-                batchDepth--;
-            }
-        }
-        try {
-            Object[] result = new Object[1];
-            graphics.drawManaged(() -> result[0] = draw.get());
-            @SuppressWarnings("unchecked")
-            T typed = (T) result[0];
-            return typed;
-        }
-        finally {
-            // Counted down even if the supplier threw, so one bad frame cannot leave every later frame
-            // believing it is inside a region that no longer exists.
-            batchDepth--;
-        }
+        return draw.get();
     }
-
-    /** How many batch regions are open, so an inner one is a no-op rather than a fault. See {@link #batched}. */
-    private static int batchDepth;
 
     // ------------------------------------------------------------------
     // Text
@@ -207,17 +153,18 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     private void drawAt(String text, int x, int y, int argb, boolean shadow, float scale) {
         double effective = scale * TextScale.get();
         if (effective == TextScale.DEFAULT) {
-            graphics.drawString(font(), text, x, y, argb, shadow);
+            graphics.text(font(), text, x, y, argb, shadow);
             return;
         }
         // Scaled about the string's own top-left, so the text grows right and down from where the
         // layout put it rather than from the panel's corner. `textWidth`/`lineHeight` report the same
         // factor, which is what keeps a layout that measured the string and the string it draws in step.
-        graphics.pose().pushPose();
-        graphics.pose().translate(x, y, 0F);
-        graphics.pose().scale((float) effective, (float) effective, 1F);
-        graphics.drawString(font(), text, 0, 0, argb, shadow);
-        graphics.pose().popPose();
+        // The pose is 2D now (a Matrix3x2fStack, no z): translate, scale, draw at the origin, pop.
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(x, y);
+        graphics.pose().scale((float) effective, (float) effective);
+        graphics.text(font(), text, 0, 0, argb, shadow);
+        graphics.pose().popMatrix();
     }
 
     @Override
@@ -234,11 +181,11 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
                 // keeps the run's top on the line's top while it grows downward into the taller line the
                 // caller reserved for it. The player's text scale multiplies the run's own, so a heading
                 // run and a body run grow together.
-                graphics.pose().pushPose();
-                graphics.pose().translate(at, y, 0F);
-                graphics.pose().scale(effective, effective, 1F);
+                graphics.pose().pushMatrix();
+                graphics.pose().translate(at, y);
+                graphics.pose().scale(effective, effective);
                 drawRun(run, 0, 0, argb);
-                graphics.pose().popPose();
+                graphics.pose().popMatrix();
             }
             // `styledWidth` already carries the player's factor, so the advance and the drawn glyphs
             // cannot disagree.
@@ -252,7 +199,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         if (run.bold() || run.italic() || run.underline()) {
             text = text.withStyle(styleOf(run));
         }
-        graphics.drawString(font(), text, x, y, argb, false);
+        graphics.text(font(), text, x, y, argb, false);
     }
 
     @Override
@@ -342,169 +289,47 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.level == null) {
-            // See the class note: renderItem reads the level for the model, so this is a crash rather
-            // than a blank icon. Reported as "nothing drawn" so the caller falls back to a block.
+            // The item draw reads the level for the model, so this is a crash rather than a blank
+            // icon. Reported as "nothing drawn" so the caller falls back to a block.
             return false;
         }
 
-        // Most items are one textured quad, and the pipeline is a great deal of work to draw one: see
-        // IconPlan for the rule and for the accessors that decide it. The box is not part of it -- a
-        // caller that wants less detail asks for it by asking for a smaller icon, which is the canvas's
-        // own decision rather than this one's.
-        BakedModel model = minecraft.getItemRenderer().getModel(stack, minecraft.level, minecraft.player, 0);
-        IconPlan plan = IconPlan.of(factsOf(minecraft, model, stack));
-        IconPlan.counted(plan);
-        if (plan == IconPlan.FLAT) {
-            // The flat path is **off by default**, and this is why: as written it drew nothing at all on
-            // screen while returning {@code true}, so every node whose item took it rendered as an empty
-            // panel — the icons simply vanished. The decision is still *counted* above, so the counters go
-            // on reporting what would have been flat, and the drawing goes through the pipeline below,
-            // which is the code that shipped for months.
-            //
-            // `IconPlan.arm()` is the experiment that identifies the mechanism, one arm per launch:
-            // 1 the plain blit, 2 the blit that writes a per-vertex colour, 3 the blit with a flush either
-            // side so it is submitted immediately, as `renderItem` gets for free. Whichever arm draws the
-            // icons names the cause; none of them is the default, and the whole experiment goes away with
-            // the reason recorded. See the notes in TESTING.md for what has already been ruled out.
-            int arm = IconPlan.arm();
-            if (arm == 1) {
-                graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon());
-                return true;
-            }
-            if (arm == 2) {
-                graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon(), 1F, 1F, 1F, 1F);
-                return true;
-            }
-            if (arm == 3) {
-                graphics.flush();
-                graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon());
-                graphics.flush();
-                return true;
-            }
-        }
-
+        // Always through the item draw, never a sprite blit. On 1.21.1 a flat fast path blitted the
+        // particle icon for simple items, decided by a walk of the model's quads (`IconPlan`); that
+        // whole apparatus went away with the 1.21.1 model pipeline. There is no `BakedModel` to walk
+        // any more and no `ItemColors` to ask, and tinting happens inside the item draw itself --
+        // which is also what makes the flat path unnecessary: a tinted item drawn by this call comes
+        // out tinted, so there is nothing left to decide. `IconPlan` and its test went with the
+        // pipeline they measured; if icons ever show in a profile on this version, re-measure here.
         float scale = box / 16.0F;
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(boxX, boxY, 0);
-        // z stays 1. renderItem sets z to 150 + ... inside itself, so scaling z is how an item ends up
-        // drawn behind the panel it is supposed to be on.
-        pose.scale(scale, scale, 1F);
-        graphics.renderItem(stack, 0, 0);
-        pose.popPose();
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(boxX, boxY);
+        graphics.pose().scale(scale, scale);
+        graphics.item(stack, 0, 0);
+        graphics.pose().popMatrix();
         return true;
-    }
-
-    /**
-     * What the plan decides from, read off the model — the whole of this file's knowledge about the item
-     * pipeline, in one place.
-     *
-     * <h2>The tint question, asked the way the pipeline asks it</h2>
-     *
-     * <p>{@code BakedQuad.isTinted()} is <b>not</b> a question about colour, and reading it as one is what
-     * kept every item on the pipeline: {@code ItemModelGenerator} passes the <i>layer number</i> as the tint
-     * index, so every quad of every {@code item/generated} item carries index 0 and reads as tinted. A stick
-     * is "tinted at index 0 with no colour". What decides is whether {@code ItemColors} has a colour for
-     * this stack at that index — which is `ItemRenderer`'s own line,
-     * `this.itemColors.getColor(itemStack, bakedquad.getTintIndex())`, and it answers −1 when there is none.
-     *
-     * <p>So the colour is asked for, and the two facts that need it live here rather than in the plan: the
-     * plan takes booleans, which is what keeps it testable.
-     *
-     * <h2>And the sprite, which the first version of this missed</h2>
-     *
-     * <p>A blit draws the particle icon and nothing else, so a model whose quads do not all use that one
-     * sprite would be drawn wrong: a two-layer item — a base plus an overlay — would lose the overlay. That
-     * is not a tint, it is a missing layer, so it is its own gate.
-     *
-     * <h2>Read once per model, asked once per frame</h2>
-     *
-     * <p>Everything here but the colour is a property of the model: the flags, the missing check, the
-     * sprite gates, and <i>which</i> tint indices the quads carry. Those are read once per model into
-     * {@link #MODEL_FACTS} and reused every frame; only the colour lookup runs per frame, over the
-     * recorded indices rather than over a fresh quad walk. A model is replaced, not mutated, on a
-     * resource reload, so a memorised model is never a stale one — and a collected model takes its
-     * entry with it.
-     */
-    private static IconPlan.Facts factsOf(Minecraft minecraft, BakedModel model, ItemStack stack) {
-        ModelFacts known = MODEL_FACTS.computeIfAbsent(model, m -> readModelFacts(minecraft, m));
-        boolean tinted = false;
-        for (int tintIndex : known.tintedIndices()) {
-            if (minecraft.itemColors.getColor(stack, tintIndex) != -1) {
-                tinted = true;
-                break;
-            }
-        }
-        return new IconPlan.Facts(known.customRenderer(), known.gui3d(), known.usesBlockLight(),
-                tinted, known.missingModel(), known.hasParticleIcon(), known.oneSprite());
-    }
-
-    /**
-     * A model's share of the icon decision: every fact but the colour.
-     *
-     * <p>The tint indices travel as indices rather than as a verdict because the verdict needs the
-     * stack: whether an index <i>carries a colour</i> is asked per frame in {@link #factsOf}, and it
-     * is the only per-frame work left there.
-     */
-    private record ModelFacts(boolean customRenderer, boolean gui3d, boolean usesBlockLight,
-                              boolean missingModel, boolean hasParticleIcon, boolean oneSprite,
-                              int[] tintedIndices) {
-    }
-
-    /** Model facts by model, forgotten with the model. See {@link #factsOf}. */
-    private static final Map<BakedModel, ModelFacts> MODEL_FACTS =
-            Collections.synchronizedMap(new WeakHashMap<>());
-
-    /** The one quad walk per model: flags, gates and tint indices, colour excluded. */
-    private static ModelFacts readModelFacts(Minecraft minecraft, BakedModel model) {
-        List<BakedQuad> quads = model.getQuads(null, null, RandomSource.create(42L));
-        TextureAtlasSprite icon = model.getParticleIcon();
-
-        boolean oneSprite = !quads.isEmpty();
-        List<Integer> tinted = new ArrayList<>();
-        for (BakedQuad quad : quads) {
-            // No early break: the sprite gate has to see every quad, and the list is a handful.
-            if (quad.isTinted() && !tinted.contains(quad.getTintIndex())) {
-                tinted.add(quad.getTintIndex());
-            }
-            if (icon == null || quad.getSprite() != icon) {
-                oneSprite = false;
-            }
-        }
-        return new ModelFacts(
-                model.isCustomRenderer(),
-                model.isGui3d(),
-                model.usesBlockLight(),
-                minecraft.getModelManager().getMissingModel() == model,
-                icon != null,
-                oneSprite,
-                tinted.stream().mapToInt(Integer::intValue).toArray());
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>{@code PlayerFaceRenderer} rather than a blit written here, and the shorter version is the
-     * correct one: that class owns the face and hat rectangles and the scaling between them, and it is
-     * the same code the tab list draws with. Hand-writing the two blits is how this was first done, and
-     * it produced a solid orange square — the hat layer's hair, stretched, with the face nowhere. Two
-     * numbers right and one overload wrong is exactly the kind of mistake a seam should not be making
-     * twice.
+     * <p>{@code PlayerFaceExtractor} rather than blits written here, for the same reason its
+     * predecessor was: the face and hat rectangles and the scaling between them belong to the
+     * version, and hand-writing them once produced a solid orange square of stretched hat hair.
+     * This is the same call the tab list draws with.
      *
-     * <p>{@code getInsecureSkin} rather than a lookup that fetches: this draws for whoever is in the
-     * party, and a face that arrives a second late is a face that is not there when the row is. A player
-     * the client has no skin for — an offline server, an unknown UUID — resolves to the default, which
-     * is a face rather than a gap.
+     * <p>A resolvable profile rather than a looked-up skin: the async skin fetch cannot block a
+     * draw, so the extractor resolves what it can and falls back to the default face for the rest.
+     * A player the client has no skin for -- an offline server, an unknown UUID -- still draws a
+     * face rather than a gap, which is the contract.
      *
      * <h2>The profile comes from the player entity when the client has one</h2>
      *
      * <p>And that is not a shortcut, it is the difference between the right skin and a default one. In a
      * single-player world the server is in offline mode, so the UUID a roster carries is derived from
-     * the player's <i>name</i> — while the client's own account has an id, and a skin, keyed by
-     * something else. Asking the skin cache about the server's UUID therefore finds nothing and answers
-     * "Steve" for a player whose face is on screen two feet away. The entity the client is already
-     * drawing carries the <b>real</b> profile, so it is asked first, and the id is only the fallback for
-     * somebody this client cannot see.
+     * the player's <i>name</i> -- while the client's own account has an id, and a skin, keyed by
+     * something else. The entity the client is already drawing carries the <b>real</b> profile, so it
+     * is asked first, and the id is only the fallback for somebody this client cannot see.
      */
     @Override
     public boolean face(UUID player, int boxX, int boxY, int box) {
@@ -516,49 +341,44 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
             return false;
         }
 
-        GameProfile profile = null;
+        ResolvableProfile profile;
         if (minecraft.level != null
                 && minecraft.level.getPlayerByUUID(player) instanceof AbstractClientPlayer entity) {
-            profile = entity.getGameProfile();
+            profile = ResolvableProfile.createResolved(entity.getGameProfile());
         }
-        if (profile == null) {
-            profile = new GameProfile(player, "");
+        else {
+            profile = ResolvableProfile.createUnresolved(player);
         }
 
-        PlayerSkin skin = minecraft.getSkinManager().getInsecureSkin(profile);
-        PlayerFaceRenderer.draw(graphics, skin, boxX, boxY, box);
+        net.minecraft.client.gui.components.PlayerFaceExtractor.extractRenderState(
+                graphics, profile, boxX, boxY, box);
         return true;
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>Flushed first, and deliberately: every other operation here leaves its work in a batch, so a
-     * caller that has just drawn a panel has not written any pixels yet -- and the chain would soften a
-     * framebuffer that does not contain it.
-     *
-     * <p>The three lines after the chain are the ones that matter, and each is a piece of state the
-     * passes set for themselves: the target they rebound, the scissor they leave enabled, and the blend
-     * they left in their own mode. Putting them back is what lets a caller blur <b>mid-frame</b> — see
-     * the method's own note for the card that vanished when this did not.
+     * <p>One call: {@code blurBeforeThisStratum} softens everything recorded so far in this frame's
+     * extraction, and the card is drawn after it. There is deliberately no state to put back -- the
+     * three-line restore the 1.21.1 version needed (rebind target, scissor, blend) belonged to the
+     * immediate-mode post chain, and extraction records operations rather than executing GL state,
+     * so there is nothing for the passes to leave behind. That is also why the mid-frame-vanish
+     * fault cannot recur in this form: nothing is drawn through leftover state any more. Verified
+     * against vanilla's own {@code extractBlurredBackground}, which is exactly this call behind the
+     * same blurriness check.
      */
     @Override
     public boolean blur(float partialTick) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.level == null) {
-            // No world behind this screen, so there is nothing to soften and the chain would process a
-            // panorama. Reported as "nothing drawn" so a caller can draw its own scrim instead.
+            // No world behind this screen, so there is nothing to soften and the blur would land on
+            // a panorama. Reported as "nothing drawn" so a caller can draw its own scrim instead.
             return false;
         }
         if (minecraft.options.getMenuBackgroundBlurriness() <= 0) {
             return false;
         }
-        flush();
-        minecraft.gameRenderer.processBlurEffect(partialTick);
-        minecraft.getMainRenderTarget().bindWrite(false);
-        RenderSystem.disableScissor();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        graphics.blurBeforeThisStratum();
         return true;
     }
 
@@ -588,7 +408,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      * asks for the same file every frame is the one that should remember the answer.
      */
     @Override
-    public Optional<TextureSize> textureSize(ResourceLocation texture) {
+    public Optional<TextureSize> textureSize(Identifier texture) {
         if (texture == null) {
             return Optional.empty();
         }
@@ -631,7 +451,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      * holds no longer matches.
      */
     @Override
-    public long textureStamp(ResourceLocation texture) {
+    public long textureStamp(Identifier texture) {
         if (texture == null) {
             return 0L;
         }
@@ -663,60 +483,33 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     /**
      * {@inheritDoc}
      *
-     * <h2>The tint path, and why it is this one</h2>
+     * <h2>The tint path, and why it is an argument</h2>
      *
-     * <p>This version's {@code GuiGraphics} has {@code setColor(float, float, float, float)}, and it
-     * is the colour state a blit actually reads: it writes the shader colour that the position-tex
-     * shader multiplies into every vertex — checked against this project's own compiled artefact
-     * rather than recalled, because a setter that only affected text or only affected fills would be
-     * worse than none. So the tint is set, the blit drawn, and white put back in a {@code finally}:
-     * the shader colour is global pipeline state, and leaving a tint behind would colour every later
-     * draw in the frame, which fails far from its cause.
-     *
-     * <p>{@code setColor} flushes a managed batch when one is open, so this call belongs outside
-     * {@link #batched} — the same layering rule the batch's own note states.
+     * <p>On 1.21.1 the tint was pipeline state ({@code setColor} around the blit, put back in a
+     * {@code finally}). The extractor takes the colour as the blit's last argument instead, so there
+     * is no global state to leak into later draws: white ({@code 0xFFFFFFFF}) draws the file exactly
+     * as authored, a colour shifts it, and a low alpha washes it towards whatever is behind.
      */
     @Override
-    public void scaled(ResourceLocation texture, int x, int y, int width, int height,
+    public void scaled(Identifier texture, int x, int y, int width, int height,
                        float u, float v, int sourceWidth, int sourceHeight,
                        int textureWidth, int textureHeight, int argb) {
-        float alpha = ((argb >>> 24) & 0xFF) / 255F;
-        float red = ((argb >> 16) & 0xFF) / 255F;
-        float green = ((argb >> 8) & 0xFF) / 255F;
-        float blue = (argb & 0xFF) / 255F;
-        graphics.setColor(red, green, blue, alpha);
-        try {
-            graphics.blit(texture, x, y, width, height, u, v, sourceWidth, sourceHeight,
-                    textureWidth, textureHeight);
-        }
-        finally {
-            graphics.setColor(1F, 1F, 1F, 1F);
-        }
+        graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, width, height,
+                sourceWidth, sourceHeight, textureWidth, textureHeight, argb);
     }
 
     /**
      * {@inheritDoc}
      *
      * <p>{@code blit} with the image's own size named as the texture size, which is the whole of it:
-     * the shorter overload assumes a 256×256 sheet and would sample the wrong region of a 12-pixel
-     * file, so both sizes are written out.
-     *
-     * <p>The colour is set first, like {@link #scaled} and {@link #sprite} do: setting it flushes
-     * a managed batch when one is open, so this blit is submitted on its own rather than queued
-     * behind fills with a pipeline state it did not ask for. Every other picture call already
-     * escapes the batch this way — items through their own flush, sprites and scaled blits
-     * through this same colour set — and the plain blit was the one call that did not. White
-     * draws the file exactly as authored, so callers see no change outside a batch.
+     * the shorter overload assumes a 256x256 sheet and would sample the wrong region of a 12-pixel
+     * file, so both sizes are written out. White needs no passing: the untinted overload draws the
+     * file exactly as authored.
      */
     @Override
-    public void texture(ResourceLocation texture, int x, int y, int width, int height) {
-        graphics.setColor(1F, 1F, 1F, 1F);
-        try {
-            graphics.blit(texture, x, y, width, height, 0F, 0F, width, height, width, height);
-        }
-        finally {
-            graphics.setColor(1F, 1F, 1F, 1F);
-        }
+    public void texture(Identifier texture, int x, int y, int width, int height) {
+        graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, 0F, 0F, width, height,
+                width, height, width, height);
     }
 
     /**
@@ -724,42 +517,23 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      *
      * <h2>The atlas, and why this class picks it rather than the caller</h2>
      *
-     * <p>{@code InventoryMenu.BLOCK_ATLAS} is the sheet a model's textures are stitched into, whether the
-     * model belongs to a block or to an item — so it is the one sheet that holds every sprite a picture
-     * element could name. Which sheet to ask is a fact about this version's resource pipeline, which is
-     * exactly the kind of fact this file exists to own.
+     * <p>{@code TextureAtlas.LOCATION_BLOCKS} is the sheet a model's textures are stitched into,
+     * whether the model belongs to a block or to an item — so it is the one sheet that holds every
+     * sprite a picture element could name. Which sheet to ask is a fact about this version's
+     * resource pipeline, which is exactly the kind of fact this file exists to own.
      *
-     * <p>No null guard on the sprite, and that is read rather than assumed: this version's
-     * {@code TextureAtlas.getSprite} answers an unknown id with its own {@code missingSprite} and throws
-     * only when the atlas is not initialized — which cannot be true while a screen is drawing, and which a
-     * guard here could not fix anyway.
+     * <p>No null guard on the sprite, and that is read rather than assumed: the atlas answers an
+     * unknown id with its missing marker rather than null, so "draw nothing" was never available
+     * here without naming the marker and second-guessing it.
      */
     @Override
-    public void sprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb) {
+    public void sprite(Identifier atlasSprite, int x, int y, int width, int height, int argb) {
         if (atlasSprite == null || width <= 0 || height <= 0) {
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft == null) {
-            return;
-        }
-        TextureAtlasSprite sprite = minecraft.getModelManager()
-                .getAtlas(InventoryMenu.BLOCK_ATLAS)
-                .getSprite(atlasSprite);
-        // The same tint path `scaled` uses, in the same order: set the shader colour, blit, put white back.
-        // A sprite is drawn through the block atlas' own render type rather than through the gui one, and the
-        // shader colour is the thing both read.
-        float alpha = ((argb >>> 24) & 0xFF) / 255F;
-        float red = ((argb >> 16) & 0xFF) / 255F;
-        float green = ((argb >> 8) & 0xFF) / 255F;
-        float blue = (argb & 0xFF) / 255F;
-        graphics.setColor(red, green, blue, alpha);
-        try {
-            graphics.blit(x, y, 0, width, height, sprite);
-        }
-        finally {
-            graphics.setColor(1F, 1F, 1F, 1F);
-        }
+        TextureAtlasSprite sprite = graphics.getSprite(
+                new SpriteId(TextureAtlas.LOCATION_BLOCKS, atlasSprite));
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, sprite, x, y, width, height, argb);
     }
 
     /**
@@ -773,11 +547,11 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      * shape as {@link #sprite}'s: nothing to draw, or nowhere to draw it, draws nothing.
      */
     @Override
-    public void guiSprite(ResourceLocation guiSprite, int x, int y, int width, int height) {
+    public void guiSprite(Identifier guiSprite, int x, int y, int width, int height) {
         if (guiSprite == null || width <= 0 || height <= 0) {
             return;
         }
-        graphics.blitSprite(guiSprite, x, y, width, height);
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, guiSprite, x, y, width, height);
     }
 
     // ------------------------------------------------------------------
@@ -801,11 +575,10 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      */
     @Override
     public Scoped turned(int pivotX, int pivotY, float degrees) {
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(pivotX, pivotY, 0F);
-        pose.mulPose(Axis.ZP.rotationDegrees(degrees));
-        pose.translate(-pivotX, -pivotY, 0F);
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(pivotX, pivotY);
+        graphics.pose().rotate((float) Math.toRadians(degrees));
+        graphics.pose().translate(-pivotX, -pivotY);
         return new Scoped() {
             private boolean closed;
 
@@ -815,7 +588,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
                     return;
                 }
                 closed = true;
-                pose.popPose();
+                graphics.pose().popMatrix();
             }
         };
     }

@@ -4,7 +4,7 @@ import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
 import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.client.ui.kit.Tween;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
@@ -73,12 +73,11 @@ public class ArmatureSwitch extends AbstractWidget {
     }
 
     @Override
-    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // The one forced signature, wrapped and delegated exactly as ArmatureButton does — see the
-        // seam note there, including why the drawing is batched: a switch is a track, a knob and a
-        // shadow, and unmanaged each of those fills is its own submission.
+    protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            float partialTick) {
+        // The one forced signature, wrapped and delegated exactly as ArmatureButton does.
         GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
-        long now = net.minecraft.Util.getMillis();
+        long now = net.minecraft.util.Util.getMillis();
         renderer.batched(() -> {
             draw(renderer, now);
             return null;
@@ -87,7 +86,7 @@ public class ArmatureSwitch extends AbstractWidget {
 
     /** Draws this switch at the current time. The modal redraw pass and a preview both use it. */
     public void draw(GuiRenderer renderer) {
-        draw(renderer, net.minecraft.Util.getMillis());
+        draw(renderer, net.minecraft.util.Util.getMillis());
     }
 
     /** Draws this switch, taking the time so a test can drive the hover without sleeping. */
@@ -116,7 +115,7 @@ public class ArmatureSwitch extends AbstractWidget {
     }
 
     @Override
-    public void onClick(double mouseX, double mouseY) {
+    public void onClick(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
         // The state flips here and the handler is told after, so a handler that reads `selected()`
         // reads the new answer — the order every caller expects and the one that is wrong half the
         // time when it is the other way round.

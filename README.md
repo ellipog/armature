@@ -14,7 +14,7 @@ beside any mod that needs it.
 - **[One game-free renderer seam](https://ellipog.dev/docs/armature/toolkit).** Every draw call goes through `GuiRenderer`, so UI is unit-tested in milliseconds instead of eyeballed in screenshots.
 - **[Layout, text, and shapes without a client](https://ellipog.dev/docs/armature/toolkit).** Headless-tested arithmetic over rectangles and strings — pan, zoom, wrapping, hit-testing that agrees with drawing by construction.
 - **[Strict JSON with did-you-mean](https://ellipog.dev/docs/armature/api/data).** Line and column per path, presence and type checks with suggestions, and problem reports a mod's own format can reuse.
-- **[Teams resolve in order](https://ellipog.dev/docs/armature/api/teams).** `Teams.of(server)` reads an explicit provider, then FTB Teams, then Open Parties and Claims, then the built-in stored fallback.
+- **[Teams resolve in order](https://ellipog.dev/docs/armature/api/teams).** `Teams.of(server)` reads an explicit provider, then Open Parties and Claims, then the built-in stored fallback.
 - **[Per-mod appearance](https://ellipog.dev/docs/armature/toolkit/themes).** Each mod owns its `Look`, so two mods never share one player's theme file.
 
 ## Using it

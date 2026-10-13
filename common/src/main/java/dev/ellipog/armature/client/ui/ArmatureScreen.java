@@ -4,7 +4,7 @@ import dev.ellipog.armature.client.render.GuiGraphicsRenderer;
 import dev.ellipog.armature.client.render.GuiRenderer;
 import dev.ellipog.armature.client.ui.kit.Watch;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -52,12 +52,13 @@ public abstract class ArmatureScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            float partialTick) {
         refreshIfMoved();
         renderContent(new GuiGraphicsRenderer(graphics), mouseX, mouseY, partialTick);
         // The widget pass stays on this side of the seam, and deliberately: the controls are
         // `AbstractWidget`s and only the base class can draw them from the context it was handed.
-        super.render(graphics, mouseX, mouseY, partialTick);
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 
     /**
@@ -66,25 +67,21 @@ public abstract class ArmatureScreen extends Screen {
      *
      * <h2>Why this is not each screen's business, and what happens when it is</h2>
      *
-     * <p>{@code Screen.render} draws its background <b>after</b> a subclass's own content and <b>before</b>
-     * the widget pass. So a panel that draws its own card leaves vanilla's blur and menu gradient landing
-     * between the two halves of itself: everything the panel <i>draws</i> comes out washed out, and every
-     * <i>widget</i> stays crisp. That is a strange-looking fault -- the developer screen shipped with it,
-     * and its washed rows were exactly the ones with no control in them, so the fade had a hard edge in the
-     * middle of the list -- and it is invisible in the code, because the offending call is on the other
-     * side of {@code super.render}.
+     * <p>The frame extracts vanilla's background in its own stratum <b>before</b> a subclass's
+     * content and the widget pass. So a panel that draws its own card leaves vanilla's background
+     * landing underneath itself: everything the panel <i>draws</i> comes out over it, and every
+     * <i>widget</i> stays crisp.
      *
-     * <p>The book screen found it first and carried its own override for a while, with the whole story in
-     * its class comment: that screen was blurred, world and text alike, because it called
-     * {@code super.render} last and the blur post-effect processed a framebuffer that already held its
-     * text. One screen remembering is one screen; a base class doing it is every screen after it.
+     * <p>The 1.21.1 version of this note described a wash-out fault (background drawn <i>between</i> the
+     * panel's halves); the frame order that caused it is gone with the extraction model, and this
+     * override now exists simply so panels own their backdrop.
      *
      * <p>A subclass that wants vanilla's background -- a plain options screen, say -- overrides this
-     * again. Nothing here stops it: the same shape as {@link #renderContent}'s note about screens that
-     * have to own {@code render}.
+     * again. Nothing here stops it.
      */
     @Override
-    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            float partialTick) {
         // No blur, no panorama, no menu texture.
     }
 
@@ -93,8 +90,8 @@ public abstract class ArmatureScreen extends Screen {
      *
      * <h2>Why this exists, and what it saves a subclass</h2>
      *
-     * <p>Because drawing needs the game's own graphics type -- {@code Screen.render} takes one and there
-     * is no other way in -- so every screen that wants to draw has to sit on the allow-list
+     * <p>Because drawing needs the game's own graphics type -- extraction hands over an extractor
+     * and there is no other way in -- so every screen that wants to draw has to sit on the allow-list
      * {@code check_seam.py} keeps. That list is meant to stay tiny, and "every screen in either mod"
      * is not a list. So the wrapping happens <b>once</b>, here, and a subclass overrides this method
      * with a {@link GuiRenderer} it can draw through without ever naming the underlying type.
@@ -103,9 +100,10 @@ public abstract class ArmatureScreen extends Screen {
      * order every screen wants: a background, then its buttons.
      *
      * <p><b>A screen that must interleave drawing with the widget pass cannot use this</b> and has to
-     * override {@link #render} instead. The book screen is the one that does: its view cluster is drawn
-     * at a raised Z, between the content and the widgets, because an item icon writes depth and a fill
-     * at Z = 0 loses to it. That screen names the type, and the seam check says why.
+     * override {@link #extractRenderState} instead. The book screen is the one that does: its view
+     * cluster is drawn between the content and the widgets. That screen names the type, and the seam
+     * check says why. (Whether an item icon still needs that interleaving on the extraction pipeline
+     * is unproven -- see the renderer -- so the arrangement is carried, not re-derived.)
      */
     protected void renderContent(GuiRenderer renderer, int mouseX, int mouseY, float partialTick) {
     }

@@ -4,7 +4,7 @@ import dev.ellipog.armature.api.registry.Registrar;
 
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -52,7 +52,7 @@ public final class NeoForgeRegistrar implements Registrar {
      * {@code registry.containsKey(id)} would answer false for an id this mod has already queued.
      */
     @Override
-    public <T> void register(Registry<T> registry, ResourceLocation id, Supplier<? extends T> value) {
+    public <T> void register(Registry<T> registry, Identifier id, Supplier<? extends T> value) {
         if (!modId.equals(id.getNamespace())) {
             throw new IllegalArgumentException("Cannot register " + id + " through the registrar for '" + modId
                     + "'. The namespace of a registry name is the mod that owns it, so those two have to agree.");

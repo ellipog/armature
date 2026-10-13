@@ -4,7 +4,7 @@ import dev.ellipog.armature.client.render.RecordingRenderer;
 import dev.ellipog.armature.client.ui.CanvasBackground;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,14 +32,14 @@ class CanvasBackgroundArtTest {
 
     private static final int INK = 0x33FFFFFF;
 
-    private static final ResourceLocation TILED =
-            ResourceLocation.fromNamespaceAndPath("armature", "textures/gui/art_tile.png");
+    private static final Identifier TILED =
+            Identifier.fromNamespaceAndPath("armature", "textures/gui/art_tile.png");
 
-    private static final ResourceLocation FIXED =
-            ResourceLocation.fromNamespaceAndPath("armature", "textures/gui/art_fixed.png");
+    private static final Identifier FIXED =
+            Identifier.fromNamespaceAndPath("armature", "textures/gui/art_fixed.png");
 
-    private static final ResourceLocation COVERED =
-            ResourceLocation.fromNamespaceAndPath("armature", "textures/gui/art_cover.png");
+    private static final Identifier COVERED =
+            Identifier.fromNamespaceAndPath("armature", "textures/gui/art_cover.png");
 
     private static Viewport view(int width, int height) {
         return Viewport.of(0.05F, 8F).bounds(0, 0, width, height);
@@ -60,7 +60,7 @@ class CanvasBackgroundArtTest {
         return new CanvasBackground(kind, space, spacing, tuning, CanvasBackground.Image.NONE);
     }
 
-    private static CanvasBackground image(ResourceLocation id, CanvasBackground.Fit fit,
+    private static CanvasBackground image(Identifier id, CanvasBackground.Fit fit,
                                           CanvasBackground.Space space, int tile) {
         return new CanvasBackground(CanvasBackground.Kind.IMAGE, space, 24,
                 CanvasBackground.Tuning.DEFAULT, new CanvasBackground.Image(id.toString(), fit, tile));
@@ -457,13 +457,13 @@ class CanvasBackgroundArtTest {
     void unreadableImageDrawsNothing() {
         RecordingRenderer unseeded = RecordingRenderer.create();
         CanvasBackgroundArt.draw(unseeded, view(100, 60),
-                image(ResourceLocation.fromNamespaceAndPath("armature", "textures/gui/never_seeded.png"),
+                image(Identifier.fromNamespaceAndPath("armature", "textures/gui/never_seeded.png"),
                         CanvasBackground.Fit.TILE, CanvasBackground.Space.SCREEN, 16), INK);
         assertEquals(0, unseeded.calls().size(), "a size the renderer cannot give is no image at all");
 
         RecordingRenderer blank = RecordingRenderer.create();
         CanvasBackgroundArt.draw(blank, view(100, 60),
-                image(ResourceLocation.fromNamespaceAndPath("armature", "textures/gui/also_never.png"),
+                image(Identifier.fromNamespaceAndPath("armature", "textures/gui/also_never.png"),
                         CanvasBackground.Fit.COVER, CanvasBackground.Space.SCREEN, 16), INK);
         assertEquals(0, blank.calls().size(), "and a miss draws nothing whichever fit was asked for");
 

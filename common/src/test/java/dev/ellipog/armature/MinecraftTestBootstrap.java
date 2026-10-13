@@ -1,7 +1,10 @@
 package dev.ellipog.armature;
 
 import net.minecraft.SharedConstants;
+import net.minecraft.core.Holder;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Starts enough of vanilla for a test that has to build a real item.
@@ -37,5 +40,21 @@ public final class MinecraftTestBootstrap {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
         done = true;
+    }
+
+    /**
+     * A real item stack without a world.
+     *
+     * <p>On 26.x a registry holder's components are not bound until datapacks load, so
+     * {@code new ItemStack(Items.STONE)} throws "Components not bound yet" even bootstrapped --
+     * and so does {@code Items.STONE.components()}, which resolves through the same holder. A
+     * direct holder carries the components explicitly instead, so the stack is built with an
+     * empty map: the tests that take one never read components (the recorder only records the
+     * call), and emptiness is item-and-count, not components. If a test ever needs real
+     * components, it needs a world, and this helper must not pretend otherwise.
+     */
+    public static ItemStack stackOf(Item item) {
+        return new ItemStack(Holder.direct(item,
+                net.minecraft.core.component.DataComponentMap.EMPTY));
     }
 }

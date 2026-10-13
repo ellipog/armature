@@ -5,7 +5,7 @@ import dev.ellipog.armature.api.event.ArmatureEvents;
 import net.minecraft.core.BlockPos;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -41,7 +41,7 @@ class NeoForgeBreakCancelTest {
         ArmatureEvents.BLOCK_BROKEN.register((player, state) -> FORWARDED.add("forward"));
         // A protection mod cancelling late: LOW runs after everything but our listener, so a
         // forward past this point is a listener that does not listen last.
-        NeoForge.EVENT_BUS.addListener(EventPriority.LOW, true, (BlockEvent.BreakEvent event) -> {
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOW, true, (BreakBlockEvent event) -> {
             if (ARMED.get()) {
                 event.setCanceled(true);
             }
@@ -52,8 +52,8 @@ class NeoForgeBreakCancelTest {
     @DisplayName("a break cancelled before the post short-circuits before touching it")
     void cancelledBeforePostNeverForwards() {
         FORWARDED.clear();
-        BlockEvent.BreakEvent event =
-                new BlockEvent.BreakEvent(null, BlockPos.ZERO, null, null);
+        BreakBlockEvent event =
+                new BreakBlockEvent(null, BlockPos.ZERO, null, null);
         event.setCanceled(true);
         NeoForge.EVENT_BUS.post(event);
         assertTrue(FORWARDED.isEmpty(),
@@ -66,7 +66,7 @@ class NeoForgeBreakCancelTest {
         FORWARDED.clear();
         ARMED.set(true);
         try {
-            NeoForge.EVENT_BUS.post(new BlockEvent.BreakEvent(null, BlockPos.ZERO, null, null));
+            NeoForge.EVENT_BUS.post(new BreakBlockEvent(null, BlockPos.ZERO, null, null));
         }
         finally {
             ARMED.set(false);

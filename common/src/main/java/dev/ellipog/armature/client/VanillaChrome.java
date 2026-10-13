@@ -2,7 +2,7 @@ package dev.ellipog.armature.client;
 
 import dev.ellipog.armature.client.render.GuiRenderer;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Objects;
 
@@ -42,18 +42,18 @@ public final class VanillaChrome {
     /** The id prefix every GUI sprite shares. */
     private static final String NAMESPACE = "minecraft:";
 
-    private static ResourceLocation sprite(String path) {
-        return Objects.requireNonNull(ResourceLocation.tryParse(NAMESPACE + path), path);
+    private static Identifier sprite(String path) {
+        return Objects.requireNonNull(Identifier.tryParse(NAMESPACE + path), path);
     }
 
     /** A stone button at rest. Nine-sliced with a 3-pixel border. */
-    public static final ResourceLocation BUTTON = sprite("widget/button");
+    public static final Identifier BUTTON = sprite("widget/button");
 
     /** A stone button that cannot be used. */
-    public static final ResourceLocation BUTTON_DISABLED = sprite("widget/button_disabled");
+    public static final Identifier BUTTON_DISABLED = sprite("widget/button_disabled");
 
     /** A stone button under the pointer, wearing its white border. */
-    public static final ResourceLocation BUTTON_HIGHLIGHTED = sprite("widget/button_highlighted");
+    public static final Identifier BUTTON_HIGHLIGHTED = sprite("widget/button_highlighted");
 
     /** Inventory fill, from {@code container/inventory.png}. */
     public static final int PANEL = 0xFFC6C6C6;
@@ -143,7 +143,7 @@ public final class VanillaChrome {
      * <p>Held shares highlighted because vanilla has no pressed sprite of its own — a held
      * vanilla button is a hovered one that has not let go yet.
      */
-    public static ResourceLocation buttonSprite(boolean active, boolean hoveredOrHeld) {
+    public static Identifier buttonSprite(boolean active, boolean hoveredOrHeld) {
         if (!active) {
             return BUTTON_DISABLED;
         }

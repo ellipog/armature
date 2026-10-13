@@ -6,11 +6,11 @@ import dev.ellipog.armature.client.ui.kit.Colour;
 import dev.ellipog.armature.client.ui.kit.TextField;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
-import net.minecraft.Util;
+import net.minecraft.util.Util;
 
 import java.util.function.Consumer;
 
@@ -48,8 +48,8 @@ import java.util.function.Consumer;
  *
  * <h2>The one forced signature</h2>
  *
- * <p>{@code renderWidget} takes a {@code GuiGraphics} and is abstract; the override wraps it in one line
- * and hands it to {@link GuiRenderer}, exactly as {@code ArmatureButton} does. {@code check_seam.py} names
+ * <p>{@code extractWidgetRenderState} takes an extractor and is abstract; the override wraps it in
+ * one line and hands it to {@link GuiRenderer}, exactly as {@code ArmatureButton} does. {@code check_seam.py} names
  * this file for that reason and no other.
  */
 public final class ArmatureTextField extends AbstractWidget {
@@ -181,115 +181,142 @@ public final class ArmatureTextField extends AbstractWidget {
     // ------------------------------------------------------------------
 
     @Override
-    public boolean charTyped(char typed, int modifiers) {
+    public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
         if (!isFocused() || !isActive()) {
             return false;
         }
         // Control characters are the keyboard's, not the field's: a Ctrl+C arrives here as 3 on some
         // platforms, and a field that inserted it would paste twice.
-        if (typed < ' ' || typed == 127) {
+        int codepoint = event.codepoint();
+        if (codepoint < ' ' || codepoint == 127) {
             return false;
         }
-        model.insert(typed);
+        // The model speaks UTF-16 units, as the old char-based callback did: an astral codepoint goes
+        // in as its surrogate pair, so the model sees exactly the stream it always has.
+        for (char unit : Character.toChars(codepoint)) {
+            model.insert(unit);
+        }
         return true;
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
         if (!isFocused() || !isActive()) {
             return false;
         }
-        boolean control = net.minecraft.client.gui.screens.Screen.hasControlDown();
+        // The constants changed values with the SDL move (GLFW codes are not SDL scancodes), so every
+        // literal below is an `InputConstants` scancode, compared against `key()` -- which is the
+        // scancode side, not `keycode()`. Same keys as before, same order, same fallthrough-free
+        // arrow switch; only the numbers' source changed.
+        boolean control = event.hasControlDown();
+        int key = event.key();
 
-        switch (keyCode) {
-            case 257, 335 -> {          // Enter, and the keypad's
-                // The blur is the commit: `setFocused` submits, so calling `submit` here as well sent
-                // the same edit twice -- two ops, two status lines, two undo steps for one Enter.
-                setFocused(false);
+        // Matched keys are swallowed whether or not they acted: a plain letter reaches `charTyped`
+        // through its own event, and the old arrow switch fell through to `return true` for exactly
+        // these keys. Only an unmatched key propagates.
+        if (key != com.mojang.blaze3d.platform.InputConstants.KEY_RETURN
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_BACKSPACE
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_DELETE
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_LEFT
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_RIGHT
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_HOME
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_END
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_C
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_V
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_X
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_Z
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_Y
+                && key != com.mojang.blaze3d.platform.InputConstants.KEY_A) {
+            return false;
+        }
+
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN
+                || key == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER) {
+            // The blur is the commit: `setFocused` submits, so calling `submit` here as well sent
+            // the same edit twice -- two ops, two status lines, two undo steps for one Enter.
+            setFocused(false);
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
+            setFocused(false);
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_BACKSPACE) {
+            model.backspace();
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_DELETE) {
+            model.deleteForward();
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_LEFT) {
+            model.left();
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_RIGHT) {
+            model.right();
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_HOME) {
+            model.home();
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_END) {
+            model.end();
+            return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_C) {
+            if (control) {
+                // The mark when there is one, the whole value otherwise -- the model's `copyText`,
+                // which is where the rule is asserted; this carries its answer to the OS.
+                Minecraft.getInstance().keyboardHandler.setClipboard(model.copyText());
                 return true;
             }
-            case 256 -> {               // Escape: the same -- the edit is over, the card is not
-                setFocused(false);
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_V) {
+            if (control) {
+                // Whole-value, not inserted at the caret: a field here holds one thing. The rule,
+                // the filtering and the limit are the model's `pasteText`.
+                model.pasteText(Minecraft.getInstance().keyboardHandler.getClipboard());
                 return true;
             }
-            case 259 -> {               // Backspace
-                model.backspace();
-                return true;
-            }
-            case 261 -> {               // Delete
-                model.deleteForward();
-                return true;
-            }
-            case 263 -> {               // Left
-                model.left();
-                return true;
-            }
-            case 262 -> {               // Right
-                model.right();
-                return true;
-            }
-            case 268 -> {               // Home
-                model.home();
-                return true;
-            }
-            case 269 -> {               // End
-                model.end();
-                return true;
-            }
-            case 67 -> {                // C
-                if (control) {
-                    // The mark when there is one, the whole value otherwise -- the model's `copyText`,
-                    // which is where the rule is asserted; this carries its answer to the OS.
-                    Minecraft.getInstance().keyboardHandler.setClipboard(model.copyText());
-                    return true;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_X) {
+            if (control) {
+                // A cut that took the whole unmarked value would empty a field on one keystroke, so
+                // the model cuts the mark or nothing -- and nothing leaves the OS clipboard alone
+                // rather than overwriting it with an empty string.
+                String cut = model.cutText();
+                if (!cut.isEmpty()) {
+                    Minecraft.getInstance().keyboardHandler.setClipboard(cut);
                 }
+                return true;
             }
-            case 86 -> {                // V
-                if (control) {
-                    // Whole-value, not inserted at the caret: a field here holds one thing. The rule,
-                    // the filtering and the limit are the model's `pasteText`.
-                    model.pasteText(Minecraft.getInstance().keyboardHandler.getClipboard());
-                    return true;
-                }
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_Z) {
+            if (control) {
+                // The *field's* history, not the chapter's: the screen's Ctrl+Z is guarded on no
+                // widget having focus, and it is a server operation over the whole chapter. While a
+                // field has the keyboard, Z is the field's -- see the model's `undo`.
+                model.undo();
+                return true;
             }
-            case 88 -> {                // X: the mark, and nothing else
-                if (control) {
-                    // A cut that took the whole unmarked value would empty a field on one keystroke, so
-                    // the model cuts the mark or nothing -- and nothing leaves the OS clipboard alone
-                    // rather than overwriting it with an empty string.
-                    String cut = model.cutText();
-                    if (!cut.isEmpty()) {
-                        Minecraft.getInstance().keyboardHandler.setClipboard(cut);
-                    }
-                    return true;
-                }
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_Y) {
+            if (control) {
+                model.redo();
+                return true;
             }
-            case 90 -> {                // Z: one step back through this field's own edits
-                if (control) {
-                    // The *field's* history, not the chapter's: the screen's Ctrl+Z is guarded on no
-                    // widget having focus, and it is a server operation over the whole chapter. While a
-                    // field has the keyboard, Z is the field's -- see the model's `undo`.
-                    model.undo();
-                    return true;
-                }
-            }
-            case 89 -> {                // Y: and forward again, the pair the screen's own keys use
-                if (control) {
-                    model.redo();
-                    return true;
-                }
-            }
-            case 65 -> {                // A
-                if (control) {
-                    // Marks everything. It used to clear the field, which was only ever a substitute for
-                    // this: there was no selection to make, so "select all" was spent on the nearest thing
-                    // a hex field wanted -- starting again.
-                    model.selectAll();
-                    return true;
-                }
-            }
-            default -> {
-                return false;
+        }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_A) {
+            if (control) {
+                // Marks everything. It used to clear the field, which was only ever a substitute for
+                // this: there was no selection to make, so "select all" was spent on the nearest thing
+                // a hex field wanted -- starting again.
+                model.selectAll();
+                return true;
             }
         }
         return true;
@@ -303,23 +330,29 @@ public final class ArmatureTextField extends AbstractWidget {
             submit();
         }
         super.setFocused(focused);
+        // SDL needs explicit start/stop around text input, or character events never arrive: the focus
+        // change is what starts and stops them. See the primer's IME note; without this call the field
+        // draws a caret that can never receive text.
+        Minecraft.getInstance().onTextInputFocusChange(this, focused);
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!isActive() || !isMouseOver(mouseX, mouseY)) {
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        if (!isActive() || !isMouseOver(event.x(), event.y())) {
             return false;
         }
         long now = Util.getMillis();
         boolean twice = now - lastClickMillis <= DOUBLE_CLICK_MILLIS
-                && Math.abs(mouseX - lastClickX) <= 3;
+                && Math.abs(event.x() - lastClickX) <= 3;
         lastClickMillis = now;
-        lastClickX = mouseX;
+        lastClickX = event.x();
         // The caret is worked out **before** the field takes the keyboard, and that order is the fix:
         // `caretFor` reads the same `textOffset` the drawing used, and focusing changes that offset --
         // a field at rest shows its value from the start, a focused one scrolls to its caret -- so a
         // caret computed after `setFocused` would land nowhere near the character that was clicked.
-        int caret = caretFor(mouseX);
+        // (Vanilla now reports double-clicks itself, but this stricter time-and-distance rule is the
+        // play-tested one, so it stays.)
+        int caret = caretFor(event.x());
         setFocused(true);
         model.caretTo(caret);
         if (twice) {
@@ -331,14 +364,15 @@ public final class ArmatureTextField extends AbstractWidget {
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (!isFocused() || !isActive() || button != 0) {
+    public boolean mouseDragged(net.minecraft.client.input.MouseButtonEvent event, double dragX,
+            double dragY) {
+        if (!isFocused() || !isActive() || !isValidClickButton(event.buttonInfo())) {
             return false;
         }
         // A drag extends the mark from wherever the press put the caret -- the gesture every field has,
         // and the block's own rule ({@code ArmatureTextArea.mouseDragged}). The anchor is the press's,
         // because a click places the caret with {@code caretTo}, which drops the anchor where it lands.
-        model.selectTo(caretFor(mouseX));
+        model.selectTo(caretFor(event.x()));
         return true;
     }
 
@@ -386,7 +420,8 @@ public final class ArmatureTextField extends AbstractWidget {
     // ------------------------------------------------------------------
 
     @Override
-    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            float partialTick) {
         render(new GuiGraphicsRenderer(graphics));
     }
 

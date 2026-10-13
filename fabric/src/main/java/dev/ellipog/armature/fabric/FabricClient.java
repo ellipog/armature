@@ -8,9 +8,9 @@ import dev.ellipog.armature.client.ArmatureScreens;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,13 +49,16 @@ public final class FabricClient implements ClientModInitializer {
         }
 
         @Override
-        public void declare(ResourceLocation id, int defaultKeyCode, String categoryTranslationKey, Runnable onPress) {
+        public void declare(Identifier id, int defaultKeyCode, Identifier category, Runnable onPress) {
+            // Keyboard scancodes on SDL (the old KEYSYM type is gone with GLFW): the int our API
+            // carries is already one, read from `InputConstants.KEY_*` at the call site. The category
+            // registers for Controls ordering; its label is `key.category.<namespace>.<path>`.
             KeyMapping mapping = new KeyMapping(
                     ArmatureClient.translationKey(id),
-                    InputConstants.Type.KEYSYM,
+                    InputConstants.Type.KEYBOARD,
                     defaultKeyCode,
-                    categoryTranslationKey);
-            KeyBindingHelper.registerKeyBinding(mapping);
+                    KeyMapping.Category.register(category));
+            KeyMappingHelper.registerKeyMapping(mapping);
             bound.add(new Bound(mapping, onPress));
         }
 

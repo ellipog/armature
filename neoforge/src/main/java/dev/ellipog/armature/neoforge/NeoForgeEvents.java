@@ -8,7 +8,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -78,7 +78,7 @@ public final class NeoForgeEvents {
             ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(event.getEntity(), event.getSource());
         });
 
-        // BreakEvent is cancellable and fires before the break: a cancelled
+        // BreakBlockEvent is cancellable and fires when a player attempts the break: a cancelled
         // event is a protected block, so only an uncancelled one reaches
         // listeners — that is the "actually happened" half of the contract
         // Fabric's AFTER side gives for free. Lowest priority and
@@ -87,8 +87,9 @@ public final class NeoForgeEvents {
         // considered: without both, a late canceller would leak a
         // BLOCK_BROKEN for a block that never broke. The isCanceled check
         // stays as well, so the guarantee does not silently depend on the
-        // flags above surviving a future edit.
-        bus.addListener(EventPriority.LOWEST, false, (BlockEvent.BreakEvent event) -> {
+        // flags above surviving a future edit. Fired on both sides, so the
+        // ServerPlayer check is what keeps this server-only.
+        bus.addListener(EventPriority.LOWEST, false, (BreakBlockEvent event) -> {
             if (!ArmatureEvents.BLOCK_BROKEN.hasListeners()) {
                 return;
             }

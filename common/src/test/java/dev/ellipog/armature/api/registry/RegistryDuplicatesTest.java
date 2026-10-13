@@ -5,7 +5,7 @@ import com.mojang.serialization.Lifecycle;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,64 +58,52 @@ class RegistryDuplicatesTest {
      */
     private static MappedRegistry<String> freshRegistry() {
         ResourceKey<Registry<String>> key = ResourceKey.createRegistryKey(
-                ResourceLocation.fromNamespaceAndPath("armature", "duplicates_test"));
+                Identifier.fromNamespaceAndPath("armature", "duplicates_test"));
         return new MappedRegistry<>(key, Lifecycle.stable(), false);
     }
 
     @Test
-    @DisplayName("a duplicate id is accepted silently, and the entry count does not reveal it")
-    void aDuplicateIsSilentAndTheCountLies() {
+    @DisplayName("a duplicate id is refused loudly, and the entry count never gets to lie")
+    void aDuplicateIsRefusedLoudly() {
         MappedRegistry<String> registry = freshRegistry();
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("armature", "twice");
+        Identifier id = Identifier.fromNamespaceAndPath("armature", "twice");
 
         Registry.register(registry, id, "first");
         assertEquals(1, registry.size(), "one entry after one registration");
-        assertTrue(registry.getHolder(0).isPresent(), "occupying raw id 0");
-        assertFalse(registry.getHolder(1).isPresent(), "and nothing sits at raw id 1 yet");
+        assertTrue(registry.get(0).isPresent(), "occupying raw id 0");
+        assertFalse(registry.get(1).isPresent(), "and nothing sits at raw id 1 yet");
 
-        // The assertion that matters, and it asserts an *absence*: registering the same id a second
-        // time does not throw. Written as a plain call rather than assertDoesNotThrow, so that a
-        // future Minecraft which DOES throw fails here with that exception rather than with "expected
-        // nothing to be thrown" -- which would read as a bug in this test rather than a change in the
-        // platform.
+        // The assertion that matters. On 1.21.1 registering the same id a second time did not
+        // throw: `size()` is byKey.size(), keyed by ResourceKey, so the registry reported exactly
+        // as many entries as a healthy one while a second raw slot existed -- one name, two ids,
+        // and every other side disagreeing about what id a name has (the shape fabric-registry-sync
+        // refuses when a client joins a server). That silence is what this project's own guard
+        // exists to pre-empt: it refuses the duplicate with a file and a line before vanilla ever
+        // sees it.
         //
-        // Why it does not throw, from MappedRegistry.register:
-        //
-        //     if (this.byLocation.containsKey(key.location())) {
-        //         Util.pauseInIde(new IllegalStateException("Adding duplicate key ..."));
-        //     }   <- no `throw`, and pauseInIde RETURNS the exception it is given
-        //
-        // so outside an IDE the whole check is dead code.
-        Registry.register(registry, id, "second");
+        // On 26.3 the platform throws itself -- `IllegalStateException: Adding duplicate key ...`.
+        // Either way the count never gets to lie, and either way the guard fires first. Written as
+        // an assertion on the throw (rather than only on the guard) so that a future Minecraft
+        // which goes silent again fails here with a missing throw rather than with a count nobody
+        // trusts -- which would read as a bug in this test rather than a change in the platform.
+        IllegalStateException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> Registry.register(registry, id, "second"));
+        assertTrue(thrown.getMessage().contains(id.toString()),
+                "and the throw names the id, so the log says which registration collided: "
+                        + thrown.getMessage());
 
-        // The lie, and the reason this bug is so hard to find. `size()` is byKey.size(), and byKey is
-        // keyed by ResourceKey -- the same key twice is still one map entry. So the registry reports
-        // exactly as many entries as a healthy one would, while:
         assertEquals(1, registry.size(),
-                "the count still says ONE, because size() is byKey.size() and the key is the same. A "
-                        + "count is not a check -- nothing reading this registry's size can tell that "
-                        + "anything went wrong");
+                "the count still says ONE -- and now it is true, because the second registration "
+                        + "never landed");
         assertTrue(registry.containsKey(id), "and the id is still reported as held, correctly");
-
-        // ...a second raw id exists. THIS is the condition fabric-registry-sync refuses when a client
-        // joins a server: it sees two equal raw ids for one name -- the same entry at id 1334 and id
-        // 1335 -- and cannot reconcile them with what the server thinks. Two integer ids, one name.
-        //
-        // The shape rather than the original message, on purpose. That message quoted the mod and the
-        // item that produced it, and naming a consumer from inside this library is the one thing
-        // Armature may never do -- comments included, because a comment is exactly where judgement
-        // gets slack. See `.utils/check_layering.py`.
-        assertTrue(registry.getHolder(1).isPresent(),
-                "a SECOND slot now exists in byId, because register() ends with byId.add(reference) "
-                        + "unconditionally -- so one name occupies two raw ids, and every other side "
-                        + "that maps ids will disagree with this one");
     }
 
     @Test
     @DisplayName("a Registry<T> can be asked whether it holds an id, which is what the guard needs")
     void aRegistryCanBeAskedWhetherItHoldsAnId() {
         MappedRegistry<String> registry = freshRegistry();
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("armature", "askable");
+        Identifier id = Identifier.fromNamespaceAndPath("armature", "askable");
 
         // Held as the interface, not the implementation -- because that is what `Registrar.register`
         // receives. A method that existed only on MappedRegistry would not be callable from the guard

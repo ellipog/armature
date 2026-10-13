@@ -12,10 +12,11 @@ toolkit without inheriting another mod's assumptions.
 
 | | |
 |---|---|
-| Minecraft | 1.21.1, on Fabric or NeoForge |
-| Fabric | Fabric Loader 0.16.9+, with Fabric API 0.109.0+1.21.1 |
-| NeoForge | 21.1.80+ |
-| FTB Teams / Open Parties and Claims | optional: read as team sources when present, see [[armature:api/teams]] |
+| Minecraft | 26.3, on Fabric or NeoForge |
+| Java | 25+ |
+| Fabric | Fabric Loader 0.19.5+, with Fabric API 0.162.0+26.3 |
+| NeoForge | 26.3.0.76+ |
+| Open Parties and Claims | optional: read as a team source when present, see [[armature:api/teams]] |
 
 Fabric API is required on Fabric only. NeoForge needs nothing beyond NeoForge itself.
 
@@ -37,7 +38,7 @@ in a consumer's build is to publish it:
 gradlew :common:publishToMavenLocal
 ```
 
-That puts `dev.ellipog:armature-common-1.21.1:<version>` in the local Maven repository. The optional
+That puts `dev.ellipog:armature-common-26.3:<version>` in the local Maven repository. The optional
 team mods are `compileOnly` and are deliberately not in that POM, so a consumer does not inherit a
 dependency on a mod it may not run.
 

@@ -7,7 +7,7 @@ import dev.ellipog.armature.client.ui.kit.Measure;
 import dev.ellipog.armature.client.ui.kit.Tween;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
@@ -113,7 +113,7 @@ public class ArmatureButton extends AbstractWidget {
      * every control drawn before this field existed wears; the two never arrive together from one
      * icon, which carries one arm or the other.
      */
-    private net.minecraft.resources.ResourceLocation texture;
+    private net.minecraft.resources.Identifier texture;
 
     /**
      * An atlas region drawn before the label instead of the item, or null.
@@ -123,7 +123,7 @@ public class ArmatureButton extends AbstractWidget {
      * set beside it wins, then a texture; the three never arrive together from one icon, which
      * carries one arm or the other.
      */
-    private net.minecraft.resources.ResourceLocation sprite;
+    private net.minecraft.resources.Identifier sprite;
 
     /**
      * How far the icon sits inside the control's own edge, on every side.
@@ -349,7 +349,7 @@ public class ArmatureButton extends AbstractWidget {
      * texture never changes what it drew for an item. See {@link #texture} for why the two never
      * arrive together.
      */
-    public ArmatureButton texture(net.minecraft.resources.ResourceLocation id) {
+    public ArmatureButton texture(net.minecraft.resources.Identifier id) {
         this.texture = id;
         return this;
     }
@@ -360,7 +360,7 @@ public class ArmatureButton extends AbstractWidget {
      * <p>Null clears it. The item wins when set beside it, then the texture, for the same
      * reason the texture yields to the item: one icon arm per control, resolved in one order.
      */
-    public ArmatureButton sprite(net.minecraft.resources.ResourceLocation id) {
+    public ArmatureButton sprite(net.minecraft.resources.Identifier id) {
         this.sprite = id;
         return this;
     }
@@ -477,23 +477,15 @@ public class ArmatureButton extends AbstractWidget {
     // ------------------------------------------------------------------
 
     @Override
-    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            float partialTick) {
         // The one forced signature in this class, and it is Minecraft's rather than a choice: the base
-        // class hands over a GuiGraphics and there is no overload that does not. So this wraps and
+        // class hands over an extractor and there is no overload that does not. So this wraps and
         // delegates immediately, and the body — where every actual decision lives — never sees one.
         //
         // That is the whole shape of the seam at a call site: one line here, and everything below is
         // expressed in terms of fill, text and icon. `.utils/check_seam.py` counts these files, so a
         // third one cannot appear without somebody writing down why.
-        //
-        // And it is drawn inside a **batch**, which is the one thing this wrapper does beyond
-        // delegating. A control's own drawing is a panel — the border's whole footprint and then a fill
-        // inset by a pixel, each a run of rows — plus a rule, a label and maybe an icon, and every fill
-        // in that would be its own GPU submission on its own: `GuiGraphics.fill` ends in
-        // `flushIfUnmanaged`, so an unmanaged context pays one `endBatch` per rectangle. Verified from
-        // the 1.21.1 sources rather than assumed -- `fill` and `drawString` both flush when unmanaged,
-        // and text is a different render type from a fill, which is why the label still costs a
-        // boundary inside the batch and the panel no longer costs one per row.
         GuiRenderer renderer = new GuiGraphicsRenderer(graphics);
         renderer.batched(() -> {
             draw(renderer);
@@ -509,7 +501,7 @@ public class ArmatureButton extends AbstractWidget {
      * from a test with time it chose.
      */
     public void draw(GuiRenderer renderer) {
-        draw(renderer, net.minecraft.Util.getMillis());
+        draw(renderer, net.minecraft.util.Util.getMillis());
     }
 
     /**
@@ -757,20 +749,23 @@ public class ArmatureButton extends AbstractWidget {
      * <h2>What the base class actually does</h2>
      *
      * <p>Worth writing down, because I got it wrong once and the mistake was invisible. From
-     * {@code AbstractWidget}, verbatim:
+     * {@code AbstractWidget}, verbatim (read off the 26.3 bytecode, as the old quote was read off
+     * the 1.21.1 source):
      *
      * <pre>
-     * mouseClicked(...) {
-     *     if (active &amp;&amp; visible &amp;&amp; isValidClickButton(button) &amp;&amp; clicked(mx, my)) {
-     *         playDownSound(...);
-     *         onClick(mx, my);       // &lt;-- fires on PRESS
-     *         return true;
-     *     }
-     *     return false;
+     * mouseClicked(event, doubleClick) {
+     *     if (!isActive()) return false;
+     *     if (!isValidClickButton(event.buttonInfo())) return false;
+     *     hovered = isMouseOver(event.x(), event.y());
+     *     if (!hovered) return false;
+     *     playDownSound(...);
+     *     onClick(event, doubleClick);   // &lt;-- fires on PRESS
+     *     return true;
      * }
-     * mouseReleased(...) {
-     *     if (isValidClickButton(button)) { onRelease(mx, my); return true; }
-     *     return false;
+     * mouseReleased(event) {
+     *     if (!isValidClickButton(event.buttonInfo())) return false;
+     *     onRelease(event);
+     *     return true;
      * }
      * </pre>
      *
@@ -785,8 +780,11 @@ public class ArmatureButton extends AbstractWidget {
      * played here by hand, because not calling super is what skips it.
      */
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!active || !visible || button != 0 || !clicked(mouseX, mouseY)) {
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        // Left button only, asked through vanilla's own definition (`button() == 1` on SDL, where the
+        // old constant was 0 on GLFW) rather than a literal that silently means another finger.
+        if (!active || !visible || !isValidClickButton(event.buttonInfo())
+                || !isMouseOver(event.x(), event.y())) {
             return false;
         }
         held = true;
@@ -795,11 +793,12 @@ public class ArmatureButton extends AbstractWidget {
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
         boolean wasHeld = held;
         held = false;
 
-        if (wasHeld && active && visible && button == 0 && clicked(mouseX, mouseY)) {
+        if (wasHeld && active && visible && isValidClickButton(event.buttonInfo())
+                && isMouseOver(event.x(), event.y())) {
             onPress.accept(this);
             return true;
         }
@@ -809,10 +808,11 @@ public class ArmatureButton extends AbstractWidget {
     }
 
     @Override
-    protected void onDrag(double mouseX, double mouseY, double dragX, double dragY) {
+    protected void onDrag(net.minecraft.client.input.MouseButtonEvent event, double dragX, double dragY) {
         // Dragging off the button cancels the press, which is the visual feedback that says letting go
-        // now will do nothing. The base class routes drags here from mouseDragged.
-        held = clicked(mouseX, mouseY);
+        // now will do nothing. The base class routes drags here from mouseDragged. (`clicked` used to
+        // fold active, visible and hover into one call; it is gone, so this says all three itself.)
+        held = active && visible && isMouseOver(event.x(), event.y());
     }
 
     /** Whether the pointer is down on this button. For a caller that needs to know. */

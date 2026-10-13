@@ -38,7 +38,7 @@ is how a caller checks before offering a control.
 Three questions sort out what a source is, before any control is drawn. `managesMembership()` asks
 whether the structural calls do anything at all; `supports(...)` asks about the six extras one by
 one; `firesEvents()` asks whether the source announces its own changes onto `TeamEvents` below.
-`name()` names the answer (`stored`, `ftbteams` or `openpartiesandclaims`), which is the string a
+`name()` names the answer (`stored` or `openpartiesandclaims`), which is the string a
 consumer prints when the operator asks "are these the parties I think they are".
 
 Party names are 1 to 32 characters. `TeamLimits.isValidName` runs where the name is written,
@@ -54,11 +54,11 @@ if (teams.supports(TeamFeature.RENAME)) { /* offer the pencil */ }
 ```
 
 `TeamFeature` names them: `RENAME`, `TRANSFER`, `POLICY`, `OPEN_JOIN`, `INVITE_DECLINE`,
-`INVITE_CANCEL`. The stored manager supports all six. **Both foreign sources answer `false` for every
+`INVITE_CANCEL`. The stored manager supports all six. **The foreign source answers `false` for every
 one of them**, so a panel asks rather than assumes, and hides the control rather than drawing a button
 whose only possible outcome is the refusal message. That answer is about the extras, not about
 membership itself: Open Parties and Claims manages its own parties through this API and honours the
-structural calls, while FTB Teams is read-only here, its six mutators the interface's refusing
+structural calls, but is read-only here, its six mutators taking the interface's refusing
 defaults.
 
 - `invite(actor, team, player)` is the actor-aware form: the permission is `Team.canInvite`, which
@@ -88,20 +88,19 @@ control are one answer.
 
 `Teams.of(server)` resolves in order, and remembers its answer for that server:
 
-1. **A provider a mod registered explicitly**: the escape hatch, and the reason FTB Teams' classes
-   are never loaded to ask whether FTB Teams is installed.
-2. **FTB Teams**, if it is loaded and its manager is up and it holds at least one party.
-3. **Open Parties and Claims**, under the same three conditions.
-4. **Armature's own stored teams**: world-persisted, and the fallback that makes every server work,
-   including the ones with neither optional mod installed.
+1. **A provider a mod registered explicitly**: the escape hatch, and the reason OPAC's classes
+   are never loaded to ask whether OPAC is installed.
+2. **Open Parties and Claims**, if it is loaded and its manager is up and it holds at least one party.
+3. **Armature's own stored teams**: world-persisted, and the fallback that makes every server work,
+   including the ones with the optional mod not installed.
 
-"Holds at least one party" is not a detail. FTB Teams gives every player a permanent solo team on
-first join, so resolving to it just because it is loaded would mean every player reads as being in a
-party of one, and on a server where nobody has formed one, that is worse than the fallback.
+"Holds at least one party" is not a detail. Resolving to a source just because it is loaded would
+mean every player reads as being in a party of one on a server where nobody has formed one, and
+that is worse than the fallback.
 
-FTB Teams and Open Parties and Claims are `compileOnly`: they are never in a jar and never in the
-published POM, and each adapter's class is loaded only behind an `isModLoaded` check. A server with
-neither loses nothing.
+Open Parties and Claims is `compileOnly`: it is never in a jar and never in the published POM, and
+its adapter's class is loaded only behind an `isModLoaded` check. A server without it loses
+nothing.
 
 > [!TIP]
 > Which source answered is not a mystery to guess at: the resolver logs it at boot, and a consumer can
@@ -132,8 +131,8 @@ and a file that could not be parsed is reported and left exactly as it was found
 startup. Armature never re-reads it on its own: a second `install` (a consumer's own reload
 command) takes effect at the next check rather than at the next server.
 
-It applies to Armature's own stored parties, and only those. A server whose parties come from FTB
-Teams or Open Parties and Claims gets that mod's limits and its own defaults, and this file is not
+It applies to Armature's own stored parties, and only those. A server whose parties come from
+Open Parties and Claims gets that mod's limits and its own defaults, and this file is not
 consulted for them. A consumer that sends the effective number to its clients gets a panel whose `3/8`
 header and the server's refusal come from one number rather than two expressions that agree today:
 `memberLimit()` is that number, and `PartyRoster.fromParts(..., memberLimit)` is where it lands.

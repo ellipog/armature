@@ -3,17 +3,19 @@ package dev.ellipog.armature.neoforge;
 import dev.ellipog.armature.api.energy.EnergyAccess;
 
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.transfer.access.ItemAccess;
+import net.neoforged.neoforge.transfer.energy.EnergyHandler;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 
 /**
- * NeoForge's stored energy: batteries, capacitors and charged tools through the energy-storage
+ * NeoForge's stored energy: batteries, capacitors and charged tools through the transfer energy
  * item capability, over every slot the inventory reports — armour included, where jetpacks live.
  *
  * <p>Each item contributes no more than {@code maxPerItem} when that is positive, in both
  * directions: the measurement caps and the drain caps in the same slot order, so what one counted
- * is what the other takes.
+ * is what the other takes. Reads are plain getters; the drain opens one transaction on first
+ * successful extraction and commits it once, mirroring the Fabric twin exactly.
  *
  * <p>Fabric's twin reads the same slots through Team Reborn Energy's item lookup and caps the
  * same way; what the two promise each other is written on {@link EnergyAccess}.
@@ -25,15 +27,15 @@ public final class NeoForgeEnergy implements EnergyAccess {
         long found = 0;
         var inventory = player.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty()) {
+            if (inventory.getItem(slot).isEmpty()) {
                 continue;
             }
-            IEnergyStorage storage = stack.getCapability(Capabilities.EnergyStorage.ITEM);
-            if (storage == null) {
+            EnergyHandler handler =
+                    ItemAccess.forPlayerSlot(player, slot).getCapability(Capabilities.Energy.ITEM);
+            if (handler == null) {
                 continue;
             }
-            int stored = storage.getEnergyStored();
+            long stored = handler.getAmountAsLong();
             found += maxPerItem > 0 ? Math.min(stored, maxPerItem) : stored;
         }
         return (int) Math.min(found, Integer.MAX_VALUE);
@@ -44,25 +46,46 @@ public final class NeoForgeEnergy implements EnergyAccess {
         if (amount <= 0) {
             return 0;
         }
-        int remaining = amount;
+        long remaining = amount;
         var inventory = player.getInventory();
-        for (int slot = 0; slot < inventory.getContainerSize() && remaining > 0; slot++) {
-            ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty()) {
-                continue;
+        // Opened on first successful extraction rather than up front: a drain that finds nothing
+        // stored pays no transaction at all, and the common case on a server without a single
+        // charged item is exactly that. Committed once iff opened, so the all-or-nothing
+        // semantics are unchanged -- extraction still lands or it all aborts together.
+        Transaction transaction = null;
+        try {
+            for (int slot = 0; slot < inventory.getContainerSize() && remaining > 0; slot++) {
+                if (inventory.getItem(slot).isEmpty()) {
+                    continue;
+                }
+                EnergyHandler handler =
+                        ItemAccess.forPlayerSlot(player, slot).getCapability(Capabilities.Energy.ITEM);
+                if (handler == null) {
+                    continue;
+                }
+                long capped = maxPerItem > 0
+                        ? Math.min(handler.getAmountAsLong(), maxPerItem)
+                        : handler.getAmountAsLong();
+                if (capped <= 0) {
+                    continue;
+                }
+                if (transaction == null) {
+                    transaction = Transaction.openRoot();
+                }
+                remaining -= handler.extract((int) Math.min(remaining, capped), transaction);
             }
-            IEnergyStorage storage = stack.getCapability(Capabilities.EnergyStorage.ITEM);
-            if (storage == null) {
-                continue;
+            if (transaction != null) {
+                transaction.commit();
             }
-            int capped = maxPerItem > 0
-                    ? Math.min(storage.getEnergyStored(), maxPerItem)
-                    : storage.getEnergyStored();
-            remaining -= storage.extractEnergy(Math.min(remaining, capped), false);
+        }
+        finally {
+            if (transaction != null) {
+                transaction.close();
+            }
         }
         if (remaining != amount) {
             inventory.setChanged();
         }
-        return amount - remaining;
+        return (int) (amount - remaining);
     }
 }

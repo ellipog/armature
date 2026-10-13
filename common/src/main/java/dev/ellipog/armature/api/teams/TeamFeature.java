@@ -9,7 +9,7 @@ package dev.ellipog.armature.api.teams;
  * works because every source either writes all six structural operations or none. The operations
  * this enum names are different: they are the ones a foreign parties mod may implement some of.
  * Open Parties and Claims can invite and kick but <b>cannot rename</b> a party — its public API has
- * no setter — and FTB Teams is read-only here by design. Forcing every adapter to declare
+ * no setter — and is read-only here by design. Forcing every adapter to declare
  * {@code rename} and throw would turn "cannot" into a runtime surprise, which is the shape the
  * existing interfaces exist to avoid.
  *
