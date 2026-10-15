@@ -44,6 +44,11 @@ public final class FabricClient implements ClientModInitializer {
     private static final class FabricKeyMappings implements KeyMappingBackend {
 
         private final List<Bound> bound = new ArrayList<>();
+        // One Category per id: `KeyMapping.Category.register` throws on a duplicate (a mod
+        // with two keys in one group, like Tenet's book + HUD editor, declares the same id
+        // twice), so the first declaration wins and the rest reuse it. Same keep-first shape
+        // as the networking install.
+        private final java.util.Map<Identifier, KeyMapping.Category> categories = new java.util.HashMap<>();
 
         private record Bound(KeyMapping mapping, Runnable onPress) {
         }
@@ -57,7 +62,7 @@ public final class FabricClient implements ClientModInitializer {
                     ArmatureClient.translationKey(id),
                     InputConstants.Type.KEYBOARD,
                     defaultKeyCode,
-                    KeyMapping.Category.register(category));
+                    categories.computeIfAbsent(category, KeyMapping.Category::register));
             KeyMappingHelper.registerKeyMapping(mapping);
             bound.add(new Bound(mapping, onPress));
         }

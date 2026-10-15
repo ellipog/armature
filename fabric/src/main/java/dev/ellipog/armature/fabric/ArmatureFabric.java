@@ -16,8 +16,21 @@ import net.fabricmc.api.ModInitializer;
  */
 public final class ArmatureFabric implements ModInitializer {
 
+    /**
+     * Whether this entry point has run. It can run twice: the loader invokes it once, and a
+     * dependent whose {@code main} runs first triggers it early through the loader rather
+     * than reading an uninstalled platform (see {@link ArmatureApi} for why that order
+     * happens). The second call — whichever caller it is — returns here, so events are
+     * attached once, config is read once, and the install below runs exactly once.
+     */
+    private static boolean initialised;
+
     @Override
     public void onInitialize() {
+        if (initialised) {
+            return;
+        }
+        initialised = true;
         ArmatureApi.install(new FabricPlatform(), new FabricRegistrar(Constants.MOD_ID));
         FabricEvents.attach();
         Armature.init();

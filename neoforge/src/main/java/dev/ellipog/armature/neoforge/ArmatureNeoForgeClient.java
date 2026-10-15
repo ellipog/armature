@@ -63,6 +63,10 @@ public final class ArmatureNeoForgeClient {
 
         private final List<Request> queue = new ArrayList<>();
         private final List<Bound> bound = new ArrayList<>();
+        // One Category per id: `KeyMapping.Category.register` throws on a duplicate, and a
+        // mod with two keys in one group declares the same id twice — so the first wins and
+        // the rest reuse it, same keep-first shape as the Fabric half.
+        private final java.util.Map<Identifier, KeyMapping.Category> categories = new java.util.HashMap<>();
 
         private record Request(Identifier id, int defaultKeyCode, Identifier category, Runnable onPress) {
         }
@@ -80,7 +84,7 @@ public final class ArmatureNeoForgeClient {
                         ArmatureClient.translationKey(request.id()),
                         InputConstants.Type.KEYBOARD,
                         request.defaultKeyCode(),
-                        KeyMapping.Category.register(request.category()));
+                        categories.computeIfAbsent(request.category(), KeyMapping.Category::register));
                 event.register(mapping);
                 bound.add(new Bound(mapping, request.onPress()));
             }

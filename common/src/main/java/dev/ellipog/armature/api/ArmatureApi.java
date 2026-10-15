@@ -14,8 +14,12 @@ import dev.ellipog.armature.api.registry.Registrar;
  * }</pre>
  *
  * <p>{@link #install} is Armature's own business. It is called by Armature's entry point for
- * each loader, which runs before any other mod's code, so the accessors are always ready by
- * the time your mod's entry point runs.
+ * each loader, and by nothing else. On Fabric the entry point also tolerates being run twice:
+ * {@code main} order between mods is not dependency-ordered (loader 0.19 runs a dependent's
+ * {@code main} before its dependency's, nondeterministically — observed both ways across
+ * back-to-back boots on the same thread and classloader), so a dependent triggers Armature's
+ * entry point early through the loader when it has not run yet, and the loader's own later
+ * call becomes a no-op. Either order works, and neither can install twice.
  */
 public final class ArmatureApi {
 
@@ -37,6 +41,11 @@ public final class ArmatureApi {
         }
         ArmatureApi.platform = platform;
         ArmatureApi.registrar = registrar;
+    }
+
+    /** Whether a loader has installed its platform yet — the entry point's fallback check. */
+    public static boolean isInstalled() {
+        return platform != null;
     }
 
     /**
