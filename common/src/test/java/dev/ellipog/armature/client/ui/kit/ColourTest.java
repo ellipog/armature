@@ -161,4 +161,35 @@ class ColourTest {
         // invisible fill wants to skip one that truly draws nothing.
         assertFalse(Colour.invisible(Colour.alphaOf(0xFF000000, 1 / 255F)));
     }
+
+    @Test
+    @DisplayName("over() with a transparent source changes nothing")
+    void overTransparentSourceIsDst() {
+        assertEquals(0xFF445566, Colour.over(0xFF445566, 0x00000000),
+                "nothing over something is the something");
+    }
+
+    @Test
+    @DisplayName("over() with an opaque source replaces")
+    void overOpaqueSourceReplaces() {
+        assertEquals(0xFF000000, Colour.over(0xFF445566, 0xFF000000),
+                "something opaque over anything is the something");
+    }
+
+    @Test
+    @DisplayName("over() composites a wash over its panel, which is the node merge")
+    void overWashOverPanel() {
+        // The case the merge exists for, worked by hand: 0x9C (156) of black over opaque
+        // 0x44/0x55/0x66 keeps 156/255 of black and 99/255 of the panel per channel.
+        // R: 68*99/255 = 26.4 -> 26; G: 85*99/255 = 33.0 -> 33; B: 102*99/255 = 39.6 -> 40.
+        assertEquals(0xFF1A2128, Colour.over(0xFF445566, 0x9C000000),
+                "a 61% black wash over 0x445566");
+    }
+
+    @Test
+    @DisplayName("over() with no backdrop keeps the source's own coverage")
+    void overHalfOverNothing() {
+        assertEquals(0x80808080, Colour.over(0x00000000, 0x80808080),
+                "coverage with no backdrop is the source's own");
+    }
 }

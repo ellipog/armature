@@ -60,6 +60,42 @@ public final class Colour {
     }
 
     /**
+     * {@code src} over {@code dst}: the Porter-Duff source-over the GPU does when one translucent
+     * fill is drawn over another, worked out on the CPU so the two can be drawn as one.
+     *
+     * <p>Over is associative: drawing {@code over(dst, src)} as a single fill shows what drawing
+     * {@code dst} and then {@code src} shows, to a rounding unit — which is what makes merging a
+     * wash into the panel beneath it a smaller frame rather than a different picture. Per-channel
+     * in sRGB like {@link #lerp}, for the same reason.
+     *
+     * @return {@code dst} when {@code src} is transparent, {@code src} when it is opaque
+     */
+    public static int over(int dst, int src) {
+        int sa = alpha(src);
+        if (sa <= 0) {
+            return dst;
+        }
+        if (sa >= 255) {
+            return src;
+        }
+        int da = alpha(dst);
+        int inv = 255 - sa;
+        int outA = sa + (da * inv + 127) / 255;
+        if (outA <= 0) {
+            return 0;
+        }
+        int outR = channel((src >> 16) & 0xFF, (dst >> 16) & 0xFF, sa, da, inv, outA);
+        int outG = channel((src >> 8) & 0xFF, (dst >> 8) & 0xFF, sa, da, inv, outA);
+        int outB = channel(src & 0xFF, dst & 0xFF, sa, da, inv, outA);
+        return (outA << 24) | (outR << 16) | (outG << 8) | outB;
+    }
+
+    /** One channel of {@link #over}: each contribution weighted by its coverage, over their sum. */
+    private static int channel(int src, int dst, int sa, int da, int inv, int outA) {
+        return (src * sa + (dst * da * inv + 127) / 255 + outA / 2) / outA;
+    }
+
+    /**
      * A blend between two colours: {@code t == 0} gives {@code from}, {@code t == 1} gives {@code to}.
      *
      * <p>{@code t} is clamped, which is what makes this safe to hand an {@link Easing#BACK_OUT} result.
