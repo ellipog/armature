@@ -6,9 +6,6 @@ reader, event, network, and team APIs, plus a game-free client toolkit.
 Standalone: nothing in it is specific to any one consumer. Install it on its own or
 beside any mod that needs it.
 
-> **Before its first stable release.** The API may still break, so read the release
-> notes before upgrading.
-
 ## Why Armature
 
 - **[One game-free renderer seam](https://ellipog.dev/docs/armature/toolkit).** Every draw call goes through `GuiRenderer`, so UI is unit-tested in milliseconds instead of eyeballed in screenshots.
