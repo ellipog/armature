@@ -19,6 +19,7 @@
         "-Dfml.modFolders\u003darmature%%C:\\Users\\Ellio\\Documents\\GitHub\\minecraft\\armature\\neoforge\\bin\\main"
       ],
       "cwd": "${workspaceFolder}\\neoforge\\run",
+      "env": {},
       "console": "internalConsole",
       "shortenCommandLine": "none"
     },
@@ -40,6 +41,7 @@
         "-Dfml.modFolders\u003darmature%%C:\\Users\\Ellio\\Documents\\GitHub\\minecraft\\armature\\neoforge\\bin\\main"
       ],
       "cwd": "${workspaceFolder}\\neoforge\\run",
+      "env": {},
       "console": "internalConsole",
       "shortenCommandLine": "none"
     },
@@ -61,6 +63,7 @@
         "-Dfml.modFolders\u003darmature%%C:\\Users\\Ellio\\Documents\\GitHub\\minecraft\\armature\\neoforge\\bin\\main"
       ],
       "cwd": "${workspaceFolder}\\neoforge\\run",
+      "env": {},
       "console": "internalConsole",
       "shortenCommandLine": "none"
     }
