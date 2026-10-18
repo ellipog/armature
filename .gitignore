@@ -35,5 +35,8 @@ run
 runs
 
 # Test-server logs. A headless run writes these, so tracking them dirties the tree on every test --
-# the same fault as build-output.txt above, one directory over.
+# the same fault as build-output.txt above, one directory over. Every module's, not just common's:
+# a loader-specific run writes beside that loader.
 common/logs/
+neoforge/logs/
+fabric/logs/

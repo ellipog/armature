@@ -124,20 +124,21 @@ public final class ArmatureNetwork {
     /**
      * Declares a payload.
      *
-     * <p>Call during mod construction on both sides, <b>before</b> {@link #install} — because install
-     * reads this list and registers what it finds. A payload declared afterwards is one the loader
-     * never hears about, which fails as a disconnect on first send rather than as an error here, so
-     * registration after install is refused outright.
+     * <p>Call during mod construction on both sides, <b>before</b> {@link #install} — install
+     * registers everything declared so far, and declaring first keeps the wiring legible. A
+     * declare that lands after another mod's install is still honoured: entrypoint order
+     * between mods is the loader's business (Fabric runs them unordered), so it forwards
+     * straight to the installed backend instead of dying. The loader accepts payload types
+     * throughout init; a declare after play starts is the backend's to refuse, not this
+     * list's.
      */
     public static <T extends CustomPacketPayload> void register(Registration<T> registration) {
         Objects.requireNonNull(registration, "registration");
-        if (backend != null) {
-            throw new IllegalStateException("Declare " + registration.type().id()
-                    + " during mod construction, before ArmatureNetwork.install. Declaring it later "
-                    + "means the loader never registers it, and the first send disconnects.");
-        }
         REGISTRATIONS.add(registration);
         BY_ID.putIfAbsent(registration.type().id(), registration);
+        if (backend != null) {
+            installOne(backend, registration);
+        }
     }
 
     /**
