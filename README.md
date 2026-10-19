@@ -17,7 +17,8 @@ beside any mod that needs it.
 ## Using it
 
 Drop the jar in `mods/`, on either loader. Fabric also needs Fabric API. See the
-Modrinth page for the supported Minecraft version.
+[CurseForge page](https://www.curseforge.com/minecraft/mc-mods/armature-lib) for the
+supported Minecraft versions and loaders.
 
 For mod developers: compile against the published artifact (see the releases page —
 it follows the shape `dev.ellipog:armature-common-<minecraft-line>:<release>` on
