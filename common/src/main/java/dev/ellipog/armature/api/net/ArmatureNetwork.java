@@ -4,7 +4,10 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -222,6 +225,41 @@ public final class ArmatureNetwork {
             return;
         }
         installed.sendToServer(payload);
+    }
+
+    /**
+     * Sends a payload to the players tracking an entity, and to the entity itself when it is a
+     * player.
+     *
+     * <p>Server side. This is the "everyone who can see this" send, which is the right scope for
+     * per-entity state: a dimension-wide broadcast sends every shape to everyone and is the fault
+     * this method exists to avoid. {@code PlayerLookup.tracking} on Fabric excludes the player
+     * themselves, so the self leg is added by the backend; NeoForge's one call includes it.
+     *
+     * <p>Silently does nothing when the loader has not installed its networking, as
+     * {@link #sendToPlayer} does.
+     */
+    public static void sendToTracking(Entity entity, CustomPacketPayload payload) {
+        NetworkBackend installed = backend;
+        if (installed == null) {
+            return;
+        }
+        installed.sendToTracking(entity, payload);
+    }
+
+    /**
+     * Sends a payload to every player within {@code radius} of one point.
+     *
+     * <p>Server side. For a sound or a shake whose audible range is smaller than the dimension,
+     * which is why the radius is the caller's: vanilla's own sound range rule is what decides it.
+     */
+    public static void sendNear(ServerLevel level, Vec3 at, double radius,
+                                CustomPacketPayload payload) {
+        NetworkBackend installed = backend;
+        if (installed == null) {
+            return;
+        }
+        installed.sendNear(level, at, radius, payload);
     }
 
     /** The payload declared under an id, if any. Diagnostics. */

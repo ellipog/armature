@@ -1,7 +1,13 @@
 package dev.ellipog.armature.api.config;
 
 import dev.ellipog.armature.Constants;
+import dev.ellipog.armature.api.data.Checks;
+import dev.ellipog.armature.api.data.DataProblem;
+import dev.ellipog.armature.api.data.JsonDocument;
+import dev.ellipog.armature.api.data.JsonLocation;
+import dev.ellipog.armature.api.data.JsonParseException;
 import dev.ellipog.armature.api.data.JsonWrite;
+import dev.ellipog.armature.api.data.Problems;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -11,6 +17,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -149,6 +160,267 @@ public final class ArmatureConfig {
      */
     public static void reset() {
         current = DEFAULTS;
+    }
+
+    // ------------------------------------------------------------------
+    // A consumer's own settings file
+    // ------------------------------------------------------------------
+
+    /**
+     * Reads a consumer's own settings file, with the same tolerance and the same refusal to
+     * rewrite a file it did not write.
+     *
+     * <p>This is the generic half of this class. Armature's own settings are one file with one
+     * holder because there is one Armature per process; a mod built on Armature owns its own file
+     * and its own holder, so it needs the reader and not the holder. The path is the caller's,
+     * which is the rule {@code check_library.py} enforces: a library that chooses where a
+     * consumer's configuration lives is a library holding a choice.
+     *
+     * <p>When the file is absent it is written from {@code defaultJson}, so an operator has every
+     * key in front of them rather than a documentation page to translate. When it is present it is
+     * read and never rewritten, even when it is broken, because a silent repair would delete the
+     * evidence along with the typo.
+     *
+     * <p>Nothing here is fatal. A missing, unreadable or malformed file returns a document whose
+     * {@link Document#usable()} is false and whose {@link Document#problems()} says why; the
+     * caller keeps whatever it had in force. That shape is deliberate: a reload that cannot read
+     * the file must leave the previous settings alone, and a caller that wanted an exception could
+     * not tell "the file is gone" from "the disk failed".
+     *
+     * @param file        the file to read, usually {@code config/<mod>.json}
+     * @param defaultJson the complete text to write when the file is absent
+     */
+    public static Document document(Path file, String defaultJson) {
+        return Document.load(file, defaultJson);
+    }
+
+    /**
+     * A typed view over a parsed settings object.
+     *
+     * <p>For a caller that already has a tree, such as a test or a synced copy, and for
+     * {@link Document#values()}. It has no file and no defaults: absent keys are absent, which is
+     * how the caller knows to keep its previous value.
+     */
+    public static Values values(JsonObject root, String name) {
+        Objects.requireNonNull(root, "root");
+        return new Values(name, root, null, new Problems());
+    }
+
+    /**
+     * A settings file, parsed as far as it could be.
+     *
+     * <p>{@link #usable()} is false for a missing file that could not be written, a file that is
+     * not valid JSON, and a root that is not an object. {@link #values()} is always present so a
+     * caller can read defaults from it without a null check, but a caller that applies the file
+     * must check {@code usable()} first or it would silently apply an empty document over its
+     * previous values.
+     */
+    public static final class Document {
+
+        private final Path file;
+        private final Values values;
+        private final Problems problems;
+        private final boolean usable;
+
+        private Document(Path file, Values values, Problems problems, boolean usable) {
+            this.file = file;
+            this.values = values;
+            this.problems = problems;
+            this.usable = usable;
+        }
+
+        static Document load(Path file, String defaultJson) {
+            Objects.requireNonNull(file, "file");
+            Objects.requireNonNull(defaultJson, "defaultJson");
+
+            Problems problems = new Problems();
+            String name = file.toString();
+
+            if (!Files.isRegularFile(file)) {
+                try {
+                    JsonWrite.atomically(file, defaultJson);
+                    Constants.LOG.info("wrote the default settings to {}", file);
+                }
+                catch (IOException | RuntimeException e) {
+                    problems.add(name, new JsonLocation(1, 1, "$"),
+                            DataProblem.Severity.ERROR,
+                            "the file is absent and the defaults could not be written: " + e);
+                    return empty(file, problems);
+                }
+            }
+
+            String source;
+            try {
+                source = Files.readString(file, StandardCharsets.UTF_8);
+            }
+            catch (IOException | RuntimeException e) {
+                problems.add(name, new JsonLocation(1, 1, "$"),
+                        DataProblem.Severity.ERROR, "the file could not be read: " + e);
+                return empty(file, problems);
+            }
+
+            JsonDocument document;
+            try {
+                document = JsonDocument.parse(name, source);
+            }
+            catch (JsonParseException e) {
+                // Reported at the position the parser found. The file is left exactly as it is:
+                // a half-finished edit belongs to whoever is making it.
+                problems.add(name, e.location(), DataProblem.Severity.ERROR, e.detail());
+                return empty(file, problems);
+            }
+
+            if (!document.root().isJsonObject()) {
+                problems.add(document, "$", DataProblem.Severity.ERROR,
+                        "expected a JSON object at the top level, found "
+                                + Checks.kindOf(document.root()));
+                return empty(file, problems);
+            }
+
+            Values values = new Values(name, document.root().getAsJsonObject(), document, problems);
+            return new Document(file, values, problems, true);
+        }
+
+        private static Document empty(Path file, Problems problems) {
+            Values values = new Values(file.toString(), new JsonObject(), null, problems);
+            return new Document(file, values, problems, false);
+        }
+
+        /** The file this document came from. */
+        public Path file() {
+            return file;
+        }
+
+        /** Whether the file parsed to a JSON object. */
+        public boolean usable() {
+            return usable;
+        }
+
+        /** The typed view. Never null; see {@link #usable()} before applying it. */
+        public Values values() {
+            return values;
+        }
+
+        /** Everything wrong with the file, with line and column where the parser knew them. */
+        public Problems problems() {
+            return problems;
+        }
+    }
+
+    /**
+     * Typed reads over one settings object.
+     *
+     * <p>Each read answers empty for an absent key, and reports a problem for a present key of
+     * the wrong type or outside its bounds. Empty is the important half: it is what lets a caller
+     * keep its previous value on a bad line rather than overwrite it with a default. The caller
+     * owns the defaults; this class owns the shape check and the message.
+     */
+    public static final class Values {
+
+        private final String name;
+        private final JsonObject root;
+        private final JsonDocument document;
+        private final Problems problems;
+
+        private Values(String name, JsonObject root, JsonDocument document, Problems problems) {
+            this.name = name;
+            this.root = root;
+            this.document = document;
+            this.problems = problems;
+        }
+
+        /** The file or object name used in messages. */
+        public String name() {
+            return name;
+        }
+
+        public boolean has(String key) {
+            return root.has(key);
+        }
+
+        /** Every key present, in file order. For a caller that reports unknown keys itself. */
+        public Set<String> keys() {
+            return Collections.unmodifiableSet(new LinkedHashSet<>(root.keySet()));
+        }
+
+        /** The raw value, for a field whose shape belongs to the caller. */
+        public Optional<JsonElement> raw(String key) {
+            return Optional.ofNullable(root.get(key));
+        }
+
+        /** A boolean, or empty when absent or not a boolean. */
+        public Optional<Boolean> bool(String key) {
+            JsonElement element = root.get(key);
+            if (element == null) {
+                return Optional.empty();
+            }
+            if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isBoolean()) {
+                problem(key, "expected true or false, found " + Checks.kindOf(element));
+                return Optional.empty();
+            }
+            return Optional.of(element.getAsBoolean());
+        }
+
+        /**
+         * A finite number inside {@code [min, max]}, or empty when absent, not a number, or out
+         * of bounds. The bound is reported rather than clamped: a config's edge is a value the
+         * operator asked for, and silently reading 200 as 16 would claim a setting they did not
+         * choose.
+         */
+        public Optional<Float> number(String key, float min, float max) {
+            JsonElement element = root.get(key);
+            if (element == null) {
+                return Optional.empty();
+            }
+            if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
+                problem(key, "expected a number, found " + Checks.kindOf(element));
+                return Optional.empty();
+            }
+            float value = element.getAsFloat();
+            if (!Float.isFinite(value) || value < min || value > max) {
+                problem(key, "must be between " + min + " and " + max + ", found " + element);
+                return Optional.empty();
+            }
+            return Optional.of(value);
+        }
+
+        /** A whole number inside {@code [min, max]}, or empty when absent or of the wrong shape. */
+        public OptionalInt integer(String key, int min, int max) {
+            JsonElement element = root.get(key);
+            if (element == null) {
+                return OptionalInt.empty();
+            }
+            if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
+                problem(key, "expected a whole number, found " + Checks.kindOf(element));
+                return OptionalInt.empty();
+            }
+            double raw = element.getAsDouble();
+            if (!Double.isFinite(raw) || raw != Math.rint(raw)
+                    || raw < min || raw > max) {
+                problem(key, "must be a whole number between " + min + " and " + max
+                        + ", found " + element);
+                return OptionalInt.empty();
+            }
+            return OptionalInt.of((int) raw);
+        }
+
+        /** The problems reported by the reads so far. */
+        public Problems problems() {
+            return problems;
+        }
+
+        private void problem(String key, String message) {
+            String path = "$." + key;
+            if (document != null) {
+                problems.add(document, path, DataProblem.Severity.ERROR, message);
+            }
+            else {
+                // No parsed document, so no line to point at. The key is the useful half of the
+                // position, and a synthetic first line is still better than dropping the message.
+                problems.add(name, new JsonLocation(1, 1, path),
+                        DataProblem.Severity.ERROR, message);
+            }
+        }
     }
 
     /**

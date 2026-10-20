@@ -3,7 +3,11 @@ package dev.ellipog.armature.api.platform;
 import java.nio.file.Path;
 import java.util.Optional;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Everything that genuinely differs between Fabric and NeoForge, behind one interface.
@@ -75,6 +79,20 @@ public interface ArmaturePlatform {
 
     /** The config folder, which every loader puts at {@code gameDir/config}. */
     Path configDir();
+
+    /**
+     * Whether an entity may break a block here right now.
+     *
+     * <p>Claims, spawn protection and mob griefing are loader questions: Fabric's
+     * {@code PlayerBlockBreakEvents.BEFORE}, NeoForge's {@code BreakBlockEvent}, and each
+     * loader's own grief hooks. Vanilla names none of them, so common code cannot answer this
+     * alone. A caller that breaks blocks on an entity's behalf asks here first; a false answer
+     * means the break is somebody else's to make.
+     *
+     * <p>The player's own {@code mayBuild} and the level's {@code mayInteract} are part of the
+     * answer, so an adventure-mode player and a spawn-protected one are both refused.
+     */
+    boolean mayBreak(ServerLevel level, BlockPos pos, BlockState state, LivingEntity breaker);
 
     /**
      * A folder for this mod inside the config folder. Not created — call

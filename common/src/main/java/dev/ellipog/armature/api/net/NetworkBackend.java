@@ -1,7 +1,10 @@
 package dev.ellipog.armature.api.net;
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * The loader's networking, reduced to the three things Armature needs.
@@ -28,6 +31,37 @@ public interface NetworkBackend {
 
     /** Sends a payload to one player. Only ever called on the server. */
     void sendToPlayer(ServerPlayer player, CustomPacketPayload payload);
+
+    /**
+     * Sends a payload to the players tracking an entity, and to a player entity itself.
+     *
+     * <p>The default is a correct but broader send: every player in the entity's level. That is
+     * the shape the old hand-rolled seams had, and it keeps an existing backend source-compatible
+     * when it does not care about the scope. A loader backend that does care overrides this with
+     * its own tracking lookup.
+     */
+    default void sendToTracking(Entity entity, CustomPacketPayload payload) {
+        if (entity.level() instanceof ServerLevel level) {
+            for (ServerPlayer player : level.players()) {
+                sendToPlayer(player, payload);
+            }
+        }
+    }
+
+    /**
+     * Sends a payload to every player within {@code radius} of {@code at}.
+     *
+     * <p>The default is the same distance test over the level's players; a loader backend may
+     * override it with a cheaper one. The test is inclusive, matching the radius rule callers use.
+     */
+    default void sendNear(ServerLevel level, Vec3 at, double radius, CustomPacketPayload payload) {
+        double radiusSquared = radius * radius;
+        for (ServerPlayer player : level.players()) {
+            if (player.position().distanceToSqr(at) <= radiusSquared) {
+                sendToPlayer(player, payload);
+            }
+        }
+    }
 
     /** Sends a payload to the server. Only ever called on a client. */
     void sendToServer(CustomPacketPayload payload);

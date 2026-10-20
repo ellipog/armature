@@ -24,6 +24,7 @@ vanilla equivalent:
 | `isClient()` | Whether this is a client. On a dedicated server, `false`. |
 | `isDevelopmentEnvironment()`, `environmentName()` | Whether this is a development environment rather than a player's install, and that answer as the word `development` or `production`. |
 | `gameDir()`, `configDir()`, `configDir(child)` | The instance folder, the config folder, and a folder inside config. |
+| `mayBreak(level, pos, state, breaker)` | Whether an entity may break a block here now: a player's own build permission, spawn protection, then the loader's break event and grief rules. |
 
 > [!WARNING]
 > Anything that touches `net.minecraft.client.*` must be unreachable behind `isClient()`. On a server
@@ -116,9 +117,38 @@ ArmatureNetwork.register(new ArmatureNetwork.Registration<>(
 `Direction` is `TO_CLIENT`, `TO_SERVER` or `BIDIRECTIONAL`, and the constructor refuses a registration
 missing a handler for a direction it travels: a payload that arrives and does nothing is silent at
 runtime and reads as a bug in whatever was supposed to fire. Send with
-`ArmatureNetwork.sendToPlayer(player, payload)` and `sendToServer(payload)`; `isInstalled()`,
+`ArmatureNetwork.sendToPlayer(player, payload)`, `sendToTracking(entity, payload)` for everyone who
+can see an entity (including a player themselves), `sendNear(level, at, radius, payload)` for a sound
+or a shake with a smaller range than the dimension, and `sendToServer(payload)`. A backend that does
+not override the two scoped sends falls back to every player in the level, which is correct but
+broader; a loader backend that cares about the scope overrides them. `isInstalled()`,
 `registeredCount()`, `registrations()` and `byId(id)` answer what is registered, which is what a
 second mod's payload problem is diagnosed with.
+
+## Settings files
+
+`ArmatureConfig` holds Armature's own teams file, and its generic half reads a mod's own file. The
+path is the caller's: a library that chooses where a consumer's configuration lives is a library
+holding a choice. When the file is absent it is written from the caller's default text; when it is
+present it is read and **never rewritten**, so a typo's evidence survives the report.
+
+```java
+ArmatureConfig.Document document =
+        ArmatureConfig.document(configDir.resolve("mymod.json"), DEFAULT_JSON);
+if (!document.usable()) {
+    document.problems().all().forEach(problem -> LOG.warn(problem.render()));
+    return;                                  // keep whatever was already in force
+}
+ArmatureConfig.Values values = document.values();
+boolean enabled = values.bool("enabled").orElse(true);
+float strength = values.number("strength", 0F, 4F).orElse(1F);
+```
+
+A read answers empty for an absent key and reports a problem for a present key of the wrong type or
+outside its bounds. Empty is what lets a caller keep its previous value on one bad line rather than
+reset the whole file. `Values.keys()` and `raw(key)` are there when a caller owns a field's shape and
+wants to report keys it does not know. A malformed file, or one whose root is not an object, leaves
+`usable()` false and its `problems()` saying where and why.
 
 ## Client seams
 

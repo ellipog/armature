@@ -3,11 +3,19 @@ package dev.ellipog.armature.neoforge;
 import dev.ellipog.armature.api.platform.ArmaturePlatform;
 import dev.ellipog.armature.api.platform.PlatformKind;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.EventHooks;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 
 import java.nio.file.Path;
 import java.util.Optional;
@@ -60,5 +68,18 @@ public final class NeoForgePlatform implements ArmaturePlatform {
     @Override
     public Path configDir() {
         return FMLPaths.CONFIGDIR.get();
+    }
+
+    @Override
+    public boolean mayBreak(ServerLevel level, BlockPos pos, BlockState state, LivingEntity breaker) {
+        if (breaker instanceof Player player) {
+            if (!player.mayBuild() || !level.mayInteract(player, pos)) {
+                return false;
+            }
+            BreakBlockEvent event = new BreakBlockEvent(level, pos, state, player);
+            return !NeoForge.EVENT_BUS.post(event).isCanceled();
+        }
+        return EventHooks.canEntityGrief(level, breaker)
+                && EventHooks.onEntityDestroyBlock(breaker, pos, state);
     }
 }
