@@ -7,7 +7,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gamerules.GameRules;
 
 /**
  * Everything that genuinely differs between Fabric and NeoForge, behind one interface.
@@ -91,8 +93,16 @@ public interface ArmaturePlatform {
      *
      * <p>The player's own {@code mayBuild} and the level's {@code mayInteract} are part of the
      * answer, so an adventure-mode player and a spawn-protected one are both refused.
+     *
+     * <p>The default is the vanilla answer alone, with no loader events, so an implementation
+     * written against 1.0.0 (a test double, say) still compiles. Both loader platforms override it.
      */
-    boolean mayBreak(ServerLevel level, BlockPos pos, BlockState state, LivingEntity breaker);
+    default boolean mayBreak(ServerLevel level, BlockPos pos, BlockState state, LivingEntity breaker) {
+        if (breaker instanceof Player player) {
+            return player.mayBuild() && level.mayInteract(player, pos);
+        }
+        return level.getGameRules().get(GameRules.MOB_GRIEFING);
+    }
 
     /**
      * A folder for this mod inside the config folder. Not created — call
