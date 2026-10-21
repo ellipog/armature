@@ -1,12 +1,19 @@
 package dev.ellipog.armature.client.render;
 
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
+
 import dev.ellipog.armature.client.TextScale;
 import dev.ellipog.armature.client.ui.kit.Measure;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.navigation.ScreenRectangle;
+import net.minecraft.client.gui.render.TextureSetup;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.state.gui.GuiElementRenderState;
+import net.minecraft.client.renderer.state.gui.GuiRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.sprite.SpriteId;
@@ -15,11 +22,19 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ResolvableProfile;
 
+import org.joml.Matrix3x2fc;
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -38,10 +53,11 @@ import java.util.UUID;
  * keeps. The methods are short for that reason, and it is the property the seam is worth
  * having for.
  *
- * <p>Three things did not translate one-to-one, and each says so where it lives: batching is gone
- * (extraction preserves submission order, so {@link #flush} is a no-op and {@link #batched} calls
- * straight through), the tint travels as a colour argument rather than pipeline state, and the pose
- * is a 2D matrix stack rather than a {@code PoseStack}.
+ * <p>Three things did not translate one-to-one, and each says so where it lives: fill batching
+ * collapses consecutive rectangles inside {@link #batched} into one {@link GuiElementRenderState}
+ * submission (see {@link #batched} for why per-fill extraction is quadratic in {@code GuiRenderState}),
+ * the tint travels as a colour argument rather than pipeline state, and the pose is a 2D matrix
+ * stack rather than a {@code PoseStack}.
  *
  * <h2>Why a record</h2>
  *
@@ -67,6 +83,52 @@ import java.util.UUID;
  */
 public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiRenderer {
 
+    private static final MethodHandle GET_RENDER_STATE;
+    private static final MethodHandle PEEK_SCISSOR;
+
+    static {
+        MethodHandle getRenderState = null;
+        MethodHandle peekScissor = null;
+        try {
+            Field stateField = GuiGraphicsExtractor.class.getDeclaredField("guiRenderState");
+            stateField.setAccessible(true);
+            getRenderState = MethodHandles.lookup().unreflectGetter(stateField);
+
+            Field scissorField = GuiGraphicsExtractor.class.getDeclaredField("scissorStack");
+            scissorField.setAccessible(true);
+            Method peekMethod = scissorField.getType().getDeclaredMethod("peek");
+            peekMethod.setAccessible(true);
+            peekScissor = MethodHandles.filterReturnValue(
+                    MethodHandles.lookup().unreflectGetter(scissorField),
+                    MethodHandles.lookup().unreflect(peekMethod));
+        }
+        catch (ReflectiveOperationException ignored) {
+            // Falls back to per-fill submission if the extractor's internal layout changes.
+        }
+        GET_RENDER_STATE = getRenderState;
+        PEEK_SCISSOR = peekScissor;
+    }
+
+    /**
+     * The active batch's extractor and nesting depth on the client thread.
+     *
+     * <p>Static for the same reason 1.21.1's {@code BATCH_DEPTH} was: a screen holds both a plain
+     * {@code GuiGraphicsRenderer} and a {@code CountingRenderer} over the same extractor, and widgets
+     * drawn inside a screen's outer {@link #batched} pass construct their own
+     * {@code new GuiGraphicsRenderer(graphics)} wrappers. Keying the batch to the extractor on the
+     * client thread keeps nested regions and across-widget fills coherent without leaking state
+     * across frames.
+     */
+    private static GuiGraphicsExtractor batchOwner;
+    private static int batchDepth;
+    private static float[] batchVertices = new float[1024];
+    private static int[] batchColours = new int[128];
+    private static int batchQuads;
+    private static float batchMinX;
+    private static float batchMinY;
+    private static float batchMaxX;
+    private static float batchMaxY;
+
     public GuiGraphicsRenderer {
         Objects.requireNonNull(graphics, "graphics");
     }
@@ -76,43 +138,229 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         return Minecraft.getInstance().font;
     }
 
+    private static GuiRenderState renderStateOf(GuiGraphicsExtractor extractor) {
+        if (GET_RENDER_STATE == null) {
+            return null;
+        }
+        try {
+            return (GuiRenderState) GET_RENDER_STATE.invokeExact(extractor);
+        }
+        catch (Throwable unexpected) {
+            return null;
+        }
+    }
+
+    private static ScreenRectangle currentScissor(GuiGraphicsExtractor extractor) {
+        if (PEEK_SCISSOR == null) {
+            return null;
+        }
+        try {
+            return (ScreenRectangle) PEEK_SCISSOR.invokeExact(extractor);
+        }
+        catch (Throwable unexpected) {
+            return null;
+        }
+    }
+
+    private static void flushBatch(GuiGraphicsExtractor extractor) {
+        if (batchQuads == 0 || batchOwner != extractor) {
+            return;
+        }
+        int count = batchQuads;
+        float[] vertices = Arrays.copyOf(batchVertices, count * 8);
+        int[] colours = Arrays.copyOf(batchColours, count);
+        int minX = Mth.floor(batchMinX);
+        int minY = Mth.floor(batchMinY);
+        int maxX = Mth.ceil(batchMaxX);
+        int maxY = Mth.ceil(batchMaxY);
+        batchQuads = 0;
+
+        GuiRenderState renderState = renderStateOf(extractor);
+        if (renderState == null) {
+            return;
+        }
+        ScreenRectangle scissor = currentScissor(extractor);
+        ScreenRectangle rawBounds = new ScreenRectangle(minX, minY, maxX - minX, maxY - minY);
+        ScreenRectangle bounds = scissor != null ? scissor.intersection(rawBounds) : rawBounds;
+        if (bounds == null) {
+            return;
+        }
+        renderState.addGuiElement(new BatchedFillsRenderState(vertices, colours, count, scissor, bounds));
+    }
+
+    /**
+     * One {@link GuiElementRenderState} for a run of consecutive {@link #fill} calls inside
+     * {@link #batched}.
+     *
+     * <p>Every call to {@code GuiGraphicsExtractor#fill} otherwise allocates a pose copy, two
+     * {@code ScreenRectangle}s, four {@code Vector2f}s for bounds, and a
+     * {@code ColoredRectangleRenderState}, then walks {@code GuiRenderState}'s stratum node chain
+     * checking {@code ScreenRectangle#intersects} against every previously submitted element --
+     * quadratic on a canvas with ten thousand curve and conduit fills. Pre-transforming the four
+     * corners by the 2D pose when each rectangle is queued and emitting them in call order inside
+     * one element keeps the exact painter's order, respects {@link #turned}, and pays one node
+     * placement for the whole run.
+     */
+    private record BatchedFillsRenderState(
+            float[] vertices,
+            int[] colours,
+            int count,
+            ScreenRectangle scissorArea,
+            ScreenRectangle bounds) implements GuiElementRenderState {
+
+        @Override
+        public void buildVertices(VertexConsumer consumer) {
+            float[] verts = this.vertices;
+            int[] cols = this.colours;
+            int n = this.count;
+            for (int i = 0, v = 0; i < n; i++, v += 8) {
+                int argb = cols[i];
+                consumer.addVertex(verts[v], verts[v + 1], 0.0F).setColor(argb);
+                consumer.addVertex(verts[v + 2], verts[v + 3], 0.0F).setColor(argb);
+                consumer.addVertex(verts[v + 4], verts[v + 5], 0.0F).setColor(argb);
+                consumer.addVertex(verts[v + 6], verts[v + 7], 0.0F).setColor(argb);
+            }
+        }
+
+        @Override
+        public RenderPipeline pipeline() {
+            return RenderPipelines.GUI;
+        }
+
+        @Override
+        public TextureSetup textureSetup() {
+            return TextureSetup.noTexture();
+        }
+    }
+
     // ------------------------------------------------------------------
     // Rectangles
     // ------------------------------------------------------------------
 
     @Override
     public void fill(int left, int top, int right, int bottom, int argb) {
+        if (batchDepth > 0 && batchOwner == graphics) {
+            if (left == right || top == bottom) {
+                return;
+            }
+            int x0 = Math.min(left, right);
+            int x1 = Math.max(left, right);
+            int y0 = Math.min(top, bottom);
+            int y1 = Math.max(top, bottom);
+
+            Matrix3x2fc pose = graphics.pose();
+            float m00 = pose.m00();
+            float m01 = pose.m01();
+            float m10 = pose.m10();
+            float m11 = pose.m11();
+            float m20 = pose.m20();
+            float m21 = pose.m21();
+
+            float vx0 = m00 * x0 + m10 * y0 + m20;
+            float vy0 = m01 * x0 + m11 * y0 + m21;
+            float vx1 = m00 * x0 + m10 * y1 + m20;
+            float vy1 = m01 * x0 + m11 * y1 + m21;
+            float vx2 = m00 * x1 + m10 * y1 + m20;
+            float vy2 = m01 * x1 + m11 * y1 + m21;
+            float vx3 = m00 * x1 + m10 * y0 + m20;
+            float vy3 = m01 * x1 + m11 * y0 + m21;
+
+            float quadMinX = Math.min(Math.min(vx0, vx1), Math.min(vx2, vx3));
+            float quadMaxX = Math.max(Math.max(vx0, vx1), Math.max(vx2, vx3));
+            float quadMinY = Math.min(Math.min(vy0, vy1), Math.min(vy2, vy3));
+            float quadMaxY = Math.max(Math.max(vy0, vy1), Math.max(vy2, vy3));
+
+            int quadIndex = batchQuads;
+            if (quadIndex == 0) {
+                batchMinX = quadMinX;
+                batchMaxX = quadMaxX;
+                batchMinY = quadMinY;
+                batchMaxY = quadMaxY;
+            }
+            else {
+                if (quadMinX < batchMinX) {
+                    batchMinX = quadMinX;
+                }
+                if (quadMaxX > batchMaxX) {
+                    batchMaxX = quadMaxX;
+                }
+                if (quadMinY < batchMinY) {
+                    batchMinY = quadMinY;
+                }
+                if (quadMaxY > batchMaxY) {
+                    batchMaxY = quadMaxY;
+                }
+            }
+
+            if (quadIndex == batchColours.length) {
+                batchColours = Arrays.copyOf(batchColours, batchColours.length * 2);
+                batchVertices = Arrays.copyOf(batchVertices, batchVertices.length * 2);
+            }
+            int base = quadIndex * 8;
+            batchVertices[base] = vx0;
+            batchVertices[base + 1] = vy0;
+            batchVertices[base + 2] = vx1;
+            batchVertices[base + 3] = vy1;
+            batchVertices[base + 4] = vx2;
+            batchVertices[base + 5] = vy2;
+            batchVertices[base + 6] = vx3;
+            batchVertices[base + 7] = vy3;
+            batchColours[quadIndex] = argb;
+            batchQuads = quadIndex + 1;
+            return;
+        }
         graphics.fill(left, top, right, bottom, argb);
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>Deliberately empty. On 1.21.1 this flushed the context's batch, because fills queued behind
-     * an item icon could otherwise submit out of order. Extraction records every operation in call
-     * order, so "drawn later" already means "on top" with nothing to flush — and the extractor
-     * offers no flush to call. The seam keeps the method so callers still mark their layering
-     * boundaries in the same place on every version.
+     * <p>Drains any fills queued inside an active {@link #batched} region so the caller's layering
+     * boundary is honoured before whatever draw follows. Outside a batched region this is a no-op.
      */
     @Override
     public void flush() {
+        flushBatch(graphics);
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>On 1.21.1 this wrapped the context's {@code drawManaged} region (with a re-entrancy guard,
-     * because that call was not re-entrant) to turn one submission per fill into one per region.
-     * Extraction has no per-call flush to suppress, so this calls straight through. The seam keeps
-     * the method so a region that must draw as one unit still says so, and a future version that
-     * batches again has the call sites marked.
+     * <p>Accumulates consecutive {@link #fill} calls inside the supplier into a single
+     * {@link BatchedFillsRenderState} per uninterrupted fill run, flushing automatically before any
+     * non-fill draw ({@link #text}, {@link #icon}, {@link #texture}, {@link #sprite}, {@link #blur}),
+     * any {@link #clip} push or pop, an explicit {@link #flush}, or when the outermost batched region
+     * exits.
      *
-     * <p>{@code GuiRendererTest.theContextsRegionIsNotReentrant} still pins the seam's model: with no
-     * context region left underneath, nesting is trivially safe, which is what the test now asserts.
+     * <p>Nested {@code batched} calls increment {@link #batchDepth} so inner regions (such as a widget
+     * or the canvas inside the screen's frame-wide region) join the outer batch without premature
+     * submission, while non-fill boundaries still split runs in exact call order.
      */
     @Override
     public <T> T batched(java.util.function.Supplier<T> draw) {
-        return draw.get();
+        if (GET_RENDER_STATE == null || PEEK_SCISSOR == null) {
+            return draw.get();
+        }
+        if (batchDepth > 0 && batchOwner != graphics) {
+            flushBatch(batchOwner);
+            batchOwner = graphics;
+            batchDepth = 0;
+        }
+        if (batchDepth == 0) {
+            batchOwner = graphics;
+            batchQuads = 0;
+        }
+        batchDepth++;
+        try {
+            return draw.get();
+        }
+        finally {
+            batchDepth--;
+            if (batchDepth == 0) {
+                flushBatch(graphics);
+                batchOwner = null;
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -151,6 +399,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      * on a client whose player has turned text up is bigger by both, which is what each of them asked for.
      */
     private void drawAt(String text, int x, int y, int argb, boolean shadow, float scale) {
+        flushBatch(graphics);
         double effective = scale * TextScale.get();
         if (effective == TextScale.DEFAULT) {
             graphics.text(font(), text, x, y, argb, shadow);
@@ -169,6 +418,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
 
     @Override
     public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
+        flushBatch(graphics);
         int at = x;
         float base = (float) TextScale.get();
         for (StyledRun run : runs) {
@@ -301,6 +551,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         // which is also what makes the flat path unnecessary: a tinted item drawn by this call comes
         // out tinted, so there is nothing left to decide. `IconPlan` and its test went with the
         // pipeline they measured; if icons ever show in a profile on this version, re-measure here.
+        flushBatch(graphics);
         float scale = box / 16.0F;
         graphics.pose().pushMatrix();
         graphics.pose().translate(boxX, boxY);
@@ -350,6 +601,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
             profile = ResolvableProfile.createUnresolved(player);
         }
 
+        flushBatch(graphics);
         net.minecraft.client.gui.components.PlayerFaceExtractor.extractRenderState(
                 graphics, profile, boxX, boxY, box);
         return true;
@@ -378,6 +630,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (minecraft.options.getMenuBackgroundBlurriness() <= 0) {
             return false;
         }
+        flushBatch(graphics);
         graphics.blurBeforeThisStratum();
         return true;
     }
@@ -494,6 +747,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
     public void scaled(Identifier texture, int x, int y, int width, int height,
                        float u, float v, int sourceWidth, int sourceHeight,
                        int textureWidth, int textureHeight, int argb) {
+        flushBatch(graphics);
         graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, width, height,
                 sourceWidth, sourceHeight, textureWidth, textureHeight, argb);
     }
@@ -508,6 +762,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     @Override
     public void texture(Identifier texture, int x, int y, int width, int height) {
+        flushBatch(graphics);
         graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, 0F, 0F, width, height,
                 width, height, width, height);
     }
@@ -531,6 +786,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (atlasSprite == null || width <= 0 || height <= 0) {
             return;
         }
+        flushBatch(graphics);
         TextureAtlasSprite sprite = graphics.getSprite(
                 new SpriteId(TextureAtlas.LOCATION_BLOCKS, atlasSprite));
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, sprite, x, y, width, height, argb);
@@ -551,6 +807,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (guiSprite == null || width <= 0 || height <= 0) {
             return;
         }
+        flushBatch(graphics);
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, guiSprite, x, y, width, height);
     }
 
@@ -607,6 +864,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     @Override
     public Scoped clip(int left, int top, int right, int bottom) {
+        flushBatch(graphics);
         graphics.enableScissor(left, top, right, bottom);
         return new Scoped() {
             private boolean closed;
@@ -622,6 +880,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
                     return;
                 }
                 closed = true;
+                flushBatch(graphics);
                 graphics.disableScissor();
             }
         };
