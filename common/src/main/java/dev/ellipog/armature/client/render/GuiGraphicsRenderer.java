@@ -119,8 +119,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      * client thread keeps nested regions and across-widget fills coherent without leaking state
      * across frames.
      */
-    private static GuiGraphicsExtractor batchOwner;
-    private static int batchDepth;
+    private static final BatchNesting<GuiGraphicsExtractor> BATCH = new BatchNesting<>();
     private static float[] batchVertices = new float[1024];
     private static int[] batchColours = new int[128];
     private static int batchQuads;
@@ -163,7 +162,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
     }
 
     private static void flushBatch(GuiGraphicsExtractor extractor) {
-        if (batchQuads == 0 || batchOwner != extractor) {
+        if (batchQuads == 0 || BATCH.owner() != extractor) {
             return;
         }
         int count = batchQuads;
@@ -239,7 +238,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
 
     @Override
     public void fill(int left, int top, int right, int bottom, int argb) {
-        if (batchDepth > 0 && batchOwner == graphics) {
+        if (BATCH.batching(graphics)) {
             if (left == right || top == bottom) {
                 return;
             }
@@ -332,7 +331,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      * any {@link #clip} push or pop, an explicit {@link #flush}, or when the outermost batched region
      * exits.
      *
-     * <p>Nested {@code batched} calls increment {@link #batchDepth} so inner regions (such as a widget
+     * <p>Nested {@code batched} calls deepen {@link #BATCH} so inner regions (such as a widget
      * or the canvas inside the screen's frame-wide region) join the outer batch without premature
      * submission, while non-fill boundaries still split runs in exact call order.
      */
@@ -341,25 +340,18 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (GET_RENDER_STATE == null || PEEK_SCISSOR == null) {
             return draw.get();
         }
-        if (batchDepth > 0 && batchOwner != graphics) {
-            flushBatch(batchOwner);
-            batchOwner = graphics;
-            batchDepth = 0;
-        }
-        if (batchDepth == 0) {
-            batchOwner = graphics;
+        // A region on another extractor inside an open one is batched on its own and hands the outer
+        // region back on the way out -- see BatchNesting for the bug that rule closed.
+        BatchNesting.Entry<GuiGraphicsExtractor> entry =
+                BATCH.enter(graphics, GuiGraphicsRenderer::flushBatch);
+        if (entry.fresh()) {
             batchQuads = 0;
         }
-        batchDepth++;
         try {
             return draw.get();
         }
         finally {
-            batchDepth--;
-            if (batchDepth == 0) {
-                flushBatch(graphics);
-                batchOwner = null;
-            }
+            BATCH.exit(entry, GuiGraphicsRenderer::flushBatch);
         }
     }
 
