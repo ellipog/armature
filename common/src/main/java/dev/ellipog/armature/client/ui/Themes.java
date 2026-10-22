@@ -192,12 +192,14 @@ public final class Themes {
             "fill", "#FF3E3E4C",
             "hover", "#FF4A4A5A",
             "held", "#FF565668",
-            "selected", "#FF5A86CC",
+            // A muted blue rather than a bright one: the current chapter or tab should read as "this
+            // one" without being the loudest thing on the screen. The edge carries the brightness.
+            "selected", "#FF3E5577",
             "disabled", "#FF2A2A34",
             "accent", "#FF33597F",
             "edge", "#FF4C4C62",
             "edgeAccent", "#FF6A9AC8",
-            "edgeSelected", "#FF9CC4F0",
+            "edgeSelected", "#FF7FA8D8",
             "edgeBright", "#FF5C5C74");
 
     /** The reference theme. Every value stated; see {@link #MODERN_COLOURS}. */
