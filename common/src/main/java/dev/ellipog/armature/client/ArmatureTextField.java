@@ -128,6 +128,17 @@ public final class ArmatureTextField extends AbstractWidget {
         return this;
     }
 
+    /**
+     * What an empty field says while nobody is typing in it, in the faint ink: the value the empty field
+     * stands for, so an unset field reads as a default rather than as nothing.
+     */
+    public ArmatureTextField placeholder(String text) {
+        this.placeholder = text == null ? "" : text;
+        return this;
+    }
+
+    private String placeholder = "";
+
     /** Pin the three colours rather than letting the theme resolve them. A raw override. */
     public ArmatureTextField colours(int text, int fill, int edge) {
         this.textColour = text;
@@ -443,6 +454,9 @@ public final class ArmatureTextField extends AbstractWidget {
                 r.fill(from, line - 1, to, line + 9, Colour.alphaOf(textInk(), 0.35F));
             }
             r.text(model.value(), textX, line, textInk());
+            if (model.length() == 0 && !isFocused() && !placeholder.isEmpty()) {
+                r.text(placeholder, getX() + PAD, line, ArmatureTheme.faint());
+            }
             if (isFocused() && model.caretVisible(Util.getMillis())) {
                 int caret = textX + r.textWidth(model.value(), 0, Math.min(model.caret(),
                         model.length()));
