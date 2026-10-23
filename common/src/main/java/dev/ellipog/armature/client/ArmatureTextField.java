@@ -129,8 +129,8 @@ public final class ArmatureTextField extends AbstractWidget {
     }
 
     /**
-     * What an empty field says while nobody is typing in it, in the faint ink: the value the empty field
-     * stands for, so an unset field reads as a default rather than as nothing.
+     * What an empty field says, in the faint ink: the value the empty field stands for, or what to type
+     * into it, so an empty field reads as a question rather than as nothing.
      */
     public ArmatureTextField placeholder(String text) {
         this.placeholder = text == null ? "" : text;
@@ -454,7 +454,9 @@ public final class ArmatureTextField extends AbstractWidget {
                 r.fill(from, line - 1, to, line + 9, Colour.alphaOf(textInk(), 0.35F));
             }
             r.text(model.value(), textX, line, textInk());
-            if (model.length() == 0 && !isFocused() && !placeholder.isEmpty()) {
+            // Focused too: a field that takes focus the moment it opens -- an inline rename -- would
+            // otherwise never show what it is for. The caret draws over the first letter.
+            if (model.length() == 0 && !placeholder.isEmpty()) {
                 r.text(placeholder, getX() + PAD, line, ArmatureTheme.faint());
             }
             if (isFocused() && model.caretVisible(Util.getMillis())) {
