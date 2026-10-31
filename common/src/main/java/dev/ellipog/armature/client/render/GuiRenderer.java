@@ -191,6 +191,32 @@ public interface GuiRenderer {
         }
     }
 
+    /**
+     * Draws a one-pixel line through the points of {@code route}, measured from {@code x}, {@code y}, in one
+     * colour. The route is flat: {@code x0, y0, x1, y1, ...}, at least two points.
+     *
+     * <h2>Which pixels, exactly</h2>
+     *
+     * <p>Each segment is walked from its first point to its last, one pixel per step along its longer axis:
+     * step {@code i} of {@code c} is the pixel at {@code round(dx * i / c), round(dy * i / c)} from the
+     * segment's start, rounded the way {@link Math#round(float)} rounds the float quotient. A point is a
+     * pixel's top-left corner, and the pixel is the one below and to the right of it. A segment after the first
+     * leaves out its first pixel, which is the last pixel of the segment before it. See {@link Hairlines}.
+     *
+     * <p>The caller promises that no pixel is walked twice otherwise. A route that crosses itself would draw
+     * the crossing twice on the GPU and once as fills, which differs for a colour that is not opaque.
+     *
+     * <h2>Why a line arrives whole rather than as its fills</h2>
+     *
+     * <p>A diagonal line drawn as fills is one rectangle per run of pixels, so a long shallow line is a quad for
+     * every step it takes across. The game renderer can draw a segment as one quad, with a shader that keeps
+     * exactly the pixels above. The default is those runs as fills, which is what a recording renderer in a
+     * test sees and what a renderer with no better way loses nothing by.
+     */
+    default void hairline(int x, int y, int[] route, int argb) {
+        Hairlines.fill(this, x, y, route, argb);
+    }
+
     // ------------------------------------------------------------------
     // Text
     // ------------------------------------------------------------------
@@ -321,6 +347,30 @@ public interface GuiRenderer {
      * @param draw what to draw; its return value is passed through
      */
     <T> T batched(java.util.function.Supplier<T> draw);
+
+    /**
+     * Runs {@code draw} with its pictures held back: every {@link #icon}, {@link #texture} and {@link #sprite}
+     * it asks for is drawn when it returns, in call order, over the rectangles it drew.
+     *
+     * <h2>Why</h2>
+     *
+     * <p>A picture splits a batch. Inside {@link #batched}, a row of nodes that each draw a shape and then an
+     * icon is two submissions per node, and the game files each one in a layer of its own, so a hundred nodes
+     * are two hundred layers. Held back, the shapes are one submission and the pictures share one layer.
+     *
+     * <h2>The promise the caller makes</h2>
+     *
+     * <p>Nothing {@code draw} fills <b>after</b> a picture may overlap that picture, because it now lands
+     * under it instead of over it. Nodes that do not overlap each other keep that promise; a caller that
+     * cannot tell should not call this. Text, a face, a blur, a clip or a {@link #flush} inside the region
+     * draws the held pictures first, so those keep their order without being part of the promise.
+     *
+     * <p>{@link #icon} still answers whether it will draw, at the call, so a caller's fallback works as
+     * before. The default runs {@code draw} as it is, which is the old order exactly.
+     */
+    default void iconsLast(Runnable draw) {
+        draw.run();
+    }
 
     /**
      * Draws one line of text centred on {@code centreX}.

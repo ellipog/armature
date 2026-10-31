@@ -27,6 +27,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ResolvableProfile;
 
+import org.joml.Matrix3x2f;
 import org.joml.Matrix3x2fc;
 
 import java.io.IOException;
@@ -35,6 +36,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -132,6 +134,15 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
     private static int batchQuads;
     /** The masks a quad in this run is drawn from, or null while the run is fills only. */
     private static TextureSetup batchMasks;
+    /**
+     * A segment quad's corners from the segment's start, {@code x, y} for each of four; unset for a fill. Read
+     * only when the run has lines.
+     */
+    private static float[] batchLocal = new float[1024];
+    /** A quad's segment run, {@code dx} low and {@code dy} high, as two shorts; zero for a fill. */
+    private static int[] batchRuns = new int[128];
+    /** Whether the open run holds a line, so it flushes through {@link GpuLines#PIPELINE}. */
+    private static boolean batchLines;
     private static float batchMinX;
     private static float batchMinY;
     private static float batchMaxX;
@@ -179,12 +190,16 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         int[] colours = Arrays.copyOf(batchColours, count);
         TextureSetup masks = batchMasks;
         float[] uvs = masks != null ? Arrays.copyOf(batchUvs, count * 4) : null;
+        boolean lines = batchLines;
+        float[] local = lines ? Arrays.copyOf(batchLocal, count * 8) : null;
+        int[] runs = lines ? Arrays.copyOf(batchRuns, count) : null;
         int minX = Mth.floor(batchMinX);
         int minY = Mth.floor(batchMinY);
         int maxX = Mth.ceil(batchMaxX);
         int maxY = Mth.ceil(batchMaxY);
         batchQuads = 0;
         batchMasks = null;
+        batchLines = false;
 
         GuiRenderState renderState = renderStateOf(extractor);
         if (renderState == null) {
@@ -196,7 +211,11 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (bounds == null) {
             return;
         }
-        if (masks != null) {
+        if (lines) {
+            renderState.addGuiElement(
+                    new BatchedLinesRenderState(vertices, local, runs, colours, count, scissor, bounds));
+        }
+        else if (masks != null) {
             renderState.addGuiElement(
                     new BatchedTexturedRenderState(vertices, uvs, colours, count, masks, scissor, bounds));
         }
@@ -294,6 +313,54 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         @Override
         public RenderPipeline pipeline() {
             return RenderPipelines.GUI_TEXTURED;
+        }
+    }
+
+    /**
+     * A run of fills and one-pixel line segments, drawn as one element through {@link GpuLines#PIPELINE}.
+     *
+     * <p>A fill carries a zero run and draws its colour, as it would through the game's GUI pipeline. A segment
+     * is a band around its pixels with each corner's distance from the segment's start, and the shader keeps
+     * the pixels {@link Hairlines} names and discards the rest. One element in call order keeps the painter's
+     * order between the two.
+     */
+    private record BatchedLinesRenderState(
+            float[] vertices,
+            float[] local,
+            int[] runs,
+            int[] colours,
+            int count,
+            ScreenRectangle scissorArea,
+            ScreenRectangle bounds) implements GuiElementRenderState {
+
+        @Override
+        public void buildVertices(VertexConsumer consumer) {
+            float[] verts = this.vertices;
+            float[] at = this.local;
+            int[] run = this.runs;
+            int[] cols = this.colours;
+            int n = this.count;
+            for (int i = 0, v = 0; i < n; i++, v += 8) {
+                int argb = cols[i];
+                int packed = run[i];
+                int dx = (short) packed;
+                int dy = packed >> 16;
+                for (int corner = 0; corner < 8; corner += 2) {
+                    consumer.addVertex(verts[v + corner], verts[v + corner + 1], 0.0F).setColor(argb)
+                            .setUv(packed == 0 ? 0F : at[v + corner], packed == 0 ? 0F : at[v + corner + 1])
+                            .setUv2(dx, dy);
+                }
+            }
+        }
+
+        @Override
+        public RenderPipeline pipeline() {
+            return GpuLines.PIPELINE;
+        }
+
+        @Override
+        public TextureSetup textureSetup() {
+            return TextureSetup.noTexture();
         }
     }
 
@@ -414,10 +481,74 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     private void drawingFrom(GpuMasks masks) {
         TextureSetup setup = masks.textureSetup();
-        if (batchMasks != null && batchMasks != setup) {
+        if (batchLines || (batchMasks != null && batchMasks != setup)) {
             flushBatch(graphics);
         }
         batchMasks = setup;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A segment along neither axis is one quad over its pixels, and {@link GpuLines}' shader keeps the
+     * pixels of {@link Hairlines}' walk, so a long diagonal is one quad rather than one fill per run of pixels.
+     * A segment along an axis is one fill. Without the pipeline, and for a segment too long for the shader to
+     * round as the CPU does, a segment is the default's fills.
+     */
+    @Override
+    public void hairline(int x, int y, int[] route, int argb) {
+        int points = route.length / 2;
+        if (points < 2) {
+            return;
+        }
+        if (!BATCH.batching(graphics)) {
+            if (GET_RENDER_STATE == null || PEEK_SCISSOR == null) {
+                GuiRenderer.super.hairline(x, y, route, argb);
+                return;
+            }
+            batched(() -> {
+                hairline(x, y, route, argb);
+                return null;
+            });
+            return;
+        }
+        if (!GpuLines.ready()) {
+            GuiRenderer.super.hairline(x, y, route, argb);
+            return;
+        }
+        for (int k = 0; k + 1 < points; k++) {
+            int sx = x + route[2 * k];
+            int sy = y + route[2 * k + 1];
+            int dx = route[2 * k + 2] - route[2 * k];
+            int dy = route[2 * k + 3] - route[2 * k + 1];
+            int first = k == 0 ? 0 : 1;
+            if (dx == 0 || dy == 0 || Hairlines.steps(dx, dy) >= Hairlines.EXACT_STEPS) {
+                Hairlines.segment(this, sx, sy, dx, dy, first, argb);
+            }
+            else {
+                queueSegment(sx, sy, dx, dy, first, argb);
+            }
+        }
+    }
+
+    /** Where {@link #queueSegment} works out a band's corners. Render thread only, like the batch. */
+    private static final float[] BAND = new float[8];
+
+    /**
+     * Queues one segment as {@link Hairlines#band}'s quad over its pixels, for the shader to trim to them. A
+     * run drawing from masks is flushed first: its texture is not this pipeline's.
+     */
+    private void queueSegment(int sx, int sy, int dx, int dy, int first, int argb) {
+        if (batchMasks != null) {
+            flushBatch(graphics);
+        }
+        float[] band = BAND;
+        Hairlines.band(dx, dy, first, band);
+        int quadIndex = push(sx + band[0], sy + band[1], sx + band[2], sy + band[3],
+                sx + band[4], sy + band[5], sx + band[6], sy + band[7], argb);
+        System.arraycopy(band, 0, batchLocal, quadIndex * 8, 8);
+        batchRuns[quadIndex] = (dx & 0xFFFF) | (dy << 16);
+        batchLines = true;
     }
 
     /**
@@ -425,6 +556,21 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      * its colour. The rectangle is already ordered, left above right and top above bottom.
      */
     private void queue(int x0, int y0, int x1, int y1, int argb, float u0, float v0, float u1, float v1) {
+        int quadIndex = push(x0, y0, x0, y1, x1, y1, x1, y0, argb);
+        int uv = quadIndex * 4;
+        batchUvs[uv] = u0;
+        batchUvs[uv + 1] = v0;
+        batchUvs[uv + 2] = u1;
+        batchUvs[uv + 3] = v1;
+        batchRuns[quadIndex] = 0;
+    }
+
+    /**
+     * Adds one quad to the open run, its four corners in GUI pixels and in a fill's order (top left, bottom
+     * left, bottom right, top right), and returns its index. The corners go through the pose and widen the
+     * run's bounds; what else the quad carries is the caller's to write.
+     */
+    private int push(float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3, int argb) {
         Matrix3x2fc pose = graphics.pose();
         float m00 = pose.m00();
         float m01 = pose.m01();
@@ -435,12 +581,12 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
 
         float vx0 = m00 * x0 + m10 * y0 + m20;
         float vy0 = m01 * x0 + m11 * y0 + m21;
-        float vx1 = m00 * x0 + m10 * y1 + m20;
-        float vy1 = m01 * x0 + m11 * y1 + m21;
-        float vx2 = m00 * x1 + m10 * y1 + m20;
-        float vy2 = m01 * x1 + m11 * y1 + m21;
-        float vx3 = m00 * x1 + m10 * y0 + m20;
-        float vy3 = m01 * x1 + m11 * y0 + m21;
+        float vx1 = m00 * x1 + m10 * y1 + m20;
+        float vy1 = m01 * x1 + m11 * y1 + m21;
+        float vx2 = m00 * x2 + m10 * y2 + m20;
+        float vy2 = m01 * x2 + m11 * y2 + m21;
+        float vx3 = m00 * x3 + m10 * y3 + m20;
+        float vy3 = m01 * x3 + m11 * y3 + m21;
 
         float quadMinX = Math.min(Math.min(vx0, vx1), Math.min(vx2, vx3));
         float quadMaxX = Math.max(Math.max(vx0, vx1), Math.max(vx2, vx3));
@@ -473,6 +619,8 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
             batchColours = Arrays.copyOf(batchColours, batchColours.length * 2);
             batchVertices = Arrays.copyOf(batchVertices, batchVertices.length * 2);
             batchUvs = Arrays.copyOf(batchUvs, batchUvs.length * 2);
+            batchLocal = Arrays.copyOf(batchLocal, batchLocal.length * 2);
+            batchRuns = Arrays.copyOf(batchRuns, batchRuns.length * 2);
         }
         int base = quadIndex * 8;
         batchVertices[base] = vx0;
@@ -483,13 +631,9 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         batchVertices[base + 5] = vy2;
         batchVertices[base + 6] = vx3;
         batchVertices[base + 7] = vy3;
-        int uv = quadIndex * 4;
-        batchUvs[uv] = u0;
-        batchUvs[uv + 1] = v0;
-        batchUvs[uv + 2] = u1;
-        batchUvs[uv + 3] = v1;
         batchColours[quadIndex] = argb;
         batchQuads = quadIndex + 1;
+        return quadIndex;
     }
 
     /**
@@ -500,7 +644,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     @Override
     public void flush() {
-        flushBatch(graphics);
+        boundary();
     }
 
     /**
@@ -528,6 +672,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (entry.fresh()) {
             batchQuads = 0;
             batchMasks = null;
+            batchLines = false;
         }
         try {
             return draw.get();
@@ -535,6 +680,89 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         finally {
             BATCH.exit(entry, GuiGraphicsRenderer::flushBatch);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Held pictures
+    // ------------------------------------------------------------------
+
+    /**
+     * One picture an {@link #iconsLast} region asked for, kept until the region ends: what to draw, where,
+     * and the pose it was asked under, so a picture asked for inside a {@link #turned} scope still draws
+     * turned after the scope has closed.
+     */
+    private record Held(int kind, ItemStack stack, Identifier id, int x, int y, int width, int height,
+                        int argb, Matrix3x2f pose) {
+        static final int ITEM = 0;
+        static final int TEXTURE = 1;
+        static final int SPRITE = 2;
+    }
+
+    /** The held pictures, in call order. Static and keyed to one extractor, for the reason {@link #BATCH} is. */
+    private static final List<Held> HELD = new ArrayList<>();
+    private static GuiGraphicsExtractor heldOwner;
+    private static int heldDepth;
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Held per extractor: a region on another extractor inside an open one simply draws in call order, so
+     * one region never swallows the pictures of another. A nested region on the same extractor joins the
+     * outer one, and only the outermost end draws what was held.
+     */
+    @Override
+    public void iconsLast(Runnable draw) {
+        if (heldDepth > 0 && heldOwner != graphics) {
+            draw.run();
+            return;
+        }
+        heldOwner = graphics;
+        heldDepth++;
+        try {
+            draw.run();
+        }
+        finally {
+            if (heldDepth == 1) {
+                try {
+                    boundary();
+                }
+                finally {
+                    HELD.clear();
+                    heldOwner = null;
+                    heldDepth = 0;
+                }
+            }
+            else {
+                heldDepth--;
+            }
+        }
+    }
+
+    private boolean holding() {
+        return heldDepth > 0 && heldOwner == graphics;
+    }
+
+    /**
+     * Submits the queued rectangles and then any held pictures, so whatever draws next lands over both. Every
+     * draw that is not a rectangle or a held picture starts here, which is what keeps text, a clip or a blur
+     * inside an {@link #iconsLast} region in its call order.
+     */
+    private void boundary() {
+        flushBatch(graphics);
+        if (!holding() || HELD.isEmpty()) {
+            return;
+        }
+        for (Held held : HELD) {
+            graphics.pose().pushMatrix();
+            graphics.pose().set(held.pose());
+            switch (held.kind()) {
+                case Held.ITEM -> drawItem(held.stack(), held.x(), held.y(), held.width());
+                case Held.TEXTURE -> drawTexture(held.id(), held.x(), held.y(), held.width(), held.height());
+                default -> drawSprite(held.id(), held.x(), held.y(), held.width(), held.height(), held.argb());
+            }
+            graphics.pose().popMatrix();
+        }
+        HELD.clear();
     }
 
     // ------------------------------------------------------------------
@@ -573,7 +801,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      * on a client whose player has turned text up is bigger by both, which is what each of them asked for.
      */
     private void drawAt(String text, int x, int y, int argb, boolean shadow, float scale) {
-        flushBatch(graphics);
+        boundary();
         double effective = scale * TextScale.get();
         if (effective == TextScale.DEFAULT) {
             graphics.text(font(), text, x, y, argb, shadow);
@@ -592,7 +820,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
 
     @Override
     public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
-        flushBatch(graphics);
+        boundary();
         int at = x;
         float base = (float) TextScale.get();
         for (StyledRun run : runs) {
@@ -725,14 +953,22 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         // which is also what makes the flat path unnecessary: a tinted item drawn by this call comes
         // out tinted, so there is nothing left to decide. `IconPlan` and its test went with the
         // pipeline they measured; if icons ever show in a profile on this version, re-measure here.
+        if (holding()) {
+            HELD.add(new Held(Held.ITEM, stack, null, boxX, boxY, box, box, 0, new Matrix3x2f(graphics.pose())));
+            return true;
+        }
         flushBatch(graphics);
+        drawItem(stack, boxX, boxY, box);
+        return true;
+    }
+
+    private void drawItem(ItemStack stack, int boxX, int boxY, int box) {
         float scale = box / 16.0F;
         graphics.pose().pushMatrix();
         graphics.pose().translate(boxX, boxY);
         graphics.pose().scale(scale, scale);
         graphics.item(stack, 0, 0);
         graphics.pose().popMatrix();
-        return true;
     }
 
     /**
@@ -775,7 +1011,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
             profile = ResolvableProfile.createUnresolved(player);
         }
 
-        flushBatch(graphics);
+        boundary();
         net.minecraft.client.gui.components.PlayerFaceExtractor.extractRenderState(
                 graphics, profile, boxX, boxY, box);
         return true;
@@ -804,7 +1040,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (minecraft.options.getMenuBackgroundBlurriness() <= 0) {
             return false;
         }
-        flushBatch(graphics);
+        boundary();
         graphics.blurBeforeThisStratum();
         return true;
     }
@@ -921,7 +1157,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
     public void scaled(Identifier texture, int x, int y, int width, int height,
                        float u, float v, int sourceWidth, int sourceHeight,
                        int textureWidth, int textureHeight, int argb) {
-        flushBatch(graphics);
+        boundary();
         graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, width, height,
                 sourceWidth, sourceHeight, textureWidth, textureHeight, argb);
     }
@@ -936,7 +1172,15 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     @Override
     public void texture(Identifier texture, int x, int y, int width, int height) {
+        if (holding()) {
+            HELD.add(new Held(Held.TEXTURE, null, texture, x, y, width, height, 0, new Matrix3x2f(graphics.pose())));
+            return;
+        }
         flushBatch(graphics);
+        drawTexture(texture, x, y, width, height);
+    }
+
+    private void drawTexture(Identifier texture, int x, int y, int width, int height) {
         graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, 0F, 0F, width, height,
                 width, height, width, height);
     }
@@ -960,7 +1204,16 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (atlasSprite == null || width <= 0 || height <= 0) {
             return;
         }
+        if (holding()) {
+            HELD.add(new Held(Held.SPRITE, null, atlasSprite, x, y, width, height, argb,
+                    new Matrix3x2f(graphics.pose())));
+            return;
+        }
         flushBatch(graphics);
+        drawSprite(atlasSprite, x, y, width, height, argb);
+    }
+
+    private void drawSprite(Identifier atlasSprite, int x, int y, int width, int height, int argb) {
         TextureAtlasSprite sprite = graphics.getSprite(
                 new SpriteId(TextureAtlas.LOCATION_BLOCKS, atlasSprite));
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, sprite, x, y, width, height, argb);
@@ -981,7 +1234,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (guiSprite == null || width <= 0 || height <= 0) {
             return;
         }
-        flushBatch(graphics);
+        boundary();
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, guiSprite, x, y, width, height);
     }
 
@@ -1038,7 +1291,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     @Override
     public Scoped clip(int left, int top, int right, int bottom) {
-        flushBatch(graphics);
+        boundary();
         graphics.enableScissor(left, top, right, bottom);
         return new Scoped() {
             private boolean closed;
@@ -1054,7 +1307,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
                     return;
                 }
                 closed = true;
-                flushBatch(graphics);
+                boundary();
                 graphics.disableScissor();
             }
         };

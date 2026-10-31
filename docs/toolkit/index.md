@@ -47,6 +47,24 @@ a mask is made from the plan's own rectangles, one texel per pixel, and sampled 
 whose rectangles overlap, a mask bigger than 128 pixels, or a full mask texture falls back to fills. Start
 the game with `-Darmature.gpuMasks=false` to turn the GPU path off.
 
+`hairline(x, y, route, argb)` draws a one-pixel line along a route, given flat as `x0, y0, x1, y1, ...`
+from `(x, y)`. A segment takes one pixel per column or row along its longer axis, with the other axis
+rounded half up, and each joint is drawn once (`Hairlines` holds the rule). The default draws those pixels
+as fills. The caller promises the route never comes back over a pixel it has already drawn, apart from the
+joints. If it does, those pixels are drawn twice, and that shows on a translucent colour. On 26.3 the game
+renderer draws a diagonal segment as one quad through its own pipeline, and the fragment shader keeps the
+same pixels with integer maths. A segment along an axis is one fill, and a segment of 2896 steps or more
+stays on fills, because past that the float and integer rounding can disagree. Fills in the same run share
+the line pipeline, so their order holds. Start the game with `-Darmature.gpuLines=false` to turn it off. A
+pipeline that will not compile turns it off for the session with one warning in the log.
+
+`iconsLast(draw)` runs `draw` and holds back every `icon`, `texture` and `sprite` it asks for until the end,
+so the rectangles inside are one batch and the pictures come after them, in the order they were asked for.
+Only use it when no rectangle drawn after a picture inside the region overlaps that picture, since the
+rectangle would end up under it. Text, a face, a blur, a clip or a
+`flush()` inside the region draws the held pictures first, so those keep their order. The default runs
+`draw` as it is.
+
 Every colour a widget asks for comes from `ArmatureTheme.current()`. A button does not know what a
 theme is, it asks for `body` and gets whatever the current theme says. [[armature:toolkit/themes]] is
 the page about that.
