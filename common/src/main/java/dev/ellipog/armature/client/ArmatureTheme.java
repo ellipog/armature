@@ -927,11 +927,15 @@ public final class ArmatureTheme {
         emit(renderer, x, y, colour, Plans.of(shape, size));
     }
 
-    /** One plan's rectangles at an origin: the single place a plan becomes fills. */
+    /**
+     * One plan's rectangles at an origin: the single place a plan is handed to the renderer.
+     *
+     * <p>Whole, rather than a fill per rectangle, so the renderer can choose how to draw it: a recorder
+     * takes the rectangles one by one, and the game renderer draws a many-rectangle plan as one textured
+     * quad. See {@link GuiRenderer#fillPlan}.
+     */
     private static void emit(GuiRenderer renderer, int x, int y, int colour, Plans.Plan plan) {
-        for (int i = 0; i < plan.count(); i++) {
-            renderer.fill(x + plan.x1(i), y + plan.y1(i), x + plan.x2(i), y + plan.y2(i), colour);
-        }
+        renderer.fillPlan(plan, x, y, colour);
     }
 
     /** How many rounded-rectangle plans are remembered, and the four numbers they are keyed by. */

@@ -2,6 +2,7 @@ package dev.ellipog.armature.client.render;
 
 import dev.ellipog.armature.client.ArmatureTheme;
 import dev.ellipog.armature.client.ui.Themes;
+import dev.ellipog.armature.client.ui.shape.Plans;
 import dev.ellipog.armature.client.ui.shape.Shape;
 import dev.ellipog.armature.client.ui.shape.Shapes;
 import dev.ellipog.armature.client.ui.kit.Measure;
@@ -305,6 +306,45 @@ class GuiRendererTest {
         assertFalse(r.covered(20, 20), "the bottom-right of the bounding box was filled");
         assertFalse(r.covered(0, 20), "the bottom-left of the bounding box was filled");
         assertFalse(r.covered(20, 0), "the top-right of the bounding box was filled");
+    }
+
+    @Test
+    @DisplayName("a plan arrives whole, and the default draws its rectangles in order at the origin")
+    void aPlanDefaultsToItsFillsInOrder() {
+        // The default is what every renderer without a mask path draws, a test recorder included, so it has
+        // to be the loop the callers used to write: the plan's rectangles in order, moved to the origin.
+        Plans.Plan plan = Plans.of(Shapes.CIRCLE, 12);
+        RecordingRenderer r = RecordingRenderer.create();
+        r.fillPlan(plan, 30, 40, 0xFF102030);
+
+        assertEquals(plan.count(), r.fills().size());
+        for (int i = 0; i < plan.count(); i++) {
+            RecordingRenderer.Call fill = r.fills().get(i);
+            assertEquals(30 + plan.x1(i), fill.x());
+            assertEquals(40 + plan.y1(i), fill.y());
+            assertEquals(30 + plan.x2(i), fill.x2());
+            assertEquals(40 + plan.y2(i), fill.y2());
+            assertEquals(0xFF102030, fill.argb());
+        }
+    }
+
+    @Test
+    @DisplayName("a lattice defaults to the double loop, columns outer, and reads only the counts it is given")
+    void aLatticeDefaultsToTheDoubleLoop() {
+        // Columns outer and rows inner is the order a dot grid was always drawn in, so a recorder sees the
+        // calls it saw before the lattice existed. The arrays are longer than the counts on purpose: the
+        // background reuses one array per axis across its passes, and the tail is stale.
+        int[] xs = {0, 10, 20, 999};
+        int[] ys = {5, 15, 999};
+        RecordingRenderer r = RecordingRenderer.create();
+        r.fillLattice(xs, 3, 2, ys, 2, 3, 0xFFFFFFFF);
+
+        List<String> expected = List.of("0,5", "0,15", "10,5", "10,15", "20,5", "20,15");
+        assertEquals(expected, r.fills().stream().map(f -> f.x() + "," + f.y()).toList());
+        for (RecordingRenderer.Call fill : r.fills()) {
+            assertEquals(2, fill.x2() - fill.x(), "the mark's width");
+            assertEquals(3, fill.y2() - fill.y(), "the mark's height");
+        }
     }
 
     @Test

@@ -124,11 +124,9 @@ public final class CanvasBackgroundArt {
         // graph magnifies around it reads as dust on the lens rather than as the surface.
         int dot = background.tuning().size()
                 + (background.space() == CanvasBackground.Space.GRAPH && view.scale() >= 1.75F ? 1 : 0);
-        for (int x : xs) {
-            for (int y : ys) {
-                r.fill(x, y, x + dot, y + dot, colour);
-            }
-        }
+        // The whole grid in one call: it is the columns against the rows, and the game renderer draws that
+        // as a quad per row rather than a fill per dot. See GuiRenderer#fillLattice.
+        r.fillLattice(xs, xs.length, dot, ys, ys.length, dot, colour);
     }
 
     private static void grid(GuiRenderer r, Viewport view, CanvasBackground background, int ink,
@@ -218,16 +216,37 @@ public final class CanvasBackgroundArt {
         // The two diagonals are the same walk with one sign flipped. Slash is the default because a
         // "/" leaning with the reading direction is the quieter default; backslash is the mirror.
         boolean backslash = background.tuning().backslash();
-        for (int x : xs) {
-            for (int y : ys) {
-                for (int i = 0; i < HATCH_STEPS; i++) {
-                    int px = x + i * step;
-                    int py = backslash ? y + i * step : y - i * step;
-                    if (px >= x1 || py >= y1 || py < y0) {
-                        break;
-                    }
-                    r.fill(px, py, px + size, py + size, colour);
+        // A field of ticks is three lattices, one per step along the tick: step i of every tick is the
+        // column list shifted right by i steps against the row list shifted along the lean. So the field
+        // goes to the renderer as three lattices (see GuiRenderer#fillLattice) rather than a fill per step.
+        //
+        // The same rectangles as the walk this replaced, which stopped a tick at its first step outside the
+        // view. Each of those tests reads one axis only -- the column against the right edge, the row against
+        // the top or bottom -- and each, once failed, stays failed as the tick steps on: columns only move
+        // right, and every row starts inside the view (axis keeps its positions in [from, to)), so a row
+        // leaning up can only leave through the top and one leaning down only through the bottom. So "stop
+        // the tick here" and "leave out every step that fails" are the same set, and the second is what a
+        // lattice can say: a column the right edge refuses is left out of the column list, and a row the lean
+        // pushes outside is left out of the row list.
+        int[] columns = new int[xs.length];
+        int[] rows = new int[ys.length];
+        for (int i = 0; i < HATCH_STEPS; i++) {
+            int shift = i * step;
+            int columnCount = 0;
+            for (int x : xs) {
+                if (x + shift < x1) {
+                    columns[columnCount++] = x + shift;
                 }
+            }
+            int rowCount = 0;
+            for (int y : ys) {
+                int py = backslash ? y + shift : y - shift;
+                if (py >= y0 && py < y1) {
+                    rows[rowCount++] = py;
+                }
+            }
+            if (columnCount > 0 && rowCount > 0) {
+                r.fillLattice(columns, columnCount, size, rows, rowCount, size, colour);
             }
         }
     }

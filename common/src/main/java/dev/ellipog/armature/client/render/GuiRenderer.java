@@ -2,6 +2,7 @@ package dev.ellipog.armature.client.render;
 
 import dev.ellipog.armature.client.ui.kit.Slot;
 import dev.ellipog.armature.client.ui.kit.Viewport;
+import dev.ellipog.armature.client.ui.shape.Plans;
 
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
@@ -23,7 +24,7 @@ import java.util.UUID;
  * with their draw calls untouched. Without it, it would have been every draw call in a toolkit and a
  * screen, twice, with no way to tell which were missed.
  *
- * <h2>Nineteen abstract methods and five defaults, because that is what was actually being used</h2>
+ * <h2>Nineteen abstract methods and seven defaults, because that is what was actually being used</h2>
  *
  * <p>Not a guess at what a UI toolkit might need. The first cut was the complete set of operations that
  * {@code ArmatureTheme}, {@code ArmatureButton}, {@code ScrollView} and a screen between them
@@ -42,7 +43,10 @@ import java.util.UUID;
  * sheet, {@link #turned} for a picture that is not axis-aligned, and {@link #shadowedText} for a label
  * with no backdrop behind it. {@code centredText} and the two {@link #clip} overloads are defaults
  * rather than abstract members, so the figure that matters to an implementer -- and the one to keep
- * in step with this list -- is the nineteen.
+ * in step with this list -- is the nineteen. The two newest are defaults too, and they are the same
+ * kind of arrival: {@link #fillPlan} and {@link #fillLattice} hand over a shape and a repeating
+ * pattern whole, because drawing them as their fills is what the frame was spending its time on,
+ * and the default for each is exactly the fills.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -140,6 +144,52 @@ public interface GuiRenderer {
      * @param argb the colour, alpha included. Always eight digits — see {@code ArmatureTheme}.
      */
     void fill(int left, int top, int right, int bottom, int argb);
+
+    /**
+     * Fills every rectangle of a plan, measured from {@code x}, {@code y}, in one colour.
+     *
+     * <h2>Why a shape arrives whole rather than as its fills</h2>
+     *
+     * <p>Because the fills are the expensive way to draw it. A circle is one rectangle per distinct row, so a
+     * node's four layers are a couple of hundred rectangles, and every one is a quad the CPU builds again on
+     * every frame. Handed the whole plan, the game renderer can draw a plan of many rectangles as <b>one</b>
+     * quad over a mask of exactly those pixels, rasterised once and kept on the GPU. The pixels are the same
+     * pixels: the mask is made from the plan's own rectangles, and the colour is the same colour.
+     *
+     * <p>The default is the loop every caller used to write, one {@link #fill} per rectangle in order, so a
+     * recording renderer in a test still sees every rectangle, and a renderer that has no better way loses
+     * nothing.
+     */
+    default void fillPlan(Plans.Plan plan, int x, int y, int argb) {
+        for (int i = 0; i < plan.count(); i++) {
+            fill(x + plan.x1(i), y + plan.y1(i), x + plan.x2(i), y + plan.y2(i), argb);
+        }
+    }
+
+    /**
+     * Fills one {@code width} by {@code height} rectangle at every pairing of a column start and a row start:
+     * the first {@code columnCount} entries of {@code xs} against the first {@code rowCount} of {@code ys}.
+     *
+     * <h2>Why a lattice is its own call</h2>
+     *
+     * <p>A repeating pattern is the product of two short lists, and as fills it is the product's length: a dot
+     * grid over a zoomed-out canvas is ten thousand rectangles from a hundred columns and a hundred rows. The
+     * game renderer draws it as one quad per row over a one-row mask of the columns, which is the same pixels
+     * at the rows' count rather than the product's.
+     *
+     * <p>The default is the double loop, columns outer and rows inner, which is the order a dot grid has
+     * always been drawn in. Overlapping marks are allowed, and draw the way overlapping fills do.
+     */
+    default void fillLattice(int[] xs, int columnCount, int width, int[] ys, int rowCount, int height,
+                             int argb) {
+        for (int i = 0; i < columnCount; i++) {
+            int x = xs[i];
+            for (int j = 0; j < rowCount; j++) {
+                int y = ys[j];
+                fill(x, y, x + width, y + height, argb);
+            }
+        }
+    }
 
     // ------------------------------------------------------------------
     // Text

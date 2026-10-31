@@ -13,7 +13,9 @@ That representation is the whole design, because drawing and hit-testing read th
 walks them, and `containsLocal(x, y, size)` asks whether a point is inside them. A click therefore
 lands on exactly what was drawn, for every shape, without a second implementation that can disagree.
 That is the bug the alternatives pay for, since precomputed pixel-mask approaches hard-code their
-shapes to a square grid.
+shapes to a square grid. The game renderer does keep masks on the GPU for drawing (see
+[[armature:toolkit]]), but each one is made from a shape's spans at the size drawn, so it is a copy
+of what the spans say rather than a second source.
 
 The default `spans(row, size)` sanitises what `spansOf` returns (sorted, merged, clamped to the row),
 so a shape cannot express a negative span or an unsorted pair even by accident. `containsLocal` is a

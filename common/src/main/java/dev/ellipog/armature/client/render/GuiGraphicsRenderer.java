@@ -5,6 +5,7 @@ import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 
 import dev.ellipog.armature.client.TextScale;
 import dev.ellipog.armature.client.ui.kit.Measure;
+import dev.ellipog.armature.client.ui.shape.Plans;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -58,6 +59,10 @@ import java.util.UUID;
  * submission (see {@link #batched} for why per-fill extraction is quadratic in {@code GuiRenderState}),
  * the tint travels as a colour argument rather than pipeline state, and the pose is a 2D matrix
  * stack rather than a {@code PoseStack}.
+ *
+ * <p>A fourth thing has no 1.21.1 counterpart at all: {@link #fillPlan} and {@link #fillLattice} draw a
+ * many-rectangle shape as one quad over a mask kept on the GPU ({@link GpuMasks}), in the same batch as
+ * the fills around it. See {@link BatchedTexturedRenderState} for why that batch draws the same pixels.
  *
  * <h2>Why a record</h2>
  *
@@ -121,8 +126,12 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
      */
     private static final BatchNesting<GuiGraphicsExtractor> BATCH = new BatchNesting<>();
     private static float[] batchVertices = new float[1024];
+    /** Four texture coordinates per quad, {@code u0, v0, u1, v1}; zero for a fill. Read only when textured. */
+    private static float[] batchUvs = new float[512];
     private static int[] batchColours = new int[128];
     private static int batchQuads;
+    /** The masks a quad in this run is drawn from, or null while the run is fills only. */
+    private static TextureSetup batchMasks;
     private static float batchMinX;
     private static float batchMinY;
     private static float batchMaxX;
@@ -168,11 +177,14 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         int count = batchQuads;
         float[] vertices = Arrays.copyOf(batchVertices, count * 8);
         int[] colours = Arrays.copyOf(batchColours, count);
+        TextureSetup masks = batchMasks;
+        float[] uvs = masks != null ? Arrays.copyOf(batchUvs, count * 4) : null;
         int minX = Mth.floor(batchMinX);
         int minY = Mth.floor(batchMinY);
         int maxX = Mth.ceil(batchMaxX);
         int maxY = Mth.ceil(batchMaxY);
         batchQuads = 0;
+        batchMasks = null;
 
         GuiRenderState renderState = renderStateOf(extractor);
         if (renderState == null) {
@@ -184,7 +196,13 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         if (bounds == null) {
             return;
         }
-        renderState.addGuiElement(new BatchedFillsRenderState(vertices, colours, count, scissor, bounds));
+        if (masks != null) {
+            renderState.addGuiElement(
+                    new BatchedTexturedRenderState(vertices, uvs, colours, count, masks, scissor, bounds));
+        }
+        else {
+            renderState.addGuiElement(new BatchedFillsRenderState(vertices, colours, count, scissor, bounds));
+        }
     }
 
     /**
@@ -232,6 +250,53 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
         }
     }
 
+    /**
+     * A run of fills and masked shapes, drawn as one textured element.
+     *
+     * <h2>Why a fill can sit in this batch and draw what it always drew</h2>
+     *
+     * <p>Read from the two shaders rather than assumed: the fill pipeline draws {@code vertexColor} and
+     * discards it at zero alpha, and the textured one draws {@code texture * vertexColor} and discards the
+     * product at zero alpha, both blended the same way. A fill here samples the opaque white texel the masks
+     * keep at their corner, and one times a colour is that colour, so the fill's pixels do not change. A
+     * masked shape samples its own mask, white where the plan fills and clear where it does not, which is the
+     * plan's pixels in the plan's colour. One element, in call order, is what keeps the painter's order
+     * between the two exactly as it was when everything was fills.
+     */
+    private record BatchedTexturedRenderState(
+            float[] vertices,
+            float[] uvs,
+            int[] colours,
+            int count,
+            TextureSetup textureSetup,
+            ScreenRectangle scissorArea,
+            ScreenRectangle bounds) implements GuiElementRenderState {
+
+        @Override
+        public void buildVertices(VertexConsumer consumer) {
+            float[] verts = this.vertices;
+            float[] tex = this.uvs;
+            int[] cols = this.colours;
+            int n = this.count;
+            for (int i = 0, v = 0, t = 0; i < n; i++, v += 8, t += 4) {
+                int argb = cols[i];
+                float u0 = tex[t];
+                float v0 = tex[t + 1];
+                float u1 = tex[t + 2];
+                float v1 = tex[t + 3];
+                consumer.addVertex(verts[v], verts[v + 1], 0.0F).setUv(u0, v0).setColor(argb);
+                consumer.addVertex(verts[v + 2], verts[v + 3], 0.0F).setUv(u0, v1).setColor(argb);
+                consumer.addVertex(verts[v + 4], verts[v + 5], 0.0F).setUv(u1, v1).setColor(argb);
+                consumer.addVertex(verts[v + 6], verts[v + 7], 0.0F).setUv(u1, v0).setColor(argb);
+            }
+        }
+
+        @Override
+        public RenderPipeline pipeline() {
+            return RenderPipelines.GUI_TEXTURED;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Rectangles
     // ------------------------------------------------------------------
@@ -242,73 +307,189 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
             if (left == right || top == bottom) {
                 return;
             }
-            int x0 = Math.min(left, right);
-            int x1 = Math.max(left, right);
-            int y0 = Math.min(top, bottom);
-            int y1 = Math.max(top, bottom);
-
-            Matrix3x2fc pose = graphics.pose();
-            float m00 = pose.m00();
-            float m01 = pose.m01();
-            float m10 = pose.m10();
-            float m11 = pose.m11();
-            float m20 = pose.m20();
-            float m21 = pose.m21();
-
-            float vx0 = m00 * x0 + m10 * y0 + m20;
-            float vy0 = m01 * x0 + m11 * y0 + m21;
-            float vx1 = m00 * x0 + m10 * y1 + m20;
-            float vy1 = m01 * x0 + m11 * y1 + m21;
-            float vx2 = m00 * x1 + m10 * y1 + m20;
-            float vy2 = m01 * x1 + m11 * y1 + m21;
-            float vx3 = m00 * x1 + m10 * y0 + m20;
-            float vy3 = m01 * x1 + m11 * y0 + m21;
-
-            float quadMinX = Math.min(Math.min(vx0, vx1), Math.min(vx2, vx3));
-            float quadMaxX = Math.max(Math.max(vx0, vx1), Math.max(vx2, vx3));
-            float quadMinY = Math.min(Math.min(vy0, vy1), Math.min(vy2, vy3));
-            float quadMaxY = Math.max(Math.max(vy0, vy1), Math.max(vy2, vy3));
-
-            int quadIndex = batchQuads;
-            if (quadIndex == 0) {
-                batchMinX = quadMinX;
-                batchMaxX = quadMaxX;
-                batchMinY = quadMinY;
-                batchMaxY = quadMaxY;
-            }
-            else {
-                if (quadMinX < batchMinX) {
-                    batchMinX = quadMinX;
-                }
-                if (quadMaxX > batchMaxX) {
-                    batchMaxX = quadMaxX;
-                }
-                if (quadMinY < batchMinY) {
-                    batchMinY = quadMinY;
-                }
-                if (quadMaxY > batchMaxY) {
-                    batchMaxY = quadMaxY;
-                }
-            }
-
-            if (quadIndex == batchColours.length) {
-                batchColours = Arrays.copyOf(batchColours, batchColours.length * 2);
-                batchVertices = Arrays.copyOf(batchVertices, batchVertices.length * 2);
-            }
-            int base = quadIndex * 8;
-            batchVertices[base] = vx0;
-            batchVertices[base + 1] = vy0;
-            batchVertices[base + 2] = vx1;
-            batchVertices[base + 3] = vy1;
-            batchVertices[base + 4] = vx2;
-            batchVertices[base + 5] = vy2;
-            batchVertices[base + 6] = vx3;
-            batchVertices[base + 7] = vy3;
-            batchColours[quadIndex] = argb;
-            batchQuads = quadIndex + 1;
+            queue(Math.min(left, right), Math.min(top, bottom), Math.max(left, right), Math.max(top, bottom),
+                    argb, 0F, 0F, 0F, 0F);
             return;
         }
         graphics.fill(left, top, right, bottom, argb);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>One quad over the plan's mask when {@link GpuMasks} has one for it, and the default's fills when it
+     * does not. Outside a {@link #batched} region the plan is drawn as a region of its own, so a lone shape
+     * is one element rather than one per rectangle.
+     */
+    @Override
+    public void fillPlan(Plans.Plan plan, int x, int y, int argb) {
+        if (plan.count() < GpuMasks.MIN_PLAN_RECTS) {
+            GuiRenderer.super.fillPlan(plan, x, y, argb);
+            return;
+        }
+        if (!BATCH.batching(graphics)) {
+            if (GET_RENDER_STATE == null || PEEK_SCISSOR == null) {
+                GuiRenderer.super.fillPlan(plan, x, y, argb);
+                return;
+            }
+            batched(() -> {
+                fillPlan(plan, x, y, argb);
+                return null;
+            });
+            return;
+        }
+        GpuMasks masks = GpuMasks.forFrame();
+        GpuMasks.Placed placed = null;
+        if (masks != null) {
+            try {
+                placed = masks.plan(plan);
+            }
+            catch (Throwable failure) {
+                GpuMasks.disable(failure);
+            }
+        }
+        if (placed == null) {
+            GuiRenderer.super.fillPlan(plan, x, y, argb);
+            return;
+        }
+        drawingFrom(masks);
+        queue(x + placed.left(), y + placed.top(), x + placed.right(), y + placed.bottom(), argb,
+                placed.u0(), placed.v0(), placed.u1(), placed.v1());
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>One quad per row and strip piece over a one-row mask of the columns when {@link GpuMasks} has one,
+     * and the default's fills when it does not. The rows are drawn top to bottom rather than in the default's
+     * column order, which changes no pixel: marks on a row cannot overlap (the strip refuses them), and two
+     * marks of one colour over the same pixel blend to the same result in either order.
+     */
+    @Override
+    public void fillLattice(int[] xs, int columnCount, int width, int[] ys, int rowCount, int height, int argb) {
+        if (columnCount < GpuMasks.MIN_LATTICE_COLUMNS || rowCount <= 0 || width <= 0 || height <= 0) {
+            GuiRenderer.super.fillLattice(xs, columnCount, width, ys, rowCount, height, argb);
+            return;
+        }
+        if (!BATCH.batching(graphics)) {
+            if (GET_RENDER_STATE == null || PEEK_SCISSOR == null) {
+                GuiRenderer.super.fillLattice(xs, columnCount, width, ys, rowCount, height, argb);
+                return;
+            }
+            batched(() -> {
+                fillLattice(xs, columnCount, width, ys, rowCount, height, argb);
+                return null;
+            });
+            return;
+        }
+        GpuMasks masks = GpuMasks.forFrame();
+        GpuMasks.Segment[] strip = null;
+        if (masks != null) {
+            try {
+                strip = masks.strip(xs, columnCount, width);
+            }
+            catch (Throwable failure) {
+                GpuMasks.disable(failure);
+            }
+        }
+        if (strip == null) {
+            GuiRenderer.super.fillLattice(xs, columnCount, width, ys, rowCount, height, argb);
+            return;
+        }
+        drawingFrom(masks);
+        int origin = xs[0];
+        for (int j = 0; j < rowCount; j++) {
+            int top = ys[j];
+            for (GpuMasks.Segment piece : strip) {
+                int left = origin + piece.offset();
+                queue(left, top, left + piece.length(), top + height, argb,
+                        piece.u0(), piece.v0(), piece.u1(), piece.v1());
+            }
+        }
+    }
+
+    /**
+     * Marks the open run as drawing from these masks, so it flushes as a textured element. The fills already
+     * queued need nothing: their texture coordinates are zero, which is the white texel.
+     */
+    private void drawingFrom(GpuMasks masks) {
+        TextureSetup setup = masks.textureSetup();
+        if (batchMasks != null && batchMasks != setup) {
+            flushBatch(graphics);
+        }
+        batchMasks = setup;
+    }
+
+    /**
+     * Queues one quad of the open run: the rectangle's corners through the pose, its texture coordinates, and
+     * its colour. The rectangle is already ordered, left above right and top above bottom.
+     */
+    private void queue(int x0, int y0, int x1, int y1, int argb, float u0, float v0, float u1, float v1) {
+        Matrix3x2fc pose = graphics.pose();
+        float m00 = pose.m00();
+        float m01 = pose.m01();
+        float m10 = pose.m10();
+        float m11 = pose.m11();
+        float m20 = pose.m20();
+        float m21 = pose.m21();
+
+        float vx0 = m00 * x0 + m10 * y0 + m20;
+        float vy0 = m01 * x0 + m11 * y0 + m21;
+        float vx1 = m00 * x0 + m10 * y1 + m20;
+        float vy1 = m01 * x0 + m11 * y1 + m21;
+        float vx2 = m00 * x1 + m10 * y1 + m20;
+        float vy2 = m01 * x1 + m11 * y1 + m21;
+        float vx3 = m00 * x1 + m10 * y0 + m20;
+        float vy3 = m01 * x1 + m11 * y0 + m21;
+
+        float quadMinX = Math.min(Math.min(vx0, vx1), Math.min(vx2, vx3));
+        float quadMaxX = Math.max(Math.max(vx0, vx1), Math.max(vx2, vx3));
+        float quadMinY = Math.min(Math.min(vy0, vy1), Math.min(vy2, vy3));
+        float quadMaxY = Math.max(Math.max(vy0, vy1), Math.max(vy2, vy3));
+
+        int quadIndex = batchQuads;
+        if (quadIndex == 0) {
+            batchMinX = quadMinX;
+            batchMaxX = quadMaxX;
+            batchMinY = quadMinY;
+            batchMaxY = quadMaxY;
+        }
+        else {
+            if (quadMinX < batchMinX) {
+                batchMinX = quadMinX;
+            }
+            if (quadMaxX > batchMaxX) {
+                batchMaxX = quadMaxX;
+            }
+            if (quadMinY < batchMinY) {
+                batchMinY = quadMinY;
+            }
+            if (quadMaxY > batchMaxY) {
+                batchMaxY = quadMaxY;
+            }
+        }
+
+        if (quadIndex == batchColours.length) {
+            batchColours = Arrays.copyOf(batchColours, batchColours.length * 2);
+            batchVertices = Arrays.copyOf(batchVertices, batchVertices.length * 2);
+            batchUvs = Arrays.copyOf(batchUvs, batchUvs.length * 2);
+        }
+        int base = quadIndex * 8;
+        batchVertices[base] = vx0;
+        batchVertices[base + 1] = vy0;
+        batchVertices[base + 2] = vx1;
+        batchVertices[base + 3] = vy1;
+        batchVertices[base + 4] = vx2;
+        batchVertices[base + 5] = vy2;
+        batchVertices[base + 6] = vx3;
+        batchVertices[base + 7] = vy3;
+        int uv = quadIndex * 4;
+        batchUvs[uv] = u0;
+        batchUvs[uv + 1] = v0;
+        batchUvs[uv + 2] = u1;
+        batchUvs[uv + 3] = v1;
+        batchColours[quadIndex] = argb;
+        batchQuads = quadIndex + 1;
     }
 
     /**
@@ -346,6 +527,7 @@ public record GuiGraphicsRenderer(GuiGraphicsExtractor graphics) implements GuiR
                 BATCH.enter(graphics, GuiGraphicsRenderer::flushBatch);
         if (entry.fresh()) {
             batchQuads = 0;
+            batchMasks = null;
         }
         try {
             return draw.get();

@@ -279,6 +279,83 @@ class CanvasBackgroundArtTest {
     }
 
     @Test
+    @DisplayName("hatch as three lattices is exactly the rectangles of the per-tick walk it replaced")
+    void hatchLatticesAreTheWalk() {
+        int checked = 0;
+        for (CanvasBackground.Space space : CanvasBackground.Space.values()) {
+            for (int spacing : new int[] {9, 24, 40}) {
+                for (float scale : new float[] {0.6F, 1F, 1.4F, 2F, 3.3F}) {
+                    for (int pan : new int[] {0, 5, -13, 31}) {
+                        for (int size : new int[] {1, 2, 3}) {
+                            for (boolean backslash : new boolean[] {false, true}) {
+                                CanvasBackground.Tuning tuning = new CanvasBackground.Tuning(size, 5, backslash);
+                                Viewport view = Viewport.of(0.05F, 8F).bounds(3, 5, 157, 93);
+                                view.setScale(scale);
+                                view.setOffset(pan, -pan / 2);
+                                checked += assertHatchIsTheWalk(view, procedural(CanvasBackground.Kind.HATCH,
+                                        spacing, space, tuning), procedural(CanvasBackground.Kind.DOTS, spacing,
+                                        space, tuning));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(checked > 200, "enough of those views drew a hatch to mean something: " + checked);
+    }
+
+    /**
+     * Draws a hatch and the walk it used to be, and asserts they are the same rectangles in the same colour.
+     *
+     * <p>The ticks' origins are read from a dot grid over the same view, because dots and hatch walk the
+     * same lattice ({@code axis}, both axes), and a dot grid draws every point of it: that is the walk's input
+     * without restating how the lattice is found. The step is restated, because it is part of the walk.
+     *
+     * @return 1 when the hatch drew, 0 when this view fades it out
+     */
+    private static int assertHatchIsTheWalk(Viewport view, CanvasBackground hatch, CanvasBackground dots) {
+        RecordingRenderer drawn = RecordingRenderer.create();
+        CanvasBackgroundArt.draw(drawn, view, hatch, INK);
+        if (drawn.fills().isEmpty()) {
+            return 0;
+        }
+        RecordingRenderer grid = RecordingRenderer.create();
+        CanvasBackgroundArt.draw(grid, view, dots, INK);
+        assertTrue(grid.fills().size() > 0, "a view that draws a hatch draws its dots");
+        int[] xs = grid.fills().stream().mapToInt(RecordingRenderer.Call::x).distinct().sorted().toArray();
+        int[] ys = grid.fills().stream().mapToInt(RecordingRenderer.Call::y).distinct().sorted().toArray();
+        assertEquals(xs.length * ys.length, grid.fills().size(), "a dot grid is the whole product");
+
+        int x1 = view.viewRight();
+        int y0 = view.originY();
+        int y1 = view.viewBottom();
+        boolean graph = hatch.space() == CanvasBackground.Space.GRAPH;
+        int step = graph ? Math.max(1, Math.min(4, Math.round(1.5F * view.scale()))) : 2;
+        int size = hatch.tuning().size();
+        boolean backslash = hatch.tuning().backslash();
+        int colour = drawn.fills().get(0).argb();
+        List<String> walk = new java.util.ArrayList<>();
+        for (int x : xs) {
+            for (int y : ys) {
+                for (int i = 0; i < CanvasBackgroundArt.HATCH_STEPS; i++) {
+                    int px = x + i * step;
+                    int py = backslash ? y + i * step : y - i * step;
+                    if (px >= x1 || py >= y1 || py < y0) {
+                        break;
+                    }
+                    walk.add(px + "," + py + "," + (px + size) + "," + (py + size) + "," + colour);
+                }
+            }
+        }
+        List<String> lattices = drawn.fills().stream()
+                .map(f -> f.x() + "," + f.y() + "," + f.x2() + "," + f.y2() + "," + f.argb())
+                .sorted().toList();
+        assertEquals(walk.stream().sorted().toList(), lattices,
+                "hatch " + hatch + " at scale " + view.scale() + " panned " + view.offsetX());
+        return 1;
+    }
+
+    @Test
     @DisplayName("a pattern that would overrun the fill budget fades out instead")
     void theBudgetIsRespected() {
         // A 4000x3000 view at six-unit spacing is 333,000 lattice points: an order of magnitude past

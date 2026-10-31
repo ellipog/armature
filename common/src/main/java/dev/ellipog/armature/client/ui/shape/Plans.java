@@ -52,6 +52,9 @@ public final class Plans {
 
         private final int[] rects;
 
+        /** The rectangles' hash, worked out on first ask. Zero means not yet, the way {@code String} does it. */
+        private int hash;
+
         Plan(int[] rects) {
             this.rects = rects;
         }
@@ -59,6 +62,31 @@ public final class Plans {
         /** How many rectangles this plan draws. */
         public int count() {
             return rects.length / 4;
+        }
+
+        /**
+         * A hash of the rectangles themselves, so two plans that draw the same pixels hash alike.
+         *
+         * <p>Content rather than identity, because not every plan is remembered: {@code fillShape} over a
+         * caller's own spans merges a fresh plan on every call, and a renderer that keeps something per plan
+         * (the game renderer keeps a mask) would otherwise never find it again. Cached on the plan, because a
+         * plan never changes after it is built.
+         */
+        public int contentHash() {
+            int h = hash;
+            if (h == 0) {
+                h = Arrays.hashCode(rects);
+                if (h == 0) {
+                    h = 1;
+                }
+                hash = h;
+            }
+            return h;
+        }
+
+        /** Whether this plan draws exactly the rectangles another one does, in the same order. */
+        public boolean sameRects(Plan other) {
+            return other == this || (other != null && Arrays.equals(rects, other.rects));
         }
 
         public int x1(int index) {

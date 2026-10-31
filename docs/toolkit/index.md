@@ -36,6 +36,17 @@ The other half of the seam is `batched(...)`: a region of drawing that submits o
 per fill, because the unmanaged screen path flushes per fill. It also has `flush()` for the caller
 that has to draw something in the middle.
 
+Two calls hand over many rectangles at once. `fillPlan(plan, x, y, argb)` takes a shape's whole
+`Plans.Plan`, and `fillLattice(xs, columns, width, ys, rows, height, argb)` takes a repeating mark as its
+columns against its rows. `ArmatureTheme.fillShape` and the canvas background patterns draw through them.
+Their defaults are the fill loops they replace, so a test recorder still sees every rectangle.
+
+On 26.3 the game renderer draws a plan as one quad over a mask kept on the GPU, and a lattice as one quad
+per row over a one-row mask, in the same batch and order as the fills around them. The pixels are the same:
+a mask is made from the plan's own rectangles, one texel per pixel, and sampled without filtering. A plan
+whose rectangles overlap, a mask bigger than 128 pixels, or a full mask texture falls back to fills. Start
+the game with `-Darmature.gpuMasks=false` to turn the GPU path off.
+
 Every colour a widget asks for comes from `ArmatureTheme.current()`. A button does not know what a
 theme is, it asks for `body` and gets whatever the current theme says. [[armature:toolkit/themes]] is
 the page about that.
