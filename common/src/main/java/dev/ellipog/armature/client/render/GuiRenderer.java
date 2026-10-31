@@ -271,6 +271,31 @@ public interface GuiRenderer {
     <T> T batched(java.util.function.Supplier<T> draw);
 
     /**
+     * Runs {@code draw} and holds back every {@link #icon}, {@link #texture} and {@link #sprite} it asks for:
+     * each is drawn when it returns, in call order, over the rectangles it drew.
+     *
+     * <h2>Why</h2>
+     *
+     * <p>A picture splits a batch. An item icon flushes everything queued before it, and a texture or sprite
+     * sets the shader colour, which flushes too. Inside {@link #batched}, a row of nodes that each draw a
+     * shape and then an icon is two submissions per node. Held back, the shapes are one submission and the
+     * pictures follow.
+     *
+     * <h2>The promise the caller makes</h2>
+     *
+     * <p>Nothing {@code draw} fills <b>after</b> a picture may overlap that picture, because it now lands
+     * under it instead of over it. Nodes that do not overlap each other keep that promise; a caller that
+     * cannot tell should not call this. Text, a face, a blur, a clip or a {@link #flush} inside the region
+     * draws the held pictures first, so those keep their order without being part of the promise.
+     *
+     * <p>{@link #icon} still answers whether it will draw, at the call, so a caller's fallback works as
+     * before. The default runs {@code draw} as it is, which is the old order exactly.
+     */
+    default void iconsLast(Runnable draw) {
+        draw.run();
+    }
+
+    /**
      * Draws one line of text centred on {@code centreX}.
      *
      * <p>A default rather than an abstract method, and deliberately: the centring is

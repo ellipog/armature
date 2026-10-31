@@ -36,6 +36,14 @@ The other half of the seam is `batched(...)`: a region of drawing that submits o
 per fill, because the unmanaged screen path flushes per fill. It also has `flush()` for the caller
 that has to draw something in the middle.
 
+`iconsLast(draw)` runs `draw` and holds back every `icon`, `texture` and `sprite` it asks for until the end,
+so the rectangles inside are one batch and the pictures come after them, in the order they were asked for.
+An item icon flushes everything queued before it, and a texture sets the shader colour, which flushes
+too, so a row of shapes with a picture on each is otherwise one submission per picture. Only use it when
+no rectangle drawn after a picture inside the region overlaps that picture, since the rectangle would end
+up under it. Text, a face, a blur, a clip or a `flush()` inside the region draws the held pictures first,
+so those keep their order. The default runs `draw` as it is.
+
 Every colour a widget asks for comes from `ArmatureTheme.current()`. A button does not know what a
 theme is, it asks for `body` and gets whatever the current theme says. [[armature:toolkit/themes]] is
 the page about that.

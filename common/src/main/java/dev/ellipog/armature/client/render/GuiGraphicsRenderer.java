@@ -25,6 +25,9 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -104,6 +107,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      */
     @Override
     public void flush() {
+        boundary();
         graphics.flush();
     }
 
@@ -170,6 +174,107 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     private static int batchDepth;
 
     // ------------------------------------------------------------------
+    // Held pictures
+    // ------------------------------------------------------------------
+
+    /**
+     * One picture an {@link #iconsLast} region asked for, kept until the region ends: what to draw, where,
+     * and the pose it was asked under, so a picture asked for inside a {@link #turned} scope still draws
+     * turned after the scope has closed. The normal matrix travels too, since an item's lighting reads it.
+     */
+    private record Held(int kind, ItemStack stack, ResourceLocation id, int x, int y, int width, int height,
+                        int argb, Matrix4f pose, Matrix3f normal) {
+        static final int ITEM = 0;
+        static final int TEXTURE = 1;
+        static final int SPRITE = 2;
+    }
+
+    /**
+     * The held pictures, in call order. Static and keyed to one context, for the reason {@link #batchDepth}
+     * is: a record holds no state, and a screen's two renderers over one context are one view of it.
+     */
+    private static final List<Held> HELD = new ArrayList<>();
+    private static GuiGraphics heldOwner;
+    private static int heldDepth;
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Held per context: a region on another context inside an open one simply draws in call order, so
+     * one region never swallows the pictures of another. A nested region on the same context joins the
+     * outer one, and only the outermost end draws what was held.
+     */
+    @Override
+    public void iconsLast(Runnable draw) {
+        if (heldDepth > 0 && heldOwner != graphics) {
+            draw.run();
+            return;
+        }
+        heldOwner = graphics;
+        heldDepth++;
+        try {
+            draw.run();
+        }
+        finally {
+            if (heldDepth == 1) {
+                try {
+                    boundary();
+                }
+                finally {
+                    HELD.clear();
+                    heldOwner = null;
+                    heldDepth = 0;
+                }
+            }
+            else {
+                heldDepth--;
+            }
+        }
+    }
+
+    private boolean holding() {
+        return heldDepth > 0 && heldOwner == graphics;
+    }
+
+    /** A held picture with the pose it was asked under. */
+    private Held hold(int kind, ItemStack stack, ResourceLocation id, int x, int y, int width, int height,
+                      int argb) {
+        PoseStack.Pose last = graphics.pose().last();
+        return new Held(kind, stack, id, x, y, width, height, argb, new Matrix4f(last.pose()),
+                new Matrix3f(last.normal()));
+    }
+
+    /**
+     * Draws any held pictures, so whatever draws next lands over them. Every draw that is not a rectangle or
+     * a held picture starts here, which is what keeps text, a clip or a blur inside an {@link #iconsLast}
+     * region in its call order. The pictures are taken off the list first, so a picture that draws text of
+     * its own cannot draw the list twice.
+     */
+    private void boundary() {
+        if (!holding() || HELD.isEmpty()) {
+            return;
+        }
+        List<Held> pictures = new ArrayList<>(HELD);
+        HELD.clear();
+        PoseStack pose = graphics.pose();
+        for (Held held : pictures) {
+            pose.pushPose();
+            pose.last().pose().set(held.pose());
+            pose.last().normal().set(held.normal());
+            try {
+                switch (held.kind()) {
+                    case Held.ITEM -> drawItem(held.stack(), held.x(), held.y(), held.width());
+                    case Held.TEXTURE -> drawTexture(held.id(), held.x(), held.y(), held.width(), held.height());
+                    default -> drawSprite(held.id(), held.x(), held.y(), held.width(), held.height(), held.argb());
+                }
+            }
+            finally {
+                pose.popPose();
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Text
     // ------------------------------------------------------------------
 
@@ -205,6 +310,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      * on a client whose player has turned text up is bigger by both, which is what each of them asked for.
      */
     private void drawAt(String text, int x, int y, int argb, boolean shadow, float scale) {
+        boundary();
         double effective = scale * TextScale.get();
         if (effective == TextScale.DEFAULT) {
             graphics.drawString(font(), text, x, y, argb, shadow);
@@ -222,6 +328,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
 
     @Override
     public void styledText(java.util.List<StyledRun> runs, int x, int y, int argb) {
+        boundary();
         int at = x;
         float base = (float) TextScale.get();
         for (StyledRun run : runs) {
@@ -346,6 +453,22 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
             // than a blank icon. Reported as "nothing drawn" so the caller falls back to a block.
             return false;
         }
+        if (holding()) {
+            HELD.add(hold(Held.ITEM, stack, null, boxX, boxY, box, box, 0));
+            return true;
+        }
+        drawItem(stack, boxX, boxY, box);
+        return true;
+    }
+
+    /** The icon itself, once {@link #icon} has decided it draws now. */
+    private void drawItem(ItemStack stack, int boxX, int boxY, int box) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.level == null) {
+            // Asked again because a held icon draws later in the frame, and the level can only go away
+            // between frames; cheap, and it keeps this a method that cannot crash on its own.
+            return;
+        }
 
         // Most items are one textured quad, and the pipeline is a great deal of work to draw one: see
         // IconPlan for the rule and for the accessors that decide it. The box is not part of it -- a
@@ -369,17 +492,17 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
             int arm = IconPlan.arm();
             if (arm == 1) {
                 graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon());
-                return true;
+                return;
             }
             if (arm == 2) {
                 graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon(), 1F, 1F, 1F, 1F);
-                return true;
+                return;
             }
             if (arm == 3) {
                 graphics.flush();
                 graphics.blit(boxX, boxY, 0, box, box, model.getParticleIcon());
                 graphics.flush();
-                return true;
+                return;
             }
         }
 
@@ -392,7 +515,6 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         pose.scale(scale, scale, 1F);
         graphics.renderItem(stack, 0, 0);
         pose.popPose();
-        return true;
     }
 
     /**
@@ -526,6 +648,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         }
 
         PlayerSkin skin = minecraft.getSkinManager().getInsecureSkin(profile);
+        boundary();
         PlayerFaceRenderer.draw(graphics, skin, boxX, boxY, box);
         return true;
     }
@@ -680,6 +803,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     public void scaled(ResourceLocation texture, int x, int y, int width, int height,
                        float u, float v, int sourceWidth, int sourceHeight,
                        int textureWidth, int textureHeight, int argb) {
+        boundary();
         float alpha = ((argb >>> 24) & 0xFF) / 255F;
         float red = ((argb >> 16) & 0xFF) / 255F;
         float green = ((argb >> 8) & 0xFF) / 255F;
@@ -710,6 +834,14 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      */
     @Override
     public void texture(ResourceLocation texture, int x, int y, int width, int height) {
+        if (holding()) {
+            HELD.add(hold(Held.TEXTURE, null, texture, x, y, width, height, 0));
+            return;
+        }
+        drawTexture(texture, x, y, width, height);
+    }
+
+    private void drawTexture(ResourceLocation texture, int x, int y, int width, int height) {
         graphics.setColor(1F, 1F, 1F, 1F);
         try {
             graphics.blit(texture, x, y, width, height, 0F, 0F, width, height, width, height);
@@ -739,6 +871,14 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         if (atlasSprite == null || width <= 0 || height <= 0) {
             return;
         }
+        if (holding()) {
+            HELD.add(hold(Held.SPRITE, null, atlasSprite, x, y, width, height, argb));
+            return;
+        }
+        drawSprite(atlasSprite, x, y, width, height, argb);
+    }
+
+    private void drawSprite(ResourceLocation atlasSprite, int x, int y, int width, int height, int argb) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null) {
             return;
@@ -777,6 +917,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         if (guiSprite == null || width <= 0 || height <= 0) {
             return;
         }
+        boundary();
         graphics.blitSprite(guiSprite, x, y, width, height);
     }
 
@@ -834,6 +975,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
      */
     @Override
     public Scoped clip(int left, int top, int right, int bottom) {
+        boundary();
         graphics.enableScissor(left, top, right, bottom);
         return new Scoped() {
             private boolean closed;
@@ -849,6 +991,7 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
                     return;
                 }
                 closed = true;
+                boundary();
                 graphics.disableScissor();
             }
         };
