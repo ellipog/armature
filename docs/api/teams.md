@@ -99,6 +99,11 @@ control are one answer.
 first join, so resolving to it just because it is loaded would mean every player reads as being in a
 party of one, and on a server where nobody has formed one, that is worse than the fallback.
 
+A server that resolved to the fallback because its parties mod had no party yet does not have to
+restart when the first one forms. FTB Teams announces it, and Open Parties and Claims, which announces
+nothing, is asked again once a second for as long as the answer is the fallback. Once a parties mod is
+the answer it stays the answer for that server.
+
 FTB Teams and Open Parties and Claims are `compileOnly`: they are never in a jar and never in the
 published POM, and each adapter's class is loaded only behind an `isModLoaded` check. A server with
 neither loses nothing.

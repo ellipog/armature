@@ -77,6 +77,21 @@ import java.util.function.Supplier;
  * each loader's subproject, so <b>no test JVM ever fires them</b>, and a resolver that waited for one
  * would hand every test a server with no teams. The lifecycle events are weather, not a contract.
  *
+ * <h2>A fallback answer is checked again, because a parties mod can gain its first party</h2>
+ *
+ * <p>Remembering the answer is right for what it is mostly about: which mods are installed does not
+ * change while a server runs. But "holds at least one party" does, and the stored fallback is the
+ * answer on a server whose parties mod had no party yet when it was first asked. FTB Teams announces
+ * its first party and calls {@link #invalidate} itself. Open Parties and Claims announces nothing, so
+ * a world whose first OPAC party was formed after startup went on answering {@code stored} until the
+ * next restart: OPAC's own command succeeded and nothing that shares state by team noticed.
+ *
+ * <p>So while a server's answer is the fallback, {@link #of} asks the chain again, at most once every
+ * {@link #RECHECK_TICKS} server ticks and only on the server thread, and re-resolves when a source
+ * ahead of the fallback now says it is present. An answer that is a parties mod is never re-asked
+ * this way, so an established source does not change under a running server; and the check costs one
+ * presence question per source per second on exactly the servers that have nothing better yet.
+ *
  * <h2>The ordering of the two failures this arrangement can have</h2>
  *
  * <p>A source that throws when asked whether it is present is treated as absent, and the log says
@@ -128,6 +143,20 @@ public final class TeamProviders {
      */
     private static final Map<MinecraftServer, TeamManager> RESOLVED = new ConcurrentHashMap<>();
 
+    /**
+     * How often a fallback answer is asked again, in server ticks: once a second.
+     *
+     * <p>Often enough that a party formed through a parties mod's own command is shared within a moment
+     * of forming, and rare enough that the question (one presence check per source) is nothing.
+     */
+    static final int RECHECK_TICKS = 20;
+
+    /**
+     * The servers whose answer is the stored fallback, each to the server tick its next re-check is
+     * due. A server whose answer is a parties mod is never in here. See the class comment.
+     */
+    private static final Map<MinecraftServer, Integer> RECHECK = new ConcurrentHashMap<>();
+
     /** Registrations, in order, ahead of the built-ins. See {@link #register}. */
     private static final List<TeamProvider> REGISTERED = new CopyOnWriteArrayList<>();
 
@@ -162,10 +191,64 @@ public final class TeamProviders {
      * <p>Callable from the server thread; also callable <i>before</i> a server exists in a test, where
      * it resolves to the stored manager because nothing else is loaded. Neither is a special case in
      * the code — both fall out of asking the sources in order.
+     *
+     * <p>An answer that is the stored fallback is asked again at most once a second, on the server
+     * thread, so a parties mod that gains its first party while the server runs becomes the answer
+     * without a restart. See the class comment.
      */
     public static TeamManager of(MinecraftServer server) {
         watch();
-        return RESOLVED.computeIfAbsent(server, TeamProviders::resolve);
+        TeamManager manager = RESOLVED.computeIfAbsent(server, TeamProviders::resolve);
+        if (RECHECK.containsKey(server) && recheck(server)) {
+            manager = RESOLVED.computeIfAbsent(server, TeamProviders::resolve);
+        }
+        return manager;
+    }
+
+    /**
+     * Asks again, for a server whose answer is the fallback, whether a better source is now present.
+     *
+     * <p>Server thread only, because that is the only thread a parties mod's registry is documented as
+     * safe to read from (see {@code OpenPacTeams.isPresent}); any other caller keeps the remembered
+     * answer, which is what it got before this existed.
+     *
+     * @return whether the remembered answer was dropped, so the caller resolves again
+     */
+    private static boolean recheck(MinecraftServer server) {
+        Integer due = RECHECK.get(server);
+        if (due == null || !server.isSameThread()) {
+            return false;
+        }
+        int now = server.getTickCount();
+        if (now < due) {
+            return false;
+        }
+        RECHECK.put(server, now + RECHECK_TICKS);
+        if (!aheadOfFallback(server, providers())) {
+            return false;
+        }
+        RECHECK.remove(server);
+        Constants.LOG.info("a parties mod has a party now, and this server was using Armature's own "
+                + "teams because it had none when it was first asked");
+        invalidate(server);
+        return true;
+    }
+
+    /**
+     * Whether any source other than the fallback says it is present.
+     *
+     * <p>The question a fallback answer is re-asked with, split out so it can be tested with fakes the
+     * way {@link #choose} is. Quiet about a source that throws, unlike the first resolution: this runs
+     * once a second, and a source that cannot be asked has already been reported once, when the server
+     * first resolved.
+     */
+    static boolean aheadOfFallback(MinecraftServer server, List<TeamProvider> candidates) {
+        for (TeamProvider candidate : candidates) {
+            if (!candidate.isFallback() && present(candidate, server, false)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -182,9 +265,22 @@ public final class TeamProviders {
      *         list with no fallback in it
      */
     static TeamManager choose(MinecraftServer server, List<TeamProvider> candidates) {
+        return chosen(server, candidates).manager();
+    }
+
+    /**
+     * A resolution, and whether it is the fallback.
+     *
+     * <p>The flag is what decides whether {@link #of} asks again later; see the class comment.
+     */
+    record Chosen(TeamManager manager, boolean fallback) {
+    }
+
+    /** {@link #choose}, with whether the winner was the fallback. The decision itself lives here. */
+    static Chosen chosen(MinecraftServer server, List<TeamProvider> candidates) {
         List<TeamProvider> present = new ArrayList<>();
         for (TeamProvider candidate : candidates) {
-            if (present(candidate, server)) {
+            if (present(candidate, server, true)) {
                 present.add(candidate);
             }
         }
@@ -214,7 +310,7 @@ public final class TeamProviders {
                     + "are not being used. Two parties mods installed is a choice this cannot make "
                     + "for you -- see TeamProviders", rival);
         }
-        return manager;
+        return new Chosen(manager, winner.isFallback());
     }
 
     /**
@@ -278,7 +374,17 @@ public final class TeamProviders {
             }
         }
 
-        return choose(server, chain);
+        Chosen chosen = chosen(server, chain);
+        // Remembered so `of` knows to ask again: a fallback answer is the one that can go stale while
+        // the server runs, when a parties mod with no events gains its first party. Due a second from
+        // now rather than at once, because the chain was asked this tick.
+        if (chosen.fallback()) {
+            RECHECK.put(server, server.getTickCount() + RECHECK_TICKS);
+        }
+        else {
+            RECHECK.remove(server);
+        }
+        return chosen.manager();
     }
 
     /**
@@ -327,16 +433,28 @@ public final class TeamProviders {
             ArmatureEvents.SERVER_STARTED.register(TeamProviders::of);
             ArmatureEvents.SERVER_STOPPING.register(server -> {
                 RESOLVED.remove(server);
+                RECHECK.remove(server);
                 Constants.LOG.info("teams cache cleared for a stopping server");
             });
         }
     }
 
-    private static boolean present(TeamProvider provider, MinecraftServer server) {
+    /**
+     * Asks one source whether it is present, treating a source that throws as absent.
+     *
+     * @param loud whether a source that throws is worth a warning. True for a resolution, which happens
+     *             once; false for the once-a-second re-check, which would repeat the same warning forever
+     */
+    private static boolean present(TeamProvider provider, MinecraftServer server, boolean loud) {
         try {
             return provider.isPresent(server);
         }
         catch (RuntimeException | LinkageError e) {
+            if (!loud) {
+                Constants.LOG.debug("team provider '{}' could not be asked whether it is present ({})",
+                        provider.id(), e.toString());
+                return false;
+            }
             // A source we cannot ask is a source we do not use. Logged rather than swallowed, because
             // the interesting case is a parties mod whose API throws during startup -- and the person
             // who can do something about that is reading the log, not the stack trace of a crash.
