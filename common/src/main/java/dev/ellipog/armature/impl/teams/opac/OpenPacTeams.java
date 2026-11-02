@@ -100,6 +100,9 @@ public final class OpenPacTeams implements MutableTeamManager {
     private final MinecraftServer server;
     private final OpenPACServerAPI api;
 
+    /** Whether the missing-hook warning in {@link #isPresent} has been logged. Server thread only. */
+    private static boolean hookWarned;
+
     private OpenPacTeams(MinecraftServer server, OpenPACServerAPI api) {
         this.server = server;
         this.api = api;
@@ -166,8 +169,14 @@ public final class OpenPacTeams implements MutableTeamManager {
         catch (ClassCastException e) {
             // get() casts the server to the interface OPAC's mixin adds. isModLoaded says the mod is
             // present, not that the mixin was applied -- so this is expected rather than exotic.
-            Constants.LOG.warn("Open Parties and Claims is loaded but its server hook is not "
-                    + "present on this server ({}); its parties are not available", e.toString());
+            //
+            // Once per process: a server whose answer is the stored fallback asks this again every
+            // second (see TeamProviders.of), and a missing hook does not come back while it runs.
+            if (!hookWarned) {
+                hookWarned = true;
+                Constants.LOG.warn("Open Parties and Claims is loaded but its server hook is not "
+                        + "present on this server ({}); its parties are not available", e.toString());
+            }
             return false;
         }
     }

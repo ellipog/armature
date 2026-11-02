@@ -98,6 +98,11 @@ control are one answer.
 mean every player reads as being in a party of one on a server where nobody has formed one, and
 that is worse than the fallback.
 
+A server that resolved to the fallback because Open Parties and Claims had no party yet does not
+have to restart when the first one forms. That mod announces nothing, so it is asked again once a
+second for as long as the answer is the fallback. Once it is the answer it stays the answer for that
+server.
+
 Open Parties and Claims is `compileOnly`: it is never in a jar and never in the published POM, and
 its adapter's class is loaded only behind an `isModLoaded` check. A server without it loses
 nothing.

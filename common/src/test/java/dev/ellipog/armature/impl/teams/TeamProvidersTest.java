@@ -166,6 +166,94 @@ class TeamProvidersTest {
                 "and nothing null made it into the chain");
     }
 
+    @Test
+    @DisplayName("a resolution remembers whether the fallback won, which is what decides a re-check")
+    void aResolutionSaysWhetherItIsTheFallback() {
+        TeamProviders.Chosen onFallback = TeamProviders.chosen(null, List.of(
+                source("openpartiesandclaims", false),
+                fallback()));
+        assertTrue(onFallback.fallback(),
+                "OPAC with no party yet loses to the store, and that answer is the one that can go stale "
+                        + "while the server runs");
+
+        TeamProviders.Chosen onOpac = TeamProviders.chosen(null, List.of(
+                source("openpartiesandclaims", true),
+                fallback()));
+        assertFalse(onOpac.fallback(),
+                "an answer that is a parties mod is never re-asked, so an established source does not "
+                        + "change under a running server");
+        assertEquals("openpartiesandclaims", onOpac.manager().name());
+    }
+
+    @Test
+    @DisplayName("a fallback answer is replaced once a parties mod has a party, and not before")
+    void aFallbackIsReplacedWhenAPartiesModGainsAParty() {
+        // The case this exists for: a world whose first OPAC party was formed after startup. OPAC
+        // announces nothing, so this question, asked once a second, is the only way to find out.
+        assertFalse(TeamProviders.aheadOfFallback(null, List.of(
+                        source("openpartiesandclaims", false),
+                        fallback())),
+                "no party yet: the store is still the honest answer");
+        assertTrue(TeamProviders.aheadOfFallback(null, List.of(
+                        source("openpartiesandclaims", true),
+                        fallback())),
+                "the first party: the parties mod should become the answer without a restart");
+        assertFalse(TeamProviders.aheadOfFallback(null, List.of(fallback())),
+                "the fallback itself is present everywhere, so it can never be a reason to re-resolve");
+    }
+
+    @Test
+    @DisplayName("a source that throws during a re-check is treated as absent")
+    void aSourceThatThrowsDuringARecheckIsAbsent() {
+        TeamProvider broken = new TeamProvider() {
+            @Override
+            public String id() {
+                return "broken";
+            }
+
+            @Override
+            public boolean isPresent(MinecraftServer server) {
+                throw new IllegalStateException("its own API is not up yet");
+            }
+
+            @Override
+            public TeamManager create(MinecraftServer server) {
+                throw new AssertionError("a re-check never constructs anything");
+            }
+        };
+
+        assertFalse(TeamProviders.aheadOfFallback(null, List.of(broken, fallback())),
+                "a source that cannot be asked is no reason to drop a working answer");
+    }
+
+    /**
+     * A stand-in for the stored source: present everywhere and marked as the fallback, but building a
+     * read-only manager rather than the world-backed store, which needs a real server to open.
+     */
+    private static TeamProvider fallback() {
+        return new TeamProvider() {
+            @Override
+            public String id() {
+                return StoredTeamManager.NAME;
+            }
+
+            @Override
+            public boolean isPresent(MinecraftServer server) {
+                return true;
+            }
+
+            @Override
+            public boolean isFallback() {
+                return true;
+            }
+
+            @Override
+            public TeamManager create(MinecraftServer server) {
+                return new ReadOnlyTeamManager(StoredTeamManager.NAME);
+            }
+        };
+    }
+
     /** A candidate source that answers whatever it is told to, and builds a manager named after itself. */
     private static TeamProvider source(String id, boolean present) {
         return new TeamProvider() {
