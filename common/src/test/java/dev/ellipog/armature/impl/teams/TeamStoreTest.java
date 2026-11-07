@@ -12,11 +12,16 @@ import net.minecraft.nbt.Tag;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -197,5 +202,150 @@ class TeamStoreTest {
                 "a party from before the switches existed loads on the documented default: invite-only, "
                         + "with member invitations on -- and never null, which would be a policy nobody "
                         + "can read off a team");
+    }
+
+    // ------------------------------------------------------------------
+    // Which team a player is in
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("the member lookup agrees with a walk over the teams, through any run of puts, removes and loads")
+    void theMemberLookupAgreesWithTheWalk() {
+        // Seeded, so a failure names a step that reproduces. The pools are small on purpose: players
+        // land in two teams at once (the damaged-file case, which the index has to settle the way the
+        // walk did), puts replace teams already stored (which keep their place in the map), and removed
+        // ids come back (and go to the end of it).
+        Random random = new Random(0x7EA45L);
+        List<UUID> players = uuids(random, 12);
+        List<UUID> teamIds = uuids(random, 6);
+        UUID stranger = new UUID(random.nextLong(), random.nextLong());
+
+        TeamStore store = new TeamStore();
+        for (int step = 0; step < 3000; step++) {
+            // One to three writes before each comparison, so the index is rebuilt after a single
+            // write and after several marked it stale in a row.
+            int writes = 1 + random.nextInt(3);
+            for (int w = 0; w < writes; w++) {
+                int kind = random.nextInt(10);
+                if (kind < 6) {
+                    store.put(randomTeam(random, teamIds, players));
+                }
+                else if (kind < 9) {
+                    store.remove(teamIds.get(random.nextInt(teamIds.size())));
+                }
+                else {
+                    TeamStore reloaded = TeamStore.load(store.save(new CompoundTag(), null), null);
+                    // Save writes the map in order and load reads it back in order, so a round trip
+                    // must not move a single player to another team.
+                    for (UUID player : players) {
+                        assertEquals(idOf(walk(store, player)), idOf(reloaded.teamOfMember(player)),
+                                "a load changed which team a player is in, at step " + step);
+                    }
+                    store = reloaded;
+                }
+            }
+
+            for (UUID player : players) {
+                assertSame(walk(store, player), store.teamOfMember(player),
+                        "the index and the walk disagree at step " + step + " for player "
+                                + players.indexOf(player) + " of " + store.size() + " teams");
+            }
+            assertNull(store.teamOfMember(stranger),
+                    "a player in no team is in no team, at step " + step);
+        }
+    }
+
+    @Test
+    @DisplayName("a player listed in two teams resolves to the first in the store's order, as the walk did")
+    void aDuplicatedMemberResolvesToTheFirstTeam() {
+        UUID shared = UUID.randomUUID();
+        Team first = Team.created(UUID.randomUUID(), "first", UUID.randomUUID(), 0L)
+                .withMember(shared, TeamRole.MEMBER);
+        Team second = Team.created(UUID.randomUUID(), "second", UUID.randomUUID(), 0L)
+                .withMember(shared, TeamRole.MEMBER);
+
+        // Only a corrupt or hand-edited file can do this -- the manager refuses a second team to
+        // anybody already in one -- but the store has to answer something, and the answer it gave
+        // before the index was the walk's: the first team in the map that lists them.
+        TeamStore store = new TeamStore();
+        store.put(first);
+        store.put(second);
+        assertSame(first, store.teamOfMember(shared), "the first team stored wins");
+
+        // A put that replaces a stored team keeps its place, because the map is a LinkedHashMap. So the
+        // walk still meets it first, and the index must too.
+        Team renamed = first.withName("renamed");
+        store.put(renamed);
+        assertSame(renamed, store.teamOfMember(shared),
+                "a replaced team keeps its place and the replacement is what is answered");
+
+        // Removed and stored again, it goes to the end, and the other team is now the first.
+        store.remove(first.id());
+        assertSame(second, store.teamOfMember(shared), "with the first gone, the second answers");
+        store.put(renamed);
+        assertSame(second, store.teamOfMember(shared),
+                "and a team stored again after a remove is behind it, not back in its old place");
+
+        TeamStore reloaded = TeamStore.load(store.save(new CompoundTag(), null), null);
+        assertEquals(second.id(), reloaded.teamOfMember(shared).id(),
+                "a save and a load keep the order, so the same team answers after a restart");
+    }
+
+    @Test
+    @DisplayName("the member lookup sees a loaded store's teams without anything having been put")
+    void aLoadedStoreIsIndexed() {
+        UUID owner = UUID.randomUUID();
+        UUID member = UUID.randomUUID();
+        TeamStore store = new TeamStore();
+        Team team = Team.created(UUID.randomUUID(), "the crew", owner, 0L)
+                .withMember(member, TeamRole.MEMBER);
+        store.put(team);
+        // Read once, so the source store's index is built and clean -- the reloaded one must not
+        // somehow depend on that.
+        assertSame(team, store.teamOfMember(member));
+
+        // load fills the map directly rather than through put, so this is the path where a store
+        // that only marked itself stale in put would answer from an empty index.
+        TeamStore reloaded = TeamStore.load(store.save(new CompoundTag(), null), null);
+        assertEquals(team.id(), reloaded.teamOfMember(owner).id(), "the owner is found after a load");
+        assertEquals(team.id(), reloaded.teamOfMember(member).id(), "and so is the member");
+        assertSame(reloaded.byId(team.id()).orElseThrow(), reloaded.teamOfMember(member),
+                "and the answer is the stored team itself, not a copy");
+    }
+
+    /**
+     * The lookup as it was before the index, kept as the oracle: walk the teams in the store's own
+     * order and stop at the first that lists the player.
+     */
+    private static Team walk(TeamStore store, UUID player) {
+        for (Team team : store.live()) {
+            if (team.isMember(player)) {
+                return team;
+            }
+        }
+        return null;
+    }
+
+    private static UUID idOf(Team team) {
+        return team == null ? null : team.id();
+    }
+
+    private static List<UUID> uuids(Random random, int count) {
+        List<UUID> out = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            out.add(new UUID(random.nextLong(), random.nextLong()));
+        }
+        return out;
+    }
+
+    /** A team with a random id from the pool, an owner, and up to three more members from the pool. */
+    private static Team randomTeam(Random random, List<UUID> teamIds, List<UUID> players) {
+        UUID id = teamIds.get(random.nextInt(teamIds.size()));
+        Team team = Team.created(id, "crew", players.get(random.nextInt(players.size())), 0L);
+        int extra = random.nextInt(4);
+        for (int i = 0; i < extra; i++) {
+            team = team.withMember(players.get(random.nextInt(players.size())), TeamRole.MEMBER);
+        }
+        return team;
     }
 }

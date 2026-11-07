@@ -19,9 +19,9 @@ import java.util.UUID;
  * <h2>What every implementation must answer, and what it may refuse</h2>
  *
  * <p><b>Reading is mandatory.</b> {@link #teams}, {@link #byId} and {@link #name} are abstract: any
- * source of teams can list them. {@link #teamOf}, {@link #realTeamOf}, {@link #invitesFor},
- * {@link #allTeams} and {@link #teamCount} are default methods written on top of those three, so an
- * implementation that can only read gets the whole read surface for nothing.
+ * source of teams can list them. {@link #teamOf}, {@link #teamIdOf}, {@link #realTeamOf},
+ * {@link #invitesFor}, {@link #allTeams} and {@link #teamCount} are default methods written on top
+ * of those three, so an implementation that can only read gets the whole read surface for nothing.
  *
  * <p><b>Writing is optional, and refusing is not a failure.</b> The six structural mutators throw
  * {@link UnsupportedOperationException} by default, naming the manager in the message. That is
@@ -96,6 +96,20 @@ public interface TeamManager {
      */
     default Team teamOf(UUID player) {
         return realTeamOf(player).orElseGet(() -> Team.solo(player));
+    }
+
+    /**
+     * The id of {@link #teamOf}: the real team's id, or the player's own UUID for a solo player,
+     * since that is what a solo team is keyed by (see {@link Team#solo}).
+     *
+     * <p>For a caller that keys something by a team and needs nothing else from it (progress, a
+     * watch on who is together) and asks often enough that building a team to read one field shows.
+     * The default builds no solo team. An implementation that can name a player's team without
+     * building it overrides this too, and whatever route it takes, the answer is
+     * {@code teamOf(player).id()}; one that overrides {@code teamOf} has to keep this in step.
+     */
+    default UUID teamIdOf(UUID player) {
+        return realTeamOf(player).map(Team::id).orElse(player);
     }
 
     /**
