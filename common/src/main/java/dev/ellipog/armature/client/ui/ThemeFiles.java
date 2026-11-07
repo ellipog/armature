@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Themes read from the themes directory a mod hands it: the file-based half of the catalogue.
@@ -112,6 +113,15 @@ public final class ThemeFiles {
      */
     private static Path directory;
 
+    /**
+     * How many times the catalogue has changed. See {@link #generation}.
+     *
+     * <p>Atomic rather than a plain counter, because the guarantee it gives is about ordering: it moves
+     * <b>after</b> the new themes are in place, so a reader that sees the new number also sees the new
+     * catalogue, and two reloads that overlap cannot both land on the same number.
+     */
+    private static final AtomicLong GENERATION = new AtomicLong();
+
     // ------------------------------------------------------------------
     // Reading
     // ------------------------------------------------------------------
@@ -195,6 +205,8 @@ public final class ThemeFiles {
 
         loaded = Map.copyOf(themes);
         problems = List.copyOf(found);
+        // After the catalogue, never before: see GENERATION.
+        GENERATION.incrementAndGet();
 
         for (String problem : found) {
             Constants.LOG.warn("armature theme: {}", problem);
@@ -330,6 +342,23 @@ public final class ThemeFiles {
     }
 
     /**
+     * A number that changes whenever the catalogue does: every {@link #reload} and every {@link #reset}.
+     *
+     * <p>For a caller that remembers something resolved through {@link Themes#any}. The built-ins are
+     * constants, so this catalogue is the only part of a name's answer that can change while the game
+     * runs (a theme saved from the editor, a file edited and reloaded, a test's directory forgotten) and
+     * a remembered theme compared against this number cannot outlive the file it came from.
+     * {@code Look.main} is the caller it was written for.
+     *
+     * <p>Read it <b>before</b> resolving, not after. The number moves after the catalogue is replaced, so
+     * reading it first means a remembered answer can only ever be labelled older than it is, which costs
+     * one more resolve, and never newer, which would keep a stale one.
+     */
+    public static long generation() {
+        return GENERATION.get();
+    }
+
+    /**
      * Forgets everything read, and the directory with it.
      *
      * <p>For a test that read a temporary directory and then went on to another one — without this, the
@@ -340,5 +369,6 @@ public final class ThemeFiles {
         loaded = Map.of();
         problems = List.of();
         directory = null;
+        GENERATION.incrementAndGet();
     }
 }
