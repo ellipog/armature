@@ -12,3 +12,8 @@ accessWidener v2 named
 # NeoForge has the same widening in `META-INF/accesstransformer.cfg` beside this file; the two are one
 # decision written twice because each loader spells it differently.
 accessible field net/minecraft/client/Minecraft itemColors Lnet/minecraft/client/color/item/ItemColors;
+
+# The pack stack the game's resource manager reads through, for GuiGraphicsRenderer.textureStamp: a reload
+# replaces this field, so its identity says when a cached texture size may be stale. Widened rather than read
+# by reflection, because Fabric runs intermediary names and a field named in a string is not remapped.
+accessible field net/minecraft/server/packs/resources/ReloadableResourceManager resources Lnet/minecraft/server/packs/resources/CloseableResourceManager;

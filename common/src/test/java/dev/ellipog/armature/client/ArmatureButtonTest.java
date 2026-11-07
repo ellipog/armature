@@ -36,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("ArmatureButton")
 class ArmatureButtonTest {
 
+    /** The ellipsis {@code Measure.truncate} writes, U+2026. */
+    private static final String ELLIPSIS = String.valueOf((char) 0x2026);
+
     @BeforeEach
     void resetTheme() {
         ArmatureTheme.resetCurrent();
@@ -259,6 +262,30 @@ class ArmatureButtonTest {
         assertEquals(plain.texts().stream().map(RecordingRenderer.Call::text).toList(),
                 cleared.texts().stream().map(RecordingRenderer.Call::text).toList(),
                 "clearing the note draws the label it always drew");
+    }
+
+    @Test
+    @DisplayName("a label is cut by the widths of the renderer drawing it, whichever drew it before")
+    void theLabelFollowsTheRendererDrawingIt() {
+        // The button keeps one width memo across frames. Every game renderer counts as one renderer to it
+        // (see TextEpoch.measuredThrough), but any other renderer is still its own: widths a six-pixel
+        // renderer measured must never cut the label a three-pixel one draws, or the other way about.
+        ArmatureButton button = new ArmatureButton(0, 0, 60, 16,
+                Component.literal("A very long chapter title"), () -> {
+                }).alignLeft(true);
+
+        String wide = labelThrough(button, RecordingRenderer.withCharWidth(6));
+        String narrow = labelThrough(button, RecordingRenderer.withCharWidth(3));
+        assertEquals("A very l" + ELLIPSIS, wide,
+                "56 pixels of room: eight characters and the ellipsis at six");
+        assertEquals("A very long chapt" + ELLIPSIS, narrow, "and seventeen at three");
+        assertEquals(wide, labelThrough(button, RecordingRenderer.withCharWidth(6)),
+                "back through a six-pixel renderer, cut as a fresh button would be");
+    }
+
+    private static String labelThrough(ArmatureButton button, RecordingRenderer renderer) {
+        button.draw(renderer, 0L);
+        return renderer.texts().get(0).text();
     }
 
     @Test

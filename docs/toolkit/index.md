@@ -36,6 +36,11 @@ The other half of the seam is `batched(...)`: a region of drawing that submits o
 per fill, because the unmanaged screen path flushes per fill. It also has `flush()` for the caller
 that has to draw something in the middle.
 
+`scaledLattice(texture, xs, columns, width, ys, rows, height, ...)` hands over a tiled image whole, with
+`scaled`'s source region and tint. Its default is one `scaled` per tile, rows outer, and the image
+background tiles through it. On 1.21.1 the game renderer keeps that default, since a blit is drawn as it
+is asked for; 26.3 draws the whole lattice as one element.
+
 `iconsLast(draw)` runs `draw` and holds back every `icon`, `texture` and `sprite` it asks for until the end,
 so the rectangles inside are one batch and the pictures come after them, in the order they were asked for.
 An item icon flushes everything queued before it, and a texture sets the shader colour, which flushes

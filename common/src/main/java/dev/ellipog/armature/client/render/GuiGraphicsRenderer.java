@@ -20,6 +20,7 @@ import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ReloadableResourceManager;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.inventory.InventoryMenu;
@@ -30,14 +31,17 @@ import org.joml.Matrix4f;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.function.LongSupplier;
 
 /**
  * 1.21.1's {@link GuiRenderer}: the one file in either mod that names {@code GuiGraphics}, and the
@@ -331,7 +335,9 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         boundary();
         int at = x;
         float base = (float) TextScale.get();
-        for (StyledRun run : runs) {
+        Iterator<StyledRun> each = runs.iterator();
+        while (each.hasNext()) {
+            StyledRun run = each.next();
             float effective = run.scale() * base;
             if (effective == 1F) {
                 drawRun(run, at, y, argb);
@@ -348,8 +354,11 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
                 graphics.pose().popPose();
             }
             // `styledWidth` already carries the player's factor, so the advance and the drawn glyphs
-            // cannot disagree.
-            at += styledWidth(run.text(), run.bold(), run.italic(), run.scale());
+            // cannot disagree. The last run's advance would move a cursor nothing reads, so it is not
+            // measured.
+            if (each.hasNext()) {
+                at += styledWidth(run.text(), run.bold(), run.italic(), run.scale());
+            }
         }
     }
 
@@ -364,17 +373,62 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
 
     @Override
     public int styledWidth(String text, boolean bold, boolean italic, float scale) {
-        // Measured through the same style it will be drawn with: the game's bold font is one pixel wider
-        // per glyph, so measuring plain and drawing bold is a line that runs past its column.
-        int plain;
-        if (!bold && !italic) {
-            plain = font().width(text);         // underline is not wider, so it does not enter the measure
-        }
-        else {
-            plain = font().width(Component.literal(text).withStyle(styleOf(new StyledRun(text, bold, italic,
-                    false))));
-        }
+        // The font's own width is remembered and the scale applied after, exactly as it was applied to the
+        // width measured fresh: the run's scale is a float a heading can set to anything, and keeping it out
+        // of the key keeps one entry per string and style rather than one per size it is drawn at.
+        int plain = STYLED_WIDTHS.width(text, bold, italic);
         return (int) Math.round(plain * scale * TextScale.get());
+    }
+
+    /**
+     * The font's own width of a run in one of its four styles, unscaled, as {@link #styledWidth} measured it
+     * before it was remembered: through the same style it will be drawn with, because the game's bold font is
+     * one pixel wider per glyph, and measuring plain and drawing bold is a line that runs past its column.
+     * Underline is not wider, so it does not enter the measure.
+     */
+    private static int fontStyledWidth(String text, boolean bold, boolean italic) {
+        if (!bold && !italic) {
+            return font().width(text);
+        }
+        return font().width(Component.literal(text).withStyle(styleOf(new StyledRun(text, bold, italic, false))));
+    }
+
+    /** {@link #fontStyledWidth}, remembered per style until the font or the text scale changes. */
+    private static final StyledWidths STYLED_WIDTHS =
+            new StyledWidths(GuiGraphicsRenderer::fontStyledWidth, TextEpoch::now);
+
+    /**
+     * Four width memos, one per pairing of bold and italic, over the same width function.
+     *
+     * <p>Four rather than one keyed by the style as well, because each is {@code Measure.cached}, the memo
+     * {@code WIDTHS} already is, with its bound and its epoch: a run is a string plus two flags, and a flag
+     * picks the memo. A prose card asks the same few runs every frame, and before this each of them was a walk
+     * of its glyphs through the font, with a component and a style built first for the styled ones.
+     *
+     * <p>Game-free, with the width function and the epoch handed in, so a test can count what reaches the font.
+     */
+    static final class StyledWidths {
+
+        /** The font's width of a string in a style. */
+        @FunctionalInterface
+        interface Width {
+            int of(String text, boolean bold, boolean italic);
+        }
+
+        private final Measure[] memos = new Measure[4];
+
+        StyledWidths(Width width, LongSupplier epoch) {
+            for (int style = 0; style < memos.length; style++) {
+                boolean bold = (style & 1) != 0;
+                boolean italic = (style & 2) != 0;
+                // The line height is never read: a width memo is only asked widths. See WIDTHS.
+                memos[style] = Measure.cached(Measure.of(text -> width.of(text, bold, italic), 9), epoch);
+            }
+        }
+
+        int width(String text, boolean bold, boolean italic) {
+            return memos[(bold ? 1 : 0) | (italic ? 2 : 0)].width(text);
+        }
     }
 
     /** The game's style for a run: the whole of what this seam's two flags mean. */
@@ -402,9 +456,9 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         // font and the player's text scale are the only things that change a width without changing a
         // string, and TextEpoch is the one definition of when they have. See CachedMeasure for the bound.
         //
-        // `styledWidth` is deliberately not memoized beside it: its answer depends on three more inputs
-        // (bold, italic, scale), so it needs a key this memo cannot express, and it is called for the few
-        // strings that carry runs rather than for every label in a panel.
+        // `styledWidth` has memos of its own beside this one rather than a share of it: bold and italic change
+        // the answer, so they pick one of four memos (see StyledWidths), and the run's scale is applied after
+        // the lookup, so it never enters a key.
         return WIDTHS.width(text);
     }
 
@@ -741,17 +795,29 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
     }
 
     /**
-     * The resource's identity, which is what changes when a pack reload replaces the file.
+     * Which pack stack the game's resources are read through, as a serial: the same until a resource reload,
+     * and a new one after every reload.
      *
-     * <p>A reload builds a new resource manager, so the same id resolves to a different {@code Resource}
-     * object — and the object is what the stamp is taken from, rather than its contents. Reading the file
-     * to compare it would cost exactly what the caller's cache exists to avoid, and a modification time is
-     * not reliable enough across the file systems this runs on (the same reason {@code ParsedFiles} takes
-     * an explicit invalidation from the write path).
+     * <h2>Why the stack, and not the resource</h2>
      *
-     * <p>Empty resolution is a stamp of zero rather than an error: "there is nothing here" is a stable
-     * answer, and a caller that cached it will ask again the moment one arrives, because the stamp it
-     * holds no longer matches.
+     * <p>This used to be the identity hash of the {@code Resource} the id resolved to, on the belief that a
+     * resource stays the same object until a reload. It does not: the pack stack builds a new {@code Resource}
+     * on every lookup, so the stamp moved on every frame, the caller's cache never hit, and the wallpaper's
+     * header was read again every frame, behind a walk of every pack. The lookup is also exactly the cost a hit
+     * has to avoid.
+     *
+     * <p>What a reload does replace, read from the version, is the stack itself: {@code createReload} builds a
+     * new {@code MultiPackResourceManager} into {@code ReloadableResourceManager.resources} before any listener
+     * runs, and nothing else assigns it. So the serial moves exactly when the files behind an id may have
+     * changed, for every id at once, and a hit costs a field read and one identity comparison. It is a serial
+     * from {@link IdentityEpoch} rather than an identity hash, because a hash is not unique; see
+     * {@code TextEpoch}.
+     *
+     * <p>A texture that is absent or unreadable is not this method's question. The caller caches only sizes it
+     * was given, so an absent file is asked about again, and still draws nothing.
+     *
+     * <p>Where the stack cannot be read, every ask is a new stamp, so the caller re-reads the header each time
+     * as it did before: slow, and never stale.
      */
     @Override
     public long textureStamp(ResourceLocation texture) {
@@ -762,9 +828,65 @@ public record GuiGraphicsRenderer(GuiGraphics graphics) implements GuiRenderer {
         if (minecraft == null) {
             return 0L;
         }
-        return minecraft.getResourceManager().getResource(texture)
-                .map(resource -> (long) System.identityHashCode(resource))
-                .orElse(0L);
+        Object stack = PackStack.of(minecraft.getResourceManager());
+        if (stack == null) {
+            // Below zero, where the serials never go, and never the same twice.
+            return --unknownStamp;
+        }
+        return PACK_STACKS.of(stack);
+    }
+
+    /** The serial for each pack stack the game's resource manager has read through. */
+    private static final IdentityEpoch PACK_STACKS = new IdentityEpoch();
+
+    /** The last stamp handed out while the stack could not be read. Render thread only. */
+    private static long unknownStamp;
+
+    /**
+     * {@code ReloadableResourceManager.resources}, the pack stack the game's resource manager reads through, and
+     * which a reload replaces. In a class of its own so a test can read a stack without a client.
+     *
+     * <p>The field is widened ({@code armature.accesswidener} and {@code accesstransformer.cfg}) rather than
+     * read by reflection as 26.3 does: 1.21.1 Fabric runs intermediary names, and a field named in a string
+     * is not remapped, so a reflective read would find nothing there and every stamp would be new.
+     */
+    static final class PackStack {
+
+        private PackStack() {
+        }
+
+        /** The stack {@code manager} reads through now, or null when it is not a manager this can read. */
+        static Object of(Object manager) {
+            if (!(manager instanceof ReloadableResourceManager reloadable)) {
+                return null;
+            }
+            return reloadable.resources;
+        }
+    }
+
+    /**
+     * A number that moves exactly when the object it is shown is a different one, for telling a replaced
+     * object from the one before it.
+     *
+     * <p>Identity rather than {@code System.identityHashCode}, which two objects can share; and the object is
+     * held weakly, so the one it was last shown is not kept alive by being remembered. A weak reference that
+     * has been cleared cannot be the object in hand, so a cleared one reads as a change, which it is.
+     *
+     * <p>Game-free, for the tests.
+     */
+    static final class IdentityEpoch {
+
+        private WeakReference<Object> seen = new WeakReference<>(null);
+        private long serial;
+
+        /** The serial for {@code current}, which must not be null: a new one if it is not the last object shown. */
+        long of(Object current) {
+            if (current != seen.get()) {
+                seen = new WeakReference<>(current);
+                serial++;
+            }
+            return serial;
+        }
     }
 
     private static boolean hasPngSignature(byte[] header) {

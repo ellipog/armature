@@ -711,8 +711,8 @@ public class ArmatureButton extends AbstractWidget {
      *
      * <h2>Why a field, when the adapter is a lambda</h2>
      *
-     * <p>Because the label is truncated every frame and {@code Measure.truncate} walks the string a
-     * character at a time asking how wide each prefix is — so the <i>measure</i> is what has to remember,
+     * <p>Because the label is truncated every frame and {@code Measure.truncate} asks how wide several
+     * prefixes of it are, the same ones each time, so the <i>measure</i> is what has to remember,
      * and a measure built at the call site has nothing in it. This was {@code Measure.of(renderer::textWidth,
      * renderer.lineHeight())} inline, which allocated an anonymous measure per button per frame and threw
      * away every width it had already been asked for.
@@ -740,9 +740,13 @@ public class ArmatureButton extends AbstractWidget {
             // through a recording one. Without the identity, the widths the first renderer gave would be
             // handed to the second, and a control would draw its label at a width its own renderer never
             // agreed to. `MeasureCacheTest.cachedOverFollowsTheRenderer` is the case that caught it.
+            //
+            // Every game renderer is one identity there, though: the widget wraps each frame's graphics in a
+            // new one, and an identity per object emptied this memo every frame. See
+            // `TextEpoch.measuredThrough` for why that is safe and the slider and the tooltip share it.
             measure = Measure.cachedOver(text -> measuring.textWidth(text),
                     () -> measuring.lineHeight(),
-                    () -> TextEpoch.now() * 31L + System.identityHashCode(measuring));
+                    () -> TextEpoch.measuredThrough(measuring));
         }
         return measure;
     }

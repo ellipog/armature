@@ -42,7 +42,8 @@ import java.util.UUID;
  * sheet, {@link #turned} for a picture that is not axis-aligned, and {@link #shadowedText} for a label
  * with no backdrop behind it. {@code centredText} and the two {@link #clip} overloads are defaults
  * rather than abstract members, so the figure that matters to an implementer -- and the one to keep
- * in step with this list -- is the nineteen.
+ * in step with this list -- is the nineteen. {@link #scaledLattice} is a default too: it hands over
+ * a tiled image whole, and its default is exactly the {@link #scaled} calls.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -419,6 +420,11 @@ public interface GuiRenderer {
      *
      * <p>The number has no meaning of its own, exactly like {@code TextEpoch}: it is only ever asked "is
      * this the same as last time".
+     *
+     * <p>It may move more often than the file does, and the game renderer's does: it moves on every resource
+     * reload, whichever files the reload replaced, because the pack stack is what it can see without opening
+     * anything. That costs a caller one re-read per reload. What it must never do is stay the same across a
+     * change, and asking it must cost no more than the comparison, or the cache it serves saves nothing.
      */
     default long textureStamp(ResourceLocation texture) {
         return 0L;
@@ -447,6 +453,36 @@ public interface GuiRenderer {
     void scaled(ResourceLocation texture, int x, int y, int width, int height,
                 float u, float v, int sourceWidth, int sourceHeight,
                 int textureWidth, int textureHeight, int argb);
+
+    /**
+     * Draws the same {@link #scaled} picture at every pairing of a column start and a row start: one
+     * {@code width} by {@code height} copy of the source region at each of the first {@code columnCount}
+     * entries of {@code xs} against each of the first {@code rowCount} of {@code ys}, all in one tint.
+     *
+     * <h2>Why a tiled image is its own call</h2>
+     *
+     * <p>So a renderer that can draw a lattice in one submission is handed the whole of it. On 26.3 the game
+     * files every picture as an element of its own and checks each tile against every tile before it, so the
+     * game renderer there draws the lattice as one element. On 1.21.1 a blit is drawn as it is asked for and
+     * there is no layer search, so the game renderer keeps this default; the call is here so both lines share
+     * one seam and the image backgrounds tile through the same code.
+     *
+     * <p>The default is the double loop, rows outer and columns inner, which is the order a tiled background
+     * has always been drawn in, so a recording renderer in a test sees exactly the {@link #scaled} calls it
+     * saw before this existed. Only the counts are read: the arrays may be longer.
+     */
+    default void scaledLattice(ResourceLocation texture, int[] xs, int columnCount, int width,
+                               int[] ys, int rowCount, int height,
+                               float u, float v, int sourceWidth, int sourceHeight,
+                               int textureWidth, int textureHeight, int argb) {
+        for (int j = 0; j < rowCount; j++) {
+            int y = ys[j];
+            for (int i = 0; i < columnCount; i++) {
+                scaled(texture, xs[i], y, width, height, u, v, sourceWidth, sourceHeight,
+                        textureWidth, textureHeight, argb);
+            }
+        }
+    }
 
     /**
      * Draws a texture file at its own pixel size, top-left at {@code x}, {@code y}.

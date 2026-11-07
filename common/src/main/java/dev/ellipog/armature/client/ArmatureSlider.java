@@ -152,17 +152,17 @@ public class ArmatureSlider extends AbstractWidget {
      * The measure this slider truncates its label with, built once rather than per frame.
      *
      * <p>The same shape as {@code ArmatureButton.measure}, and for the same reason: the label is truncated
-     * every frame, {@code Measure.truncate} walks it a character at a time, and a measure built at the call
-     * site remembers nothing between frames. {@code Measure.cached} is what makes the widths survive, and
-     * {@code TextEpoch} is what empties them when the font or the text scale moves.
+     * every frame, {@code Measure.truncate} asks the widths of several prefixes of it, and a measure built at
+     * the call site remembers nothing between frames. {@code Measure.cached} is what makes the widths
+     * survive, and {@code TextEpoch} is what empties them when the font or the text scale moves.
      */
     private Measure measure() {
         if (measure == null) {
-            // The renderer's identity is part of the epoch; see `ArmatureButton.measure` for why that is
-            // load-bearing rather than tidy.
+            // The renderer is part of the epoch; see `ArmatureButton.measure` for why that is load-bearing
+            // rather than tidy, and `TextEpoch.measuredThrough` for why every game renderer counts as one.
             measure = Measure.cachedOver(text -> measuring.textWidth(text),
                     () -> measuring.lineHeight(),
-                    () -> TextEpoch.now() * 31L + System.identityHashCode(measuring));
+                    () -> TextEpoch.measuredThrough(measuring));
         }
         return measure;
     }
