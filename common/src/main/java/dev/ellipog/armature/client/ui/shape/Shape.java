@@ -321,6 +321,10 @@ public interface Shape {
      * <p>The answer is asserted in both directions rather than one: {@code ShapeTest} checks that the
      * square at that inset fits <i>and</i> that one pixel less does not. "It fits" alone would pass for
      * a search that returned zero — a full-size icon hanging well outside the outline.
+     *
+     * <p>A pure function of the rows at {@code size}, and the built-ins rely on that: they keep their rows
+     * per size already, so they keep this answer beside them rather than walking half the node again for
+     * every node on every frame. An override must stay pure for the same reason.
      */
     default int maxInset(int size) {
         if (size <= 2) {
@@ -409,6 +413,13 @@ public interface Shape {
      * At every scale it is at least as large as the old per-shape reading, because that reading
      * <i>multiplied</i> by the fit while this one only caps by it. A node can gain space from this
      * change and never lose it; {@code ShapeTest} sweeps that property at every size and scale.
+     *
+     * <h2>Remembered by the built-ins, and still a fresh array</h2>
+     *
+     * <p>The answer reads the rows, the anchor and the box the scale asks for, and nothing else, so for
+     * one size and scale it is one answer. A screen asks it once per node per frame, so the built-ins keep
+     * it per size, measured from the node's corner, and only add the corner on a repeat. The array is
+     * still new on every call: a caller may keep it or change it without reaching anybody else's.
      *
      * @param scale {@link #MIN_ICON_SCALE} to {@link #MAX_ICON_SCALE}; anything outside is clamped
      *     rather than refused, because this is also reached by a number off the wire

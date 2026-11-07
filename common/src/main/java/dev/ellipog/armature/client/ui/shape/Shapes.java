@@ -131,6 +131,42 @@ public final class Shapes {
     private static final double PENTAGON_SAG = (PENTAGON_RADIUS - PENTAGON_RADIUS
             * Math.cos(PENTAGON_APOTHEM)) / 2.0;
 
+    /**
+     * How far each of the pentagon's sides sits from its centre: the apothem, which every half-plane in
+     * {@link #pentagonInside} is tested against.
+     *
+     * <h2>Here rather than in the point test, with the five normals below</h2>
+     *
+     * <p>The point test is asked thousands of times per span table, and it used to spend eleven calls to
+     * {@code cos} and {@code sin} on every one of them to arrive at eleven numbers that never change: a
+     * pentagon cost more than ten times a circle to sample, and a turned one more again. These are
+     * computed from the very expressions the test used to evaluate inline, so the same arguments meet the
+     * same functions and every comparison sees the doubles it always saw: the span tables are bit for bit
+     * what they were.
+     *
+     * <p>That rests on {@code Math.cos} answering one argument the same way whenever it is asked, here at
+     * class initialisation as much as in a compiled loop. The runtime keeps that by giving its interpreter
+     * and its compilers one implementation, and {@code PointTestOracleTest} is what would notice one that
+     * did not: it samples the old test, trigonometry and all, and asks for the same tables.
+     */
+    private static final double PENTAGON_LIMIT = PENTAGON_RADIUS * Math.cos(PENTAGON_APOTHEM);
+
+    /** The cosine of each side's outward normal, in testing order. See {@link #PENTAGON_LIMIT}. */
+    private static final double[] PENTAGON_NORMAL_COS = new double[5];
+
+    /** The sine of each side's outward normal, in the same order. See {@link #PENTAGON_LIMIT}. */
+    private static final double[] PENTAGON_NORMAL_SIN = new double[5];
+
+    static {
+        for (int side = 0; side < 5; side++) {
+            // The expression the point test evaluated per sample, unchanged to the operator: a side's
+            // normal sits half a vertex on from each vertex, counting from the apex.
+            double angle = Math.PI / 2.0 + PENTAGON_VERTEX * side + PENTAGON_APOTHEM;
+            PENTAGON_NORMAL_COS[side] = Math.cos(angle);
+            PENTAGON_NORMAL_SIN[side] = Math.sin(angle);
+        }
+    }
+
     /** How far below its box's middle the pentagon's item sits, as a fraction of the size. */
     private static final double PENTAGON_ANCHOR = 0.03;
 
@@ -166,6 +202,18 @@ public final class Shapes {
 
     /** The same share at the tip, where the tooth is narrower. */
     private static final double GEAR_TIP_SHARE = 0.30;
+
+    /**
+     * The angle one tooth and its gap take up, at {@link #GEAR_TEETH} teeth.
+     *
+     * <p>A fixed share of the turn per tooth count, so it is chosen per sample rather than divided for,
+     * the same expression the point test used to evaluate, so the same double. Every other constant in
+     * {@link #gearInside} is already folded by the compiler; this was the one that depended on a variable.
+     */
+    private static final double GEAR_PITCH = 2.0 * Math.PI / GEAR_TEETH;
+
+    /** The same, at {@link #GEAR_TEETH_SMALL} teeth. */
+    private static final double GEAR_PITCH_SMALL = 2.0 * Math.PI / GEAR_TEETH_SMALL;
 
     /**
      * The top of the heart curve, in its own units.
@@ -625,7 +673,7 @@ public final class Shapes {
      * so they are emptied at {@link #SAMPLED_SIZES_REMEMBERED}, the same number and the same
      * empty-rather-than-trim policy the span tables use.
      */
-    private static final class Memoised implements Shape {
+    private static final class Memoised extends TabledShape {
 
         private final Shape delegate;
         private final java.util.Map<Integer, int[][]> tables = new java.util.LinkedHashMap<>(4);
@@ -833,10 +881,10 @@ public final class Shapes {
         // the pentagon is drawn about its own centroid-box centre rather than about its circumcentre.
         double x = u;
         double y = -v + PENTAGON_SAG;
-        double limit = PENTAGON_RADIUS * Math.cos(PENTAGON_APOTHEM);
+        // The apothem and the five normals are read rather than recomputed: see PENTAGON_LIMIT.
         for (int side = 0; side < 5; side++) {
-            double angle = Math.PI / 2.0 + PENTAGON_VERTEX * side + PENTAGON_APOTHEM;
-            if (x * Math.cos(angle) + y * Math.sin(angle) > limit + ON_BOUNDARY) {
+            if (x * PENTAGON_NORMAL_COS[side] + y * PENTAGON_NORMAL_SIN[side]
+                    > PENTAGON_LIMIT + ON_BOUNDARY) {
                 return false;
             }
         }
@@ -891,8 +939,7 @@ public final class Shapes {
         if (radius <= GEAR_HUB + ON_BOUNDARY) {
             return true;
         }
-        int teeth = size < GEAR_SMALL_SIZE ? GEAR_TEETH_SMALL : GEAR_TEETH;
-        double pitch = 2.0 * Math.PI / teeth;
+        double pitch = size < GEAR_SMALL_SIZE ? GEAR_PITCH_SMALL : GEAR_PITCH;
         double fromRoot = (radius - GEAR_HUB) / (0.5 - GEAR_HUB);
         double half = pitch * (GEAR_ROOT_SHARE + (GEAR_TIP_SHARE - GEAR_ROOT_SHARE) * fromRoot) / 2.0;
         double angle = Math.atan2(v, u) + Math.PI / 2.0;
@@ -1021,8 +1068,132 @@ public final class Shapes {
         Unit unit();
     }
 
+    /**
+     * A shape whose rows are remembered per size, and so whose icon fit can be remembered with them.
+     *
+     * <h2>Why the fit is worth remembering</h2>
+     *
+     * <p>A screen asks for a node's icon box once per node per frame, and the answer is a walk of half the
+     * node's rows for {@link Shape#maxInset} (two table lookups a row) plus an anchor array, and for the
+     * shapes with an anchor a scan of every row the box covers, repeated as the box steps down until the
+     * outline holds it. A quest book asks that for every visible node, every frame, and hundreds of them
+     * ask it at one size. The answer cannot change while the size does not: it is a function of the rows,
+     * which the subclasses already hold still per size, of the anchor, which is a function of the size,
+     * and of the box asked for.
+     *
+     * <p>So the inset and each asked-for box's answer are kept per size, measured from the node's corner,
+     * and a repeat is one short scan, one array read and two additions. The arithmetic stays the
+     * interface's own (a miss asks {@code Shape.super}), so there is still one definition of the fit, and
+     * this is only its memory. It assumes the subclass's rows and anchor are pure for a size, which is the
+     * assumption its span tables already make. A shape that keeps no table (one from {@link #ofSpans}
+     * that nobody passed through {@link #cached}, or a caller's own implementation) keeps the plain
+     * interface defaults, and is asked afresh every time.
+     *
+     * <h2>Bounded on the tables' own policy</h2>
+     *
+     * <p>{@link #SAMPLED_SIZES_REMEMBERED} sizes, emptied rather than trimmed when one more arrives, the
+     * same number and the same reasoning as the span tables beside it. A dropped size costs one
+     * recomputation, never a wrong answer. Not thread-safe, for the reason the tables are not: shapes are
+     * drawn on the render thread.
+     */
+    private abstract static class TabledShape implements Shape {
+
+        private final IconFit[] iconFits = new IconFit[SAMPLED_SIZES_REMEMBERED];
+        private int remembered;
+
+        /** The interface's search, run once per size. */
+        @Override
+        public int maxInset(int size) {
+            if (size <= 0) {
+                return Shape.super.maxInset(size);
+            }
+            return fitAt(size).maxInset;
+        }
+
+        /**
+         * The interface's box, worked out once per size and asked-for box, and handed out as a fresh array
+         * each call: a caller may keep it or move it, and neither may reach the next caller.
+         */
+        @Override
+        public int[] iconBox(int nodeX, int nodeY, int size, double scale) {
+            if (size <= 0) {
+                return Shape.super.iconBox(nodeX, nodeY, size, scale);
+            }
+            // The interface's own first two lines, kept identical, and they are the key: the scale reaches
+            // the answer only through the box it asks for, so two scales that round to one box are one
+            // answer. That is an assumption about the default, and IconFitMemoTest pins it by holding the
+            // memo to the default itself at every size and scale -- which is what would notice the default
+            // starting to read the scale anywhere else.
+            double clamped = Math.min(Math.max(scale, MIN_ICON_SCALE), MAX_ICON_SCALE);
+            int wanted = Math.max(0, (int) Math.round(size * clamped));
+            IconFit fit = fitAt(size);
+            int[] fromCorner = fit.box(wanted);
+            if (fromCorner == null) {
+                fromCorner = Shape.super.iconBox(0, 0, size, scale);
+                fit.keep(wanted, fromCorner);
+            }
+            return new int[] {nodeX + fromCorner[0], nodeY + fromCorner[1], fromCorner[2]};
+        }
+
+        /**
+         * This size's entry, made on first ask.
+         *
+         * <p>A scan of a handful rather than a map, because a map keyed by size boxes it, and a node larger
+         * than 127 pixels would allocate a key per node per frame to look up an answer that allocates
+         * nothing.
+         */
+        private IconFit fitAt(int size) {
+            for (int i = 0; i < remembered; i++) {
+                if (iconFits[i].size == size) {
+                    return iconFits[i];
+                }
+            }
+            IconFit made = new IconFit(size, Shape.super.maxInset(size));
+            if (remembered >= iconFits.length) {
+                Arrays.fill(iconFits, null);
+                remembered = 0;
+            }
+            iconFits[remembered++] = made;
+            return made;
+        }
+    }
+
+    /** One size's icon fit: its inset, and each asked-for box's answer from the node's corner. */
+    private static final class IconFit {
+
+        final int size;
+        final int maxInset;
+
+        /** {@code {left, top, box}} by the box asked for, which is at most the size; built on first use. */
+        private int[][] byWanted;
+
+        IconFit(int size, int maxInset) {
+            this.size = size;
+            this.maxInset = maxInset;
+        }
+
+        int[] box(int wanted) {
+            if (byWanted == null || wanted < 0 || wanted >= byWanted.length) {
+                return null;
+            }
+            return byWanted[wanted];
+        }
+
+        void keep(int wanted, int[] fromCorner) {
+            if (wanted < 0 || wanted > size) {
+                // Unreachable while the scale is clamped to at most one, and a request outside the table
+                // is answered afresh every time rather than stored somewhere it does not belong.
+                return;
+            }
+            if (byWanted == null) {
+                byWanted = new int[size + 1][];
+            }
+            byWanted[wanted] = fromCorner;
+        }
+    }
+
     /** A shape drawn from a unit test: one definition, sampled into the span table everything reads. */
-    private static final class UnitShape implements Shape, Normalized {
+    private static final class UnitShape extends TabledShape implements Normalized {
 
         private final Unit unit;
         private final double anchorX;
@@ -1073,7 +1244,7 @@ public final class Shapes {
     }
 
     /** A shape turned about its own centre and fitted to the node's square; see {@link #rotated}. */
-    private static final class Turned implements Shape, Normalized {
+    private static final class Turned extends TabledShape implements Normalized {
 
         private final Shape base;
         private final Unit baseUnit;
@@ -1081,6 +1252,9 @@ public final class Shapes {
         private final double sin;
         private final java.util.Map<Integer, Double> fits = new java.util.HashMap<>();
         private final Tables tables = new Tables();
+
+        /** The size the fit was last asked for, with its answer; see {@link #fit}. Null before the first. */
+        private LastFit lastFit;
 
         Turned(Shape base, double cos, double sin) {
             this.base = base;
@@ -1156,23 +1330,41 @@ public final class Shapes {
          * corner reaches {@code √2/2} and must. Below half there is nothing to do, so the answer is
          * exactly one — that is the branch that keeps a circle invariant instead of shrinking it by a
          * thousandth.
+         *
+         * <p>The last answer is checked before the map, because this is reached once per <i>sample</i>:
+         * a table is thousands of point tests at one size in a row, and the map boxed the size and hashed
+         * it for every one of them to find the number it had found a moment before. One holder rather
+         * than two fields, so a reader can never pair one size with another size's fit. The value is the
+         * map's own, so the answer is the same double either way.
          */
         private double fit(int size) {
+            LastFit last = lastFit;
+            if (last != null && last.size() == size) {
+                return last.fit();
+            }
             Double cached = fits.get(size);
+            double fit;
             if (cached != null) {
-                return cached;
+                fit = cached;
             }
-            double reach = measure(size);
-            double fit = reach <= 0.5 + FIT_SLACK ? 1.0 : 0.5 / (reach - FIT_SLACK);
-            // Bounded, and emptied rather than trimmed, on the same policy as the tables this feeds: a
-            // turned shape has as many distinct sizes as somebody zooms to, and nothing else bounds that.
-            // Dropping an entry costs one measurement, never a wrong answer -- the fit is a pure function
-            // of the size, and a rebuilt table is rebuilt from the same number.
-            if (fits.size() >= SAMPLED_SIZES_REMEMBERED) {
-                fits.clear();
+            else {
+                double reach = measure(size);
+                fit = reach <= 0.5 + FIT_SLACK ? 1.0 : 0.5 / (reach - FIT_SLACK);
+                // Bounded, and emptied rather than trimmed, on the same policy as the tables this feeds: a
+                // turned shape has as many distinct sizes as somebody zooms to, and nothing else bounds
+                // that. Dropping an entry costs one measurement, never a wrong answer -- the fit is a pure
+                // function of the size, and a rebuilt table is rebuilt from the same number.
+                if (fits.size() >= SAMPLED_SIZES_REMEMBERED) {
+                    fits.clear();
+                }
+                fits.put(size, fit);
             }
-            fits.put(size, fit);
+            lastFit = new LastFit(size, fit);
             return fit;
+        }
+
+        /** One size and its fit, as one value. See {@link Turned#fit}. */
+        private record LastFit(int size, double fit) {
         }
 
         /** How far the turned shape reaches from its centre: the farthest material in any direction. */
