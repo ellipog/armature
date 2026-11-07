@@ -46,7 +46,8 @@ import java.util.UUID;
  * in step with this list -- is the nineteen. The two newest are defaults too, and they are the same
  * kind of arrival: {@link #fillPlan} and {@link #fillLattice} hand over a shape and a repeating
  * pattern whole, because drawing them as their fills is what the frame was spending its time on,
- * and the default for each is exactly the fills.
+ * and the default for each is exactly the fills. {@link #scaledLattice} is the same arrival for a
+ * tiled image, and its default is exactly the {@link #scaled} calls.
  *
  * <h2>What is deliberately not here, and it is the most important decision in the file</h2>
  *
@@ -496,6 +497,11 @@ public interface GuiRenderer {
      *
      * <p>The number has no meaning of its own, exactly like {@code TextEpoch}: it is only ever asked "is
      * this the same as last time".
+     *
+     * <p>It may move more often than the file does, and the game renderer's does: it moves on every resource
+     * reload, whichever files the reload replaced, because the pack stack is what it can see without opening
+     * anything. That costs a caller one re-read per reload. What it must never do is stay the same across a
+     * change, and asking it must cost no more than the comparison, or the cache it serves saves nothing.
      */
     default long textureStamp(Identifier texture) {
         return 0L;
@@ -524,6 +530,37 @@ public interface GuiRenderer {
     void scaled(Identifier texture, int x, int y, int width, int height,
                 float u, float v, int sourceWidth, int sourceHeight,
                 int textureWidth, int textureHeight, int argb);
+
+    /**
+     * Draws the same {@link #scaled} picture at every pairing of a column start and a row start: one
+     * {@code width} by {@code height} copy of the source region at each of the first {@code columnCount}
+     * entries of {@code xs} against each of the first {@code rowCount} of {@code ys}, all in one tint.
+     *
+     * <h2>Why a tiled image is its own call</h2>
+     *
+     * <p>For the reason {@link #fillLattice} is, and here the cost grows faster than the count. The game files
+     * every picture as an element of its own and finds its layer by checking it against what is already in the
+     * top one, and a tile overlaps none of the tiles beside it, so each tile is checked against every tile
+     * before it: a wallpaper of a few hundred tiles is a walk over the square of that, every frame. Handed the
+     * whole lattice, the game renderer draws every tile in one element, the same quads in the same order, and
+     * the layer is found once.
+     *
+     * <p>The default is the double loop, rows outer and columns inner, which is the order a tiled background
+     * has always been drawn in, so a recording renderer in a test sees exactly the {@link #scaled} calls it
+     * saw before this existed. Only the counts are read: the arrays may be longer.
+     */
+    default void scaledLattice(Identifier texture, int[] xs, int columnCount, int width,
+                               int[] ys, int rowCount, int height,
+                               float u, float v, int sourceWidth, int sourceHeight,
+                               int textureWidth, int textureHeight, int argb) {
+        for (int j = 0; j < rowCount; j++) {
+            int y = ys[j];
+            for (int i = 0; i < columnCount; i++) {
+                scaled(texture, xs[i], y, width, height, u, v, sourceWidth, sourceHeight,
+                        textureWidth, textureHeight, argb);
+            }
+        }
+    }
 
     /**
      * Draws a texture file at its own pixel size, top-left at {@code x}, {@code y}.

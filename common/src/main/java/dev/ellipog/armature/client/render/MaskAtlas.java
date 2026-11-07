@@ -36,8 +36,12 @@ final class MaskAtlas {
     /**
      * The heights a shelf may be, gutter included. A region goes on the shortest that holds it; anything
      * taller than the last is refused, which is what bounds a mask's height.
+     *
+     * <p>The last is {@code GpuMasks.MAX_SIDE} and its gutter, so the biggest mask the renderer asks for always
+     * has a shelf, and a test holds the two together. A shelf of the two tallest takes an eighth or a tenth of
+     * a 2048 texture's height, and only the big nodes at the closest zoom open one.
      */
-    static final int[] SHELF_HEIGHTS = {2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 129};
+    static final int[] SHELF_HEIGHTS = {2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 129, 193, 257};
 
     /** One placed region: its texels, without the gutter. */
     record Region(int x, int y, int width, int height) {

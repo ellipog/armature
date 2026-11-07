@@ -58,14 +58,55 @@ public final class TextEpoch {
     /** The next serial to hand out. Monotonic, so a serial is never reused even after a collection. */
     private static final java.util.concurrent.atomic.AtomicLong NEXT = new java.util.concurrent.atomic.AtomicLong();
 
-    private static long serialOf(Object font) {
-        Long held = SERIALS.get(font);
-        if (held != null) {
-            return held;
+    /**
+     * The last font asked about and the serial {@link #SERIALS} gave it.
+     *
+     * <h2>Why this is here, when the map already answers</h2>
+     *
+     * <p>Because the epoch is read on every width probe (hundreds of times a frame, well over a thousand
+     * with a long description open) and the font is the same object for all of them until a reload. Each
+     * read was a lock and a hash lookup in a synchronized weak map for an answer that had not changed. With
+     * this, the common read is a field read and one comparison, and the map is asked only when the font is
+     * not the one asked about last.
+     *
+     * <p>The pair is one immutable object in one volatile field, so a reader sees a font together with its
+     * own serial or not at all. It holds the font <b>weakly</b>, like the map: a font a reload has replaced
+     * can still be collected, and a collected font reads as null, which matches no font that is asked about.
+     * Nothing changes about the answers. The serial held is the one the map gave this object, and the map
+     * keeps it for as long as the object is reachable (which it is, while someone is asking about it), so
+     * the same object reads the same serial either way, and a different object misses here and gets its own.
+     */
+    private static final class Last extends java.lang.ref.WeakReference<Object> {
+
+        private final long serial;
+
+        private Last(Object font, long serial) {
+            super(font);
+            this.serial = serial;
         }
-        long assigned = NEXT.incrementAndGet();
-        SERIALS.put(font, assigned);
-        return assigned;
+    }
+
+    private static volatile Last last;
+
+    private static long serialOf(Object font) {
+        Last seen = last;
+        if (seen != null && font != null && seen.get() == font) {
+            return seen.serial;
+        }
+        long serial;
+        // One step under the map's own lock, so two threads meeting a new font cannot both assign it a
+        // serial and have the later one overwrite what the first already handed out: an object's serial is
+        // decided once. The order serials are handed out in is unchanged.
+        synchronized (SERIALS) {
+            Long held = SERIALS.get(font);
+            if (held == null) {
+                held = NEXT.incrementAndGet();
+                SERIALS.put(font, held);
+            }
+            serial = held;
+        }
+        last = new Last(font, serial);
+        return serial;
     }
 
     /** The epoch as it stands. Equal to a previous reading exactly when nothing that changes a width has. */
@@ -79,4 +120,46 @@ public final class TextEpoch {
         // fits its column.
         return face * 1_000_003L + Double.doubleToLongBits(TextScale.get());
     }
+
+    /**
+     * The epoch for widths measured through a renderer: {@link #now}, folded with which renderer measured.
+     *
+     * <h2>Why the renderer is part of it</h2>
+     *
+     * <p>A control keeps one width memo across frames and measures through whichever renderer is drawing
+     * it: a screen's, a modal band's, a recording one in a test. The font and the text scale do not change
+     * when the renderer does, so without the renderer in the epoch the widths one gave would be served for
+     * another, and a control would draw its label at a width its own renderer never agreed to.
+     * {@code MeasureCacheTest.cachedOverFollowsTheRenderer} is the case that caught it.
+     *
+     * <h2>Why every game renderer is one renderer here</h2>
+     *
+     * <p>The renderer used to be told apart by its identity, and in game that is a new
+     * {@link GuiGraphicsRenderer} every frame (a widget wraps the frame's graphics in a fresh one), so the
+     * epoch moved every frame: each memo emptied itself on the frame's first probe, never answered across
+     * frames, and was only work in front of the memo that did answer. Every {@code GuiGraphicsRenderer}
+     * measures the same way: it is a record, so nothing can override how it measures; its widths all come
+     * from one static memo over the client's one font, and its line height is that font's at the player's
+     * text scale. No instance state enters either. Two of them cannot disagree about a width, so they share
+     * an identity, and any other renderer keeps its own.
+     *
+     * <p>The button, the slider and the tooltip all ask this, so the rule is written once.
+     */
+    public static long measuredThrough(GuiRenderer measuring) {
+        return now() * 31L + identityOf(measuring);
+    }
+
+    /**
+     * What the epoch knows a renderer by: one value for every {@link GuiGraphicsRenderer}, the identity
+     * hash for anything else. See {@link #measuredThrough}.
+     *
+     * <p>The shared value is negative, which an identity hash on this JVM never is (it is 31 bits), so a
+     * game renderer and some other renderer do not share an identity by coincidence.
+     */
+    static int identityOf(GuiRenderer measuring) {
+        return measuring instanceof GuiGraphicsRenderer ? GAME_RENDERER : System.identityHashCode(measuring);
+    }
+
+    /** The identity every {@link GuiGraphicsRenderer} shares. See {@link #identityOf}. */
+    private static final int GAME_RENDERER = -1;
 }

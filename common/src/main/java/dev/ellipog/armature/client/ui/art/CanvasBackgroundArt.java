@@ -50,8 +50,9 @@ import java.util.Map;
  * <p>{@link CanvasBackground.Kind#IMAGE} is the one kind whose arithmetic depends on a number the
  * theme does not carry: the texture's real pixel size. It is asked of the {@link GuiRenderer} seam —
  * never of a Minecraft singleton, so this class stays a function of its arguments — and the answer is
- * remembered per texture for the session, because a PNG cannot change under a running client and
- * re-reading a header once a frame to redraw the same wallpaper is work bought with nothing. A
+ * remembered per texture until a resource reload, because a PNG cannot change under a running client
+ * without one and re-reading a header once a frame to redraw the same wallpaper is work bought with
+ * nothing. A
  * texture whose size cannot be read draws nothing, the same way a spacing too small fades to nothing:
  * a background is decoration, and decoration does not get to guess.
  */
@@ -302,8 +303,10 @@ public final class CanvasBackgroundArt {
      * replaces the file, and a wallpaper whose replacement has different dimensions would keep the old
      * numbers — so a tiled background tiles at the wrong pitch and a covered one is stretched to the wrong
      * aspect, for the rest of the session, with nothing to notice it by. The stamp is how the entry learns
-     * that, and it is one identity comparison rather than a re-read of the file: reading the header again
-     * every frame is exactly what this cache exists to avoid. See {@code GuiRenderer.textureStamp}.
+     * that, and it is one comparison rather than a re-read of the file: reading the header again every frame
+     * is exactly what this cache exists to avoid. The game renderer's stamp moves on every resource reload,
+     * so a hit there touches no resource and no file, and a reload re-reads each header once. See
+     * {@code GuiRenderer.textureStamp}.
      *
      * <p>A renderer that reports a constant stamp — a recording renderer, say — never invalidates, which is
      * the right answer for one that reads no resource manager: nothing it reported can go stale.
@@ -364,12 +367,19 @@ public final class CanvasBackgroundArt {
             return;
         }
         int tint = 0xFFFFFF | (Colour.alpha(colour) << 24);
-        for (int y = y0; y < y1; y += tileHeight) {
-            for (int x = x0; x < x1; x += tileWidth) {
-                r.scaled(id, x, y, tileWidth, tileHeight, 0F, 0F, size.width(), size.height(),
-                        size.width(), size.height(), tint);
-            }
+        // The whole wallpaper in one call: the columns against the rows, which the game renderer files as one
+        // element rather than one per tile. See GuiRenderer#scaledLattice. The same tiles in the same order as
+        // the double loop this replaced, rows outer: across and down count exactly the x and y it stepped.
+        int[] xs = new int[across];
+        for (int i = 0; i < across; i++) {
+            xs[i] = x0 + i * tileWidth;
         }
+        int[] ys = new int[down];
+        for (int j = 0; j < down; j++) {
+            ys[j] = y0 + j * tileHeight;
+        }
+        r.scaledLattice(id, xs, across, tileWidth, ys, down, tileHeight, 0F, 0F, size.width(), size.height(),
+                size.width(), size.height(), tint);
     }
 
     /**
@@ -407,20 +417,31 @@ public final class CanvasBackgroundArt {
             return;
         }
         int tint = 0xFFFFFF | (Colour.alpha(colour) << 24);
+        // One call for the whole wallpaper, as in screen space. The double loop this replaced skipped a tile
+        // when its column was off screen or its row was, and each test reads one index only -- kx for the
+        // column, ky for the row -- so the tiles it drew are exactly the visible columns against the visible
+        // rows, in its order: rows outer, each axis ascending. So the columns and rows are found once each.
+        // The arrays are the index spans the budget fade above has already let through, so they stay small.
+        int[] xs = new int[(int) across];
+        int columns = 0;
+        for (long kx = kx0; kx < kx1; kx++) {
+            int sx = view.screenX((float) (kx * contentWidth));
+            if (sx + tileWidth <= x0 || sx >= x1) {
+                continue;
+            }
+            xs[columns++] = sx;
+        }
+        int[] ys = new int[(int) down];
+        int rows = 0;
         for (long ky = ky0; ky < ky1; ky++) {
             int sy = view.screenY((float) (ky * contentHeight));
             if (sy + tileHeight <= y0 || sy >= y1) {
                 continue;
             }
-            for (long kx = kx0; kx < kx1; kx++) {
-                int sx = view.screenX((float) (kx * contentWidth));
-                if (sx + tileWidth <= x0 || sx >= x1) {
-                    continue;
-                }
-                r.scaled(id, sx, sy, tileWidth, tileHeight, 0F, 0F, size.width(), size.height(),
-                        size.width(), size.height(), tint);
-            }
+            ys[rows++] = sy;
         }
+        r.scaledLattice(id, xs, columns, tileWidth, ys, rows, tileHeight, 0F, 0F, size.width(), size.height(),
+                size.width(), size.height(), tint);
     }
 
     /**

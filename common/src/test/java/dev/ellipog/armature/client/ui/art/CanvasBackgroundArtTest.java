@@ -2,6 +2,7 @@ package dev.ellipog.armature.client.ui.art;
 
 import dev.ellipog.armature.client.render.RecordingRenderer;
 import dev.ellipog.armature.client.ui.CanvasBackground;
+import dev.ellipog.armature.client.ui.kit.Colour;
 import dev.ellipog.armature.client.ui.kit.Viewport;
 
 import net.minecraft.resources.Identifier;
@@ -9,6 +10,7 @@ import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -620,5 +622,176 @@ class CanvasBackgroundArtTest {
                 "the replacement's own aspect is used: a square texture tiles square, not at 24 by 16");
         assertEquals(24, tile.source().sourceWidth(), "and the source is the replacement's width");
         assertEquals(24, tile.source().sourceHeight(), "and its height");
+    }
+
+    // ------------------------------------------------------------------
+    // A tiled image as one lattice
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a tiled image arrives as one lattice, in either space")
+    void aTiledImageIsOneLattice() {
+        // The game files every picture it is handed as an element and finds its layer against every element
+        // already there, so a wallpaper handed over a tile at a time costs the square of its tiles. One lattice
+        // call is what lets the game renderer file it once.
+        for (CanvasBackground.Space space : CanvasBackground.Space.values()) {
+            RecordingRenderer r = RecordingRenderer.create();
+            r.putTextureSize(TILED, 24, 16);
+            CanvasBackgroundArt.draw(r, view(100, 60), image(TILED, CanvasBackground.Fit.TILE, space, 12),
+                    0x33FF0000);
+            assertEquals(1, r.scaledLattices(), space + ": one call for the whole wallpaper");
+            assertTrue(r.textures().size() > 1, space + ": and every tile is still drawn");
+        }
+    }
+
+    @Test
+    @DisplayName("the lattice draws exactly the tiles, in exactly the order, of the per-tile loops it replaced")
+    void theLatticeIsThePerTileLoops() {
+        int checked = 0;
+        int[][] textures = {{24, 16}, {16, 16}, {16, 24}, {64, 7}, {9, 40}};
+        for (int[] texture : textures) {
+            // An id per size, so the size cache (keyed by id, stamped with the recorder's constant) cannot hand
+            // one texture's size to another.
+            Identifier id = Identifier.fromNamespaceAndPath("armature",
+                    "textures/gui/oracle_" + texture[0] + "x" + texture[1] + ".png");
+            for (CanvasBackground.Space space : CanvasBackground.Space.values()) {
+                for (int tile : new int[] {4, 7, 12, 16, 33}) {
+                    for (float scale : new float[] {0.3F, 0.6F, 1F, 1.37F, 2F, 3.3F}) {
+                        for (int pan : new int[] {0, 5, -13, 31, -250}) {
+                            for (int ink : new int[] {0xFFFFFFFF, 0x33FF0000, 0x10FFFFFF}) {
+                                Viewport view = Viewport.of(0.05F, 8F).bounds(3, 5, 157, 93);
+                                view.setScale(scale);
+                                view.setOffset(pan, -pan / 2);
+                                CanvasBackground background = image(id, CanvasBackground.Fit.TILE, space, tile);
+                                checked += assertTilesAreTheLoops(view, background, id, texture[0], texture[1],
+                                        ink);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The vanilla theme's case at the sizes it was measured at: dirt at 16 pixels, screen space.
+        Identifier dirt = Identifier.fromNamespaceAndPath("armature", "textures/gui/oracle_dirt.png");
+        for (int[] canvas : new int[][] {{350, 220}, {520, 330}, {760, 450}}) {
+            Viewport view = Viewport.of(0.05F, 8F).bounds(0, 0, canvas[0], canvas[1]);
+            checked += assertTilesAreTheLoops(view, image(dirt, CanvasBackground.Fit.TILE,
+                    CanvasBackground.Space.SCREEN, 16), dirt, 16, 16, 0xFFFFFFFF);
+        }
+        assertTrue(checked > 500, "enough of those views drew tiles to mean something: " + checked);
+    }
+
+    /**
+     * Draws a tiled image and the per-tile loops it used to be, and asserts the same calls in the same order.
+     *
+     * @return 1 when the view drew tiles, 0 when it faded them out
+     */
+    private static int assertTilesAreTheLoops(Viewport view, CanvasBackground background, Identifier id,
+                                              int textureWidth, int textureHeight, int ink) {
+        RecordingRenderer r = RecordingRenderer.create();
+        r.putTextureSize(id, textureWidth, textureHeight);
+        CanvasBackgroundArt.draw(r, view, background, ink);
+        List<String> drawn = r.textures().stream()
+                .map(t -> t.x() + "," + t.y() + "," + t.x2() + "," + t.y2() + "," + Integer.toHexString(t.argb())
+                        + "," + t.text() + "," + t.source())
+                .toList();
+        List<String> loops = perTileLoops(view, background, id, textureWidth, textureHeight, ink);
+        assertEquals(loops, drawn, background + " at scale " + view.scale() + " panned " + view.offsetX());
+        return drawn.isEmpty() ? 0 : 1;
+    }
+
+    /**
+     * The tiles {@code tile} and {@code tileGraph} drew before the lattice, one {@code scaled} call per tile,
+     * as the strings {@link #assertTilesAreTheLoops} compares. Copied from those two methods, arithmetic, fades
+     * and loop order included, and kept as the oracle.
+     */
+    private static List<String> perTileLoops(Viewport view, CanvasBackground background, Identifier id,
+                                             int textureWidth, int textureHeight, int ink) {
+        List<String> out = new ArrayList<>();
+        int x0 = view.originX();
+        int y0 = view.originY();
+        int x1 = view.viewRight();
+        int y1 = view.viewBottom();
+        if (x0 >= x1 || y0 >= y1 || Colour.invisible(ink)) {
+            return out;
+        }
+        CanvasBackground.Image image = background.image();
+        RecordingRenderer.Call.Source source = new RecordingRenderer.Call.Source(0F, 0F, textureWidth,
+                textureHeight, textureWidth, textureHeight);
+        if (background.space() == CanvasBackground.Space.GRAPH) {
+            float contentWidth = image.tileSize();
+            float contentHeight = contentWidth * (float) textureHeight / textureWidth;
+            int tileWidth = Math.max(1, Math.round(contentWidth * view.scale()));
+            int tileHeight = Math.max(1, Math.round(contentHeight * view.scale()));
+            float fade = oldSpacingFade(tileWidth);
+            if (fade <= 0F) {
+                return out;
+            }
+            long kx0 = (long) Math.floor(view.contentX(x0) / (double) contentWidth);
+            long ky0 = (long) Math.floor(view.contentY(y0) / (double) contentHeight);
+            long kx1 = (long) Math.ceil(view.contentX(x1) / (double) contentWidth);
+            long ky1 = (long) Math.ceil(view.contentY(y1) / (double) contentHeight);
+            long across = kx1 - kx0;
+            long down = ky1 - ky0;
+            if (across <= 0 || down <= 0) {
+                return out;
+            }
+            int colour = oldInkAt(ink, Math.min(fade,
+                    oldBudgetFade((int) Math.min(Integer.MAX_VALUE, across * down))));
+            if (Colour.invisible(colour)) {
+                return out;
+            }
+            int tint = 0xFFFFFF | (Colour.alpha(colour) << 24);
+            for (long ky = ky0; ky < ky1; ky++) {
+                int sy = view.screenY((float) (ky * contentHeight));
+                if (sy + tileHeight <= y0 || sy >= y1) {
+                    continue;
+                }
+                for (long kx = kx0; kx < kx1; kx++) {
+                    int sx = view.screenX((float) (kx * contentWidth));
+                    if (sx + tileWidth <= x0 || sx >= x1) {
+                        continue;
+                    }
+                    out.add(sx + "," + sy + "," + (sx + tileWidth) + "," + (sy + tileHeight) + ","
+                            + Integer.toHexString(tint) + "," + id + "," + source);
+                }
+            }
+            return out;
+        }
+        int tileWidth = image.tileSize();
+        int tileHeight = Math.max(1, Math.round(tileWidth * (float) textureHeight / textureWidth));
+        float fade = oldSpacingFade(tileWidth);
+        if (fade <= 0F) {
+            return out;
+        }
+        int across = (x1 - x0 + tileWidth - 1) / tileWidth;
+        int down = (y1 - y0 + tileHeight - 1) / tileHeight;
+        int colour = oldInkAt(ink, Math.min(fade, oldBudgetFade(across * down)));
+        if (Colour.invisible(colour)) {
+            return out;
+        }
+        int tint = 0xFFFFFF | (Colour.alpha(colour) << 24);
+        for (int y = y0; y < y1; y += tileHeight) {
+            for (int x = x0; x < x1; x += tileWidth) {
+                out.add(x + "," + y + "," + (x + tileWidth) + "," + (y + tileHeight) + ","
+                        + Integer.toHexString(tint) + "," + id + "," + source);
+            }
+        }
+        return out;
+    }
+
+    private static float oldSpacingFade(float stepPixels) {
+        float fade = (stepPixels - CanvasBackgroundArt.MIN_VISIBLE)
+                / (float) (CanvasBackgroundArt.FULL_VISIBLE - CanvasBackgroundArt.MIN_VISIBLE);
+        return fade < 0F ? 0F : (fade > 1F ? 1F : fade);
+    }
+
+    private static float oldBudgetFade(int fills) {
+        return fills <= CanvasBackgroundArt.FILL_BUDGET ? 1F : CanvasBackgroundArt.FILL_BUDGET / (float) fills;
+    }
+
+    private static int oldInkAt(int ink, float fade) {
+        int alpha = Math.round(Colour.alpha(ink) * fade);
+        return alpha < CanvasBackgroundArt.MIN_INK_ALPHA ? 0 : Colour.withAlpha(ink, alpha);
     }
 }

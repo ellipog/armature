@@ -137,6 +137,20 @@ class TooltipsTest {
     }
 
     @Test
+    @DisplayName("widths measured through one renderer are never served for another")
+    void widthsDoNotCrossRenderers() {
+        // One memo serves every tooltip pass. Game renderers count as one renderer to it (see
+        // TextEpoch.measuredThrough); any other is still its own, so alternating two recorders that measure
+        // differently gives each its own widths every time.
+        RecordingRenderer six = RecordingRenderer.withCharWidth(6);
+        RecordingRenderer three = RecordingRenderer.withCharWidth(3);
+        for (int i = 0; i < 3; i++) {
+            assertEquals(4 * 6 + Tooltips.PAD * 2, Tooltips.width(six, List.of("abcd")));
+            assertEquals(4 * 3 + Tooltips.PAD * 2, Tooltips.width(three, List.of("abcd")));
+        }
+    }
+
+    @Test
     @DisplayName("no lines is no box")
     void noLinesDrawsNothing() {
         RecordingRenderer r = RecordingRenderer.create();

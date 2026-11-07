@@ -346,6 +346,31 @@ public final class RecordingRenderer implements GuiRenderer {
                         textureWidth, textureHeight)));
     }
 
+    /** How many tile lattices were asked for; see {@link #scaledLattice}. */
+    private int scaledLattices;
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Counted, and then drawn by the default, so every tile is still recorded as the {@link #scaled} call
+     * it always was. The count is the other half: a test can ask whether a wallpaper arrived as one lattice,
+     * which is what the game renderer needs to file it as one element.
+     */
+    @Override
+    public void scaledLattice(Identifier texture, int[] xs, int columnCount, int width,
+                              int[] ys, int rowCount, int height,
+                              float u, float v, int sourceWidth, int sourceHeight,
+                              int textureWidth, int textureHeight, int argb) {
+        scaledLattices++;
+        GuiRenderer.super.scaledLattice(texture, xs, columnCount, width, ys, rowCount, height, u, v,
+                sourceWidth, sourceHeight, textureWidth, textureHeight, argb);
+    }
+
+    /** How many times {@link #scaledLattice} was called. */
+    public int scaledLattices() {
+        return scaledLattices;
+    }
+
     /**
      * {@inheritDoc}
      *
@@ -695,6 +720,7 @@ public final class RecordingRenderer implements GuiRenderer {
         deepestClip = 0;
         clippedAfterStop = 0;
         batches = 0;
+        scaledLattices = 0;
         openTurns = 0;
         deepestTurn = 0;
         strayTurnPops = 0;

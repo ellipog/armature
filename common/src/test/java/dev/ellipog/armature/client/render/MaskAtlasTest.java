@@ -47,11 +47,11 @@ class MaskAtlasTest {
     @DisplayName("no two regions share a texel, gutters included, and every one is inside the texture")
     void regionsNeverOverlap() {
         Random random = new Random(93);
-        MaskAtlas atlas = new MaskAtlas(512);
+        MaskAtlas atlas = new MaskAtlas(1024);
         List<int[]> placed = new ArrayList<>();
         for (int i = 0; i < 4000; i++) {
-            int width = 1 + random.nextInt(random.nextBoolean() ? 16 : 128);
-            int height = 1 + random.nextInt(random.nextBoolean() ? 16 : 128);
+            int width = 1 + random.nextInt(random.nextBoolean() ? 16 : GpuMasks.MAX_SIDE);
+            int height = 1 + random.nextInt(random.nextBoolean() ? 16 : GpuMasks.MAX_SIDE);
             MaskAtlas.Region region = atlas.allocate(width, height);
             if (region == null) {
                 continue;
@@ -102,11 +102,43 @@ class MaskAtlasTest {
     @DisplayName("a mask taller than the tallest shelf, wider than the texture, or empty is refused")
     void outOfRangeIsRefused() {
         MaskAtlas atlas = new MaskAtlas(2048);
-        assertNotNull(atlas.allocate(128, 128), "the largest mask fits");
-        assertNull(atlas.allocate(10, 129), "taller than the tallest shelf");
+        assertNotNull(atlas.allocate(256, 256), "the largest mask fits");
+        assertNotNull(atlas.allocate(129, 129), "and the masks past the old 128 limit fit");
+        assertNotNull(atlas.allocate(200, 193));
+        assertNull(atlas.allocate(10, 257), "taller than the tallest shelf");
         assertNull(new MaskAtlas(64).allocate(64, 4), "no room for the gutter");
         assertNull(atlas.allocate(0, 4));
         assertNull(atlas.allocate(4, 0));
+    }
+
+    @Test
+    @DisplayName("the tallest shelf holds the biggest mask the renderer asks for, with its gutter")
+    void theTallestShelfIsTheLargestMask() {
+        // GpuMasks refuses a plan past MAX_SIDE and asks the atlas for anything up to it, so the two have to
+        // agree: a shelf too short would refuse a mask the renderer thinks it can draw, and draw it as fills
+        // on every frame for no reason anyone could see.
+        int tallest = MaskAtlas.SHELF_HEIGHTS[MaskAtlas.SHELF_HEIGHTS.length - 1];
+        assertEquals(GpuMasks.MAX_SIDE + 1, tallest, "the tallest shelf is the largest mask and its gutter");
+        MaskAtlas atlas = new MaskAtlas(2048);
+        for (int side = 1; side <= GpuMasks.MAX_SIDE; side++) {
+            assertNotNull(atlas.allocate(side, side), "a " + side + "-texel mask has a shelf");
+            atlas.reset();
+        }
+        for (int i = 1; i < MaskAtlas.SHELF_HEIGHTS.length; i++) {
+            assertTrue(MaskAtlas.SHELF_HEIGHTS[i] > MaskAtlas.SHELF_HEIGHTS[i - 1], "the heights ascend");
+        }
+    }
+
+    @Test
+    @DisplayName("a 2048 texture still holds a screenful of the biggest masks")
+    void bigMasksPack() {
+        MaskAtlas atlas = new MaskAtlas(2048);
+        int placed = 0;
+        while (atlas.allocate(GpuMasks.MAX_SIDE, GpuMasks.MAX_SIDE) != null) {
+            placed++;
+        }
+        // Seven 257-texel columns across and seven 257-texel shelves down.
+        assertEquals(7 * 7, placed);
     }
 
     // ------------------------------------------------------------------
@@ -120,7 +152,7 @@ class MaskAtlasTest {
                 Shapes.DIAMOND, Shapes.STAR, Shapes.OCTAGON, Shapes.PENTAGON, Shapes.GEAR, Shapes.HEART,
                 Shapes.ROUNDED, Shapes.rotated(Shapes.STAR, 17));
         for (Shape shape : shapes) {
-            for (int size = 2; size <= 128; size++) {
+            for (int size : nodeSizes()) {
                 Plans.Plan plan = Plans.of(shape, size);
                 int[] bounds = MaskAtlas.bounds(plan);
                 if (bounds == null) {
@@ -170,6 +202,22 @@ class MaskAtlasTest {
         assertNull(MaskAtlas.strip(new int[] {8, 0}, 2, 1), "out of order");
         assertNull(MaskAtlas.strip(new int[] {0}, 0, 1), "no columns");
         assertNull(MaskAtlas.strip(new int[] {0}, 1, 0), "no width");
+    }
+
+    /**
+     * Every size up to 128, then a stride up to the largest mask and the largest itself: quick, and still
+     * reaching the sizes past the old limit that a node at the closest zoom is drawn at.
+     */
+    private static int[] nodeSizes() {
+        List<Integer> sizes = new ArrayList<>();
+        for (int size = 2; size <= 128; size++) {
+            sizes.add(size);
+        }
+        for (int size = 129; size < GpuMasks.MAX_SIDE; size += 7) {
+            sizes.add(size);
+        }
+        sizes.add(GpuMasks.MAX_SIDE);
+        return sizes.stream().mapToInt(Integer::intValue).toArray();
     }
 
     /** Every texel of the box against the plan's rectangles, painted one by one: set exactly where one fills. */

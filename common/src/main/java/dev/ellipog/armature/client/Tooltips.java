@@ -129,9 +129,11 @@ public final class Tooltips {
      *
      * <p>One memo shared by every tooltip pass in a frame: folding, placing and drawing all ask the
      * same handful of widths, and an adapter built per call paid an allocation per pass for identical
-     * answers. The epoch folds in the renderer's identity as well as the client's own (see
+     * answers. The epoch folds in which renderer measured as well as the client's own (see
      * {@code ArmatureButton.measure} for why that half is load-bearing): a recording renderer in a
-     * test measures differently from the client's, and widths must never cross between them.
+     * test measures differently from the client's, and widths must never cross between them. Every
+     * game renderer counts as one, so the memo survives the new one each frame brings; see
+     * {@code TextEpoch.measuredThrough}.
      *
      * <p>Client-thread only, like all drawing: the renderer in force is a static because this class
      * is all statics, and each pass sets it before measuring.
@@ -141,7 +143,7 @@ public final class Tooltips {
     private static final Measure SHARED = Measure.cachedOver(
             text -> measuring.textWidth(text),
             () -> measuring.lineHeight(),
-            () -> TextEpoch.now() * 31L + System.identityHashCode(measuring));
+            () -> TextEpoch.measuredThrough(measuring));
 
     private static Measure measureOf(GuiRenderer renderer) {
         measuring = renderer;

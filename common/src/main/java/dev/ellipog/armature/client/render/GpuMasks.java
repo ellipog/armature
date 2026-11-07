@@ -64,8 +64,14 @@ final class GpuMasks {
     /** A plan with fewer rectangles than this is drawn as fills: it would cost no fewer quads as a mask. */
     static final int MIN_PLAN_RECTS = 4;
 
-    /** The widest and tallest mask, in texels. Bigger shapes are few, and drawn as fills. */
-    static final int MAX_SIDE = 128;
+    /**
+     * The widest and tallest mask, in texels. Bigger shapes are few, and drawn as fills.
+     *
+     * <p>256 rather than 128 because a quest node at the closest zoom is past 128 on screen, and every one of
+     * its layers fell back to a fill per row on every frame. {@link MaskAtlas#SHELF_HEIGHTS} has to hold a
+     * mask this tall with its gutter, and a test holds the two together.
+     */
+    static final int MAX_SIDE = 256;
 
     /** A lattice with fewer columns than this is drawn as fills: a row's quad would save nothing. */
     static final int MIN_LATTICE_COLUMNS = 4;
@@ -95,6 +101,9 @@ final class GpuMasks {
     private static GpuMasks current;
     private static boolean disabled;
 
+    /** The frame serial {@link #frame} hands out, moved by each new first layer of the game's GUI state. */
+    private static final GuiGraphicsRenderer.IdentityEpoch FRAMES = new GuiGraphicsRenderer.IdentityEpoch();
+
     /** Where a mask is in the texture and where it lands relative to the draw origin. */
     record Placed(int left, int top, int right, int bottom, float u0, float v0, float u1, float v1) {
     }
@@ -104,7 +113,7 @@ final class GpuMasks {
     }
 
     /** A plan as a map key: by its rectangles, so a plan rebuilt per call still finds its mask. */
-    private record PlanKey(Plans.Plan plan) {
+    record PlanKey(Plans.Plan plan) {
         @Override
         public boolean equals(Object other) {
             return other instanceof PlanKey key && plan.sameRects(key.plan);
@@ -129,11 +138,73 @@ final class GpuMasks {
         }
     }
 
+    /**
+     * What this texture has answered for each plan: where its mask is, or that it is drawn as fills for good.
+     *
+     * <h2>Why a refusal is remembered</h2>
+     *
+     * <p>Because it was not, and a refused plan paid for the question on every frame: a key, a missed lookup and
+     * the plan's bounding box worked out again, before the caller drew it as a fill per row anyway. At the
+     * closest zoom that was every layer of every big node. A plan with nothing in it, one wider or taller than
+     * {@link #MAX_SIDE} and one whose rectangles overlap are refused for what its rectangles are, and the key is
+     * those rectangles, so the answer can never change while the entry is kept. One lookup answers it now.
+     *
+     * <p>A plan that did not fit because the texture was full is not one of those. It is asked again after the
+     * texture is emptied, which is how it always worked.
+     *
+     * <h2>The refusals are bounded on their own</h2>
+     *
+     * <p>A mask takes room in the texture, so the masks are bounded by the texture and emptied with it. A
+     * refusal takes none, and a plan rebuilt per call (a panel that grows with its window) is a new key at
+     * every size it passes through, so the refusals are counted and swept out when there are
+     * {@link #MAX_REFUSALS} of them. The masks are left where they are.
+     *
+     * <p>Game-free, so a test can hold the sweep without a device.
+     */
+    static final class PlanTable {
+
+        /** How many refusals are kept before they are swept out together. */
+        static final int MAX_REFUSALS = 1024;
+
+        /** The entry that says "drawn as fills". Compared by identity: no mask has an empty box. */
+        static final Placed REFUSED = new Placed(0, 0, 0, 0, 0F, 0F, 0F, 0F);
+
+        private final Map<PlanKey, Placed> entries = new HashMap<>();
+        private int refusals;
+
+        /** The plan's mask, {@link #REFUSED} when it is drawn as fills, or null when it has not been asked. */
+        Placed find(PlanKey key) {
+            return entries.get(key);
+        }
+
+        void place(PlanKey key, Placed placed) {
+            entries.put(key, placed);
+        }
+
+        void refuse(PlanKey key) {
+            if (refusals >= MAX_REFUSALS) {
+                entries.values().removeIf(placed -> placed == REFUSED);
+                refusals = 0;
+            }
+            entries.put(key, REFUSED);
+            refusals++;
+        }
+
+        void clear() {
+            entries.clear();
+            refusals = 0;
+        }
+
+        int size() {
+            return entries.size();
+        }
+    }
+
     private final GpuDevice device;
     private final GpuTexture texture;
     private final TextureSetup setup;
     private final MaskAtlas atlas;
-    private final Map<PlanKey, Placed> plans = new HashMap<>();
+    private final PlanTable plans = new PlanTable();
     private final Map<StripKey, Segment[]> strips = new HashMap<>();
     private ByteBuffer scratch = ByteBuffer.allocateDirect(64 * 1024).order(ByteOrder.nativeOrder());
     private WeakReference<Object> frame = new WeakReference<>(null);
@@ -198,28 +269,33 @@ final class GpuMasks {
 
     /**
      * Where a plan's mask is, writing it first if it is not there yet, or null when this plan is drawn as fills:
-     * too few rectangles, too big, overlapping itself, or no room left this frame.
+     * too few rectangles, too big, overlapping itself, or no room left this frame. A plan refused for what its
+     * rectangles are (empty, too big, overlapping) is remembered, so it costs one lookup after; see
+     * {@link PlanTable}.
      */
     Placed plan(Plans.Plan plan) {
         if (plan.count() < MIN_PLAN_RECTS) {
             return null;
         }
         PlanKey key = new PlanKey(plan);
-        Placed hit = plans.get(key);
+        Placed hit = plans.find(key);
         if (hit != null) {
-            return hit;
+            return hit == PlanTable.REFUSED ? null : hit;
         }
         int[] bounds = MaskAtlas.bounds(plan);
         if (bounds == null) {
+            plans.refuse(key);
             return null;
         }
         int width = bounds[2] - bounds[0];
         int height = bounds[3] - bounds[1];
         if (width > MAX_SIDE || height > MAX_SIDE) {
+            plans.refuse(key);
             return null;
         }
         byte[] coverage = MaskAtlas.coverage(plan, bounds);
         if (coverage == null) {
+            plans.refuse(key);
             return null;
         }
         MaskAtlas.Region region = atlas.allocate(width, height);
@@ -230,7 +306,7 @@ final class GpuMasks {
         upload(region, coverage, 0, width);
         Placed placed = new Placed(bounds[0], bounds[1], bounds[2], bounds[3],
                 u(region.x()), v(region.y()), u(region.x() + width), v(region.y() + height));
-        plans.put(key, placed);
+        plans.place(key, placed);
         return placed;
     }
 
@@ -279,9 +355,7 @@ final class GpuMasks {
 
     /** Empties the texture if the last frame asked for it and this is a new frame. See the class note. */
     private void beginFrame() throws Throwable {
-        GuiRenderState state = Minecraft.getInstance().gameRenderer.gameRenderState().guiRenderState;
-        List<?> strata = (List<?>) GET_STRATA.invoke(state);
-        Object stamp = strata.isEmpty() ? null : strata.get(0);
+        Object stamp = firstStratum(Minecraft.getInstance().gameRenderer.gameRenderState().guiRenderState);
         if (stamp == null || stamp == frame.get()) {
             return;
         }
@@ -292,6 +366,40 @@ final class GpuMasks {
             plans.clear();
             strips.clear();
             reserveWhite();
+        }
+    }
+
+    /**
+     * The first layer of a GUI state, which is how a frame is told apart: the game makes a new one when it
+     * resets the state at the end of drawing a frame, and at no other time. Null for a state with no layers.
+     */
+    private static Object firstStratum(GuiRenderState state) throws Throwable {
+        List<?> strata = (List<?>) GET_STRATA.invoke(state);
+        return strata.isEmpty() ? null : strata.get(0);
+    }
+
+    /**
+     * Which frame the game's GUI state is recording, as a number that moves exactly when a new one starts, or -1
+     * when that cannot be told: {@code state} is not the game's own, or its layers cannot be read.
+     *
+     * <p>The same sign the texture is emptied by (see the class note), for a caller that needs to know when
+     * what it handed the last frame has been drawn. The game draws a frame's GUI state and then resets it, so
+     * everything filed under one number has been read by the time the number moves. Only the game's own state
+     * is answered for, because that is the one whose reset is known to come after its drawing.
+     */
+    static long frame(GuiRenderState state) {
+        if (GET_STRATA == null || state == null) {
+            return -1L;
+        }
+        try {
+            if (state != Minecraft.getInstance().gameRenderer.gameRenderState().guiRenderState) {
+                return -1L;
+            }
+            Object stamp = firstStratum(state);
+            return stamp == null ? -1L : FRAMES.of(stamp);
+        }
+        catch (Throwable unreadable) {
+            return -1L;
         }
     }
 
