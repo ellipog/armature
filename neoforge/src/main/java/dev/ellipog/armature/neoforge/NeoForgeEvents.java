@@ -25,6 +25,15 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
  */
 public final class NeoForgeEvents {
 
+    /**
+     * The event {@link #postProbe} is posting, or null.
+     *
+     * <p>A plain field because probing is server-thread code, like the level it asks about. A break
+     * posted on another thread meanwhile is never this object, so a read from there cannot mistake it
+     * for the probe: the mark can only ever skip the probe itself.
+     */
+    private static BreakBlockEvent probing;
+
     private NeoForgeEvents() {
     }
 
@@ -88,12 +97,13 @@ public final class NeoForgeEvents {
         // BLOCK_BROKEN for a block that never broke. The isCanceled check
         // stays as well, so the guarantee does not silently depend on the
         // flags above surviving a future edit. Fired on both sides, so the
-        // ServerPlayer check is what keeps this server-only.
+        // ServerPlayer check is what keeps this server-only. And not every
+        // post is a break: mayBreak posts one to ask, see postProbe.
         bus.addListener(EventPriority.LOWEST, false, (BreakBlockEvent event) -> {
             if (!ArmatureEvents.BLOCK_BROKEN.hasListeners()) {
                 return;
             }
-            if (!event.isCanceled() && event.getPlayer() instanceof ServerPlayer player) {
+            if (isRealBreak(event) && event.getPlayer() instanceof ServerPlayer player) {
                 ArmatureEvents.BLOCK_BROKEN.invoker().onBlockBroken(player, event.getState());
             }
         });
@@ -101,5 +111,43 @@ public final class NeoForgeEvents {
         bus.addListener((RegisterCommandsEvent event) ->
                 ArmatureEvents.COMMANDS_REGISTER.invoker()
                         .onCommandsRegister(event.getDispatcher(), event.getBuildContext(), event.getCommandSelection()));
+    }
+
+    /**
+     * Posts a break that is only a question, for {@link NeoForgePlatform#mayBreak}: may this player
+     * break this block?
+     *
+     * <p>It has to be a real {@link BreakBlockEvent} on the real bus, because that is the event claim
+     * mods cancel. But nothing breaks, and without a mark the forwarder above would report every
+     * allowed probe as a {@code BLOCK_BROKEN}: a player's trample check counting toward a break
+     * task. So the event is held in {@link #probing} for exactly the length of its post, and the
+     * forwarder skips that one object.
+     *
+     * <p>The previous mark is put back rather than cleared, so a listener that asks {@code mayBreak}
+     * itself during a probe leaves the outer probe still marked when it reaches the forwarder.
+     *
+     * @return the event, cancelled if anything refused the break
+     */
+    static BreakBlockEvent postProbe(BreakBlockEvent event) {
+        BreakBlockEvent outer = probing;
+        probing = event;
+        try {
+            return NeoForge.EVENT_BUS.post(event);
+        }
+        finally {
+            probing = outer;
+        }
+    }
+
+    /**
+     * Whether a break event reports a block that actually broke: nothing cancelled it, and it is not
+     * the question {@link #postProbe} is asking.
+     *
+     * <p>The probe is matched by identity rather than by a flag meaning "a probe is running", so a
+     * real break posted while one is, from inside a listener, is a different object and still
+     * forwards. Package-private so that can be pinned without a player.
+     */
+    static boolean isRealBreak(BreakBlockEvent event) {
+        return !event.isCanceled() && event != probing;
     }
 }

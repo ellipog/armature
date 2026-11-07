@@ -12,7 +12,6 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLPaths;
-import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
@@ -76,8 +75,10 @@ public final class NeoForgePlatform implements ArmaturePlatform {
             if (!player.mayBuild() || !level.mayInteract(player, pos)) {
                 return false;
             }
+            // Posted through NeoForgeEvents rather than straight onto the bus, so its BLOCK_BROKEN
+            // forwarder knows this one is a question and not a break.
             BreakBlockEvent event = new BreakBlockEvent(level, pos, state, player);
-            return !NeoForge.EVENT_BUS.post(event).isCanceled();
+            return !NeoForgeEvents.postProbe(event).isCanceled();
         }
         return EventHooks.canEntityGrief(level, breaker)
                 && EventHooks.onEntityDestroyBlock(breaker, pos, state);
