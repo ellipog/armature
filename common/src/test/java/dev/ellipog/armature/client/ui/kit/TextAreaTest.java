@@ -3,7 +3,10 @@ package dev.ellipog.armature.client.ui.kit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.function.ToIntFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -429,6 +432,229 @@ class TextAreaTest {
 
         List<TextArea.Span> wrapped = wrap("aaaa bbbb cccc", 60);
         assertEquals(2, TextArea.linesThatFit(wrapped, 0, 20, 10, 5), "a wrapped paragraph has no gap in it");
+    }
+
+    // ------------------------------------------------------------------
+    // The advance as a running sum. Every per-line loop adds lineAdvance rather than asking lineTop.
+    // ------------------------------------------------------------------
+
+    /** {@code lineTop} as it is, written out here so the loops below are held against its own sum. */
+    private static int oldLineTop(List<TextArea.Span> lines, int index, int lineHeight, int paragraphGap) {
+        int clamped = Math.max(0, Math.min(index, lines.size() - 1));
+        int top = 0;
+        for (int i = 1; i <= clamped; i++) {
+            top += lineHeight + (lines.get(i - 1).hard() ? paragraphGap : 0);
+        }
+        return top;
+    }
+
+    /** {@code linesThatFit} as it was: a {@code lineTop} per candidate line. */
+    private static int oldLinesThatFit(List<TextArea.Span> lines, int from, int pixels, int lineHeight,
+                                       int paragraphGap) {
+        int base = oldLineTop(lines, from, lineHeight, paragraphGap);
+        int count = 0;
+        for (int i = Math.max(0, from); i < lines.size(); i++) {
+            if (oldLineTop(lines, i, lineHeight, paragraphGap) - base >= pixels) {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    /** {@code lineAt} as it was: a {@code lineTop} per line until the point is above a bottom edge. */
+    private static int oldLineAt(List<TextArea.Span> lines, int y, int lineHeight, int paragraphGap) {
+        for (int i = 0; i < lines.size(); i++) {
+            if (y < oldLineTop(lines, i, lineHeight, paragraphGap) + lineHeight) {
+                return i;
+            }
+        }
+        return Math.max(0, lines.size() - 1);
+    }
+
+    /**
+     * Line pitches and gaps to sweep: the reader's, the font's, none, and one large enough that the tops
+     * wrap past {@code Integer.MAX_VALUE} -- where a running sum and a difference of two sums still have to
+     * be the same number.
+     */
+    private static final int[][] ADVANCES = {{10, 5}, {9, 0}, {8, 3}, {0, 4}, {1, 0}, {1 << 28, 1 << 27}};
+
+    @Test
+    @DisplayName("a running sum of line advances is lineTop at every index")
+    void theRunningSumIsLineTop() {
+        Random random = new Random(0x11E7L);
+        for (int round = 0; round < 30; round++) {
+            List<TextArea.Span> lines = wrap(GameShapedFont.text(random, random.nextInt(600), true),
+                    12 + random.nextInt(300));
+            for (int[] advance : ADVANCES) {
+                int running = 0;
+                for (int i = 0; i < lines.size(); i++) {
+                    running += TextArea.lineAdvance(lines, i, advance[0], advance[1]);
+                    assertEquals(oldLineTop(lines, i, advance[0], advance[1]), running, "line " + i);
+                    assertEquals(running, TextArea.lineTop(lines, i, advance[0], advance[1]), "line " + i);
+                }
+                // And lineTop's own clamp is untouched: past either end is the nearest line's top.
+                assertEquals(0, TextArea.lineTop(lines, -3, advance[0], advance[1]));
+                assertEquals(running, TextArea.lineTop(lines, lines.size() + 3, advance[0], advance[1]));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("how many lines fit, and which line a point is on, are the numbers they were")
+    void fitAndPointAreUnchanged() {
+        Random random = new Random(0xF17L);
+        // Short blocks swept from every line, and two long ones -- around the hundred lines a long
+        // description wraps to -- swept from every fifth line and both ends. The old answers cost a lineTop
+        // per line, so the sweep is kept to sizes where that is affordable.
+        for (int round = 0; round < 32; round++) {
+            boolean longBlock = round >= 30;
+            List<TextArea.Span> lines = longBlock
+                    ? wrap(GameShapedFont.text(random, 900, true), 120)
+                    : wrap(GameShapedFont.text(random, random.nextInt(250), true), 18 + random.nextInt(200));
+            List<Integer> froms = new ArrayList<>();
+            for (int from = -2; from <= lines.size() + 1; from++) {
+                if (!longBlock || from % 5 == 0 || from < 1 || from >= lines.size() - 1) {
+                    froms.add(from);
+                }
+            }
+            for (int[] advance : ADVANCES) {
+                int lineHeight = advance[0];
+                int gap = advance[1];
+                int bottom = oldLineTop(lines, lines.size() - 1, lineHeight, gap) + lineHeight;
+                int[] heights = {-1, 0, 1, lineHeight - 1, lineHeight, lineHeight + gap, 3 * lineHeight + gap,
+                        bottom / 2, bottom, bottom + 1, Integer.MAX_VALUE, random.nextInt(Math.max(1, bottom))};
+                for (int from : froms) {
+                    for (int pixels : heights) {
+                        assertEquals(oldLinesThatFit(lines, from, pixels, lineHeight, gap),
+                                TextArea.linesThatFit(lines, from, pixels, lineHeight, gap),
+                                "from " + from + " in " + pixels + " pixels at " + lineHeight + "/" + gap);
+                    }
+                }
+                for (int sample = 0; sample < 120; sample++) {
+                    int y = sample < 100 ? sample - 5 : random.nextInt(Math.max(1, bottom + 20)) - 10;
+                    assertEquals(oldLineAt(lines, y, lineHeight, gap),
+                            TextArea.lineAt(lines, y, lineHeight, gap), "y " + y + " at " + lineHeight + "/" + gap);
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // The wrap search. Bracketed from the line's start, held against the method it replaced.
+    // ------------------------------------------------------------------
+
+    /** {@code TextArea.wrap} as it was, verbatim in behaviour. */
+    private static List<TextArea.Span> oldWrap(String text, int width, ToIntFunction<String> widthOf) {
+        List<TextArea.Span> spans = new ArrayList<>();
+        int start = 0;
+        while (start <= text.length()) {
+            int newline = text.indexOf('\n', start);
+            int hardEnd = newline < 0 ? text.length() : newline;
+            oldWrapHardLine(text, start, hardEnd, Math.max(1, width), widthOf, spans);
+            if (newline < 0) {
+                break;
+            }
+            start = newline + 1;
+            if (start > text.length()) {
+                break;
+            }
+        }
+        if (spans.isEmpty()) {
+            spans.add(new TextArea.Span(0, 0, true));
+        }
+        return List.copyOf(spans);
+    }
+
+    /** The old hard-line wrap: the whole remainder measured, then every prefix up to the break. */
+    private static void oldWrapHardLine(String text, int from, int to, int width, ToIntFunction<String> widthOf,
+                                        List<TextArea.Span> spans) {
+        int at = from;
+        while (true) {
+            String remaining = text.substring(at, to);
+            if (widthOf.applyAsInt(remaining) <= width) {
+                spans.add(new TextArea.Span(at, to, true));
+                return;
+            }
+            int fits = 0;
+            for (int i = 1; i <= remaining.length(); i++) {
+                if (widthOf.applyAsInt(remaining.substring(0, i)) > width) {
+                    break;
+                }
+                fits = i;
+            }
+            if (fits <= 0) {
+                fits = 1;
+            }
+            if (fits < remaining.length() && Character.isHighSurrogate(remaining.charAt(fits - 1))
+                    && Character.isLowSurrogate(remaining.charAt(fits))) {
+                fits = fits > 1 ? fits - 1 : 2;
+            }
+            int space = remaining.lastIndexOf(' ', fits - 1);
+            if (space > 0) {
+                spans.add(new TextArea.Span(at, at + space + 1, false));
+                at += space + 1;
+            }
+            else {
+                spans.add(new TextArea.Span(at, at + fits, false));
+                at += fits;
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the spans are the ones the old wrap made, over random text at every kind of width")
+    void theSpansAreUnchanged() {
+        // Through six pixels a character, through the game font's shape (where half a surrogate pair can
+        // be wider than the whole one), and through a memo of it, as the widget measures.
+        Measure memo = Measure.cached(GameShapedFont.MEASURE, () -> 0L);
+        List<ToIntFunction<String>> measures =
+                List.<ToIntFunction<String>>of(TextAreaTest::width, GameShapedFont::width, memo::width);
+        int[] widths = {1, 5, 6, 7, 12, 13, 36, 60, 100, 299, 300, 1000};
+        Random random = new Random(0x7E47L);
+        for (int round = 0; round < 300; round++) {
+            String text = GameShapedFont.text(random, random.nextInt(400), true);
+            for (int pixels : widths) {
+                for (ToIntFunction<String> measure : measures) {
+                    assertEquals(oldWrap(text, pixels, measure), TextArea.wrap(text, pixels, measure),
+                            () -> "width " + pixels + " of \"" + text.replace("\n", "\\n") + "\"");
+                }
+            }
+        }
+        // And a few long hard lines at the widths a description is edited at, where a visual line is several
+        // of the search's strides long.
+        for (int round = 0; round < 6; round++) {
+            String text = GameShapedFont.text(random, 1500, false) + "\n"
+                    + GameShapedFont.text(random, 1500 + random.nextInt(1100), false);
+            for (int pixels : new int[] {200, 300, 800, 2400}) {
+                for (ToIntFunction<String> measure : measures) {
+                    assertEquals(oldWrap(text, pixels, measure), TextArea.wrap(text, pixels, measure),
+                            "width " + pixels + " of a long block, round " + round);
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a line measures its own neighbourhood, never the rest of the hard line")
+    void aLineDoesNotMeasureTheRestOfTheHardLine() {
+        // One hard line of 3000 characters: the old wrap measured the whole remainder for every visual line,
+        // so its first probe was 3000 characters long. A line of fifty characters now probes at most a stride
+        // or two past where it starts.
+        StringBuilder prose = new StringBuilder();
+        Random random = new Random(4096);
+        while (prose.length() < 3000) {
+            prose.append("abcdefgh", 0, 2 + random.nextInt(7)).append(' ');
+        }
+        String text = prose.toString();
+        int[] longest = {0};
+        ToIntFunction<String> recording = slice -> {
+            longest[0] = Math.max(longest[0], slice.length());
+            return width(slice);
+        };
+        assertEquals(oldWrap(text, 300, TextAreaTest::width), TextArea.wrap(text, 300, recording));
+        assertTrue(longest[0] <= 2 * TextWrap.FIRST_STRIDE,
+                "the longest slice measured was " + longest[0] + " characters");
     }
 
     // ------------------------------------------------------------------

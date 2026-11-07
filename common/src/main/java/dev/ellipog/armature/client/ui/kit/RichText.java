@@ -349,16 +349,39 @@ public final class RichText {
      * <p>Binary search rather than a character walk: {@link #styledWidth} is monotonic in its end, so
      * the farthest fitting end is found in log steps with exactly the answer the walk gave. Each
      * probe is one single pass (below) rather than one walk per character.
+     *
+     * <h2>Bracketed from the line's start, not from the paragraph's end</h2>
+     *
+     * <p>The search used to measure the whole rest of the paragraph first, to see whether it fit, and then
+     * bisect between here and the paragraph's end, so every line paid about twice the rest of the
+     * paragraph in glyphs, and a long paragraph was quadratic in its length. Now it gallops out from
+     * {@code from} instead ({@link TextWrap#FIRST_STRIDE} characters, then twice that, and so on) until a
+     * probe does not fit, and bisects only what that bracketed. The same monotonicity makes it the same
+     * answer: every end below a fitting probe fits and every end past a failing one fails, so the farthest
+     * fitting end is inside the bracket. The rest of the paragraph is measured only when the gallop
+     * reaches it, which is the last line, and there it is the same question the old first measure asked.
      */
     private static int fittingEnd(Paragraph paragraph, int from, int width, StyledWidth measure) {
         String text = paragraph.text();
-        if (styledWidth(paragraph, from, text.length(), measure) <= width) {
-            return text.length();
-        }
-        // `lo` fits (an empty span is widthless) and `hi` does not (checked above): the loop keeps
-        // that true and halves the distance, so `lo` lands on the walk's own answer.
+        // `lo` fits (an empty span is widthless) and `hi`, once a probe has failed, does not: the loops
+        // keep that true, so `lo` lands on the walk's own answer.
         int lo = from;
-        int hi = text.length();
+        int hi;
+        int stride = TextWrap.FIRST_STRIDE;
+        while (true) {
+            int probe = text.length() - from <= stride ? text.length() : from + stride;
+            if (styledWidth(paragraph, from, probe, measure) <= width) {
+                if (probe == text.length()) {
+                    return text.length();
+                }
+                lo = probe;
+                stride *= 2;
+            }
+            else {
+                hi = probe;
+                break;
+            }
+        }
         while (hi - lo > 1) {
             int mid = (lo + hi) >>> 1;
             if (styledWidth(paragraph, from, mid, measure) <= width) {

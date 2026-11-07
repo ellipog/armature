@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -363,5 +364,156 @@ class RichTextTest {
             lines.add(paragraph.text().substring(line.start(), line.end()));
         }
         return lines;
+    }
+
+    // ------------------------------------------------------------------
+    // The gallop. Bracketed from the line's start rather than the paragraph's end.
+    // ------------------------------------------------------------------
+
+    /** Proportional widths with bold a pixel wider per character, as a second shape of measure. */
+    private static final RichText.StyledWidth PROPORTIONAL = (text, bold, italic) -> {
+        int width = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            width += (c == 'i' || c == 'l' || c == '.' ? 2 : c == ' ' || c == 't' ? 4 : c == 'W' ? 8 : 6)
+                    + (bold ? 1 : 0);
+        }
+        return width;
+    };
+
+    /**
+     * The wrap as it was before the gallop: the whole rest of the paragraph measured first, then a bisection
+     * between the line's start and the paragraph's end. Kept as the spec the gallop has to match.
+     */
+    private static List<RichText.Line> bisectedWrap(RichText.Paragraph paragraph, int width,
+                                                    RichText.StyledWidth measure) {
+        String text = paragraph.text();
+        if (text.isEmpty()) {
+            return List.of(new RichText.Line(0, 0));
+        }
+        List<RichText.Line> lines = new ArrayList<>();
+        int column = Math.max(1, width);
+        int from = 0;
+        while (from < text.length()) {
+            int end = bisectedEnd(paragraph, from, column, measure);
+            if (end <= from) {
+                end = from + 1;
+            }
+            lines.add(new RichText.Line(from, end));
+            from = end;
+            while (from < text.length() && text.charAt(from) == ' ') {
+                from++;
+            }
+        }
+        return List.copyOf(lines);
+    }
+
+    private static int bisectedEnd(RichText.Paragraph paragraph, int from, int width,
+                                   RichText.StyledWidth measure) {
+        String text = paragraph.text();
+        if (RichText.styledWidth(paragraph, from, text.length(), measure) <= width) {
+            return text.length();
+        }
+        int lo = from;
+        int hi = text.length();
+        while (hi - lo > 1) {
+            int mid = (lo + hi) >>> 1;
+            if (RichText.styledWidth(paragraph, from, mid, measure) <= width) {
+                lo = mid;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        int fits = lo;
+        if (fits <= from) {
+            return from;
+        }
+        if (fits >= text.length() || text.charAt(fits) == ' ') {
+            return fits;
+        }
+        int space = text.lastIndexOf(' ', fits - 1);
+        return space > from ? space : fits;
+    }
+
+    /** A random line of markdown: words, long words, and every inline style, under a random block marker. */
+    private static String randomMarkdown(Random random, int length) {
+        String[] blocks = {"", "", "", "# ", "## ", "### ", "#### ", "- "};
+        StringBuilder out = new StringBuilder(blocks[random.nextInt(blocks.length)]);
+        while (out.length() < length) {
+            int letters = random.nextInt(12) == 0 ? 20 + random.nextInt(90) : 1 + random.nextInt(9);
+            String word = randomWord(random, letters);
+            switch (random.nextInt(9)) {
+                case 0 -> out.append("**").append(word).append(' ').append(randomWord(random, 4)).append("**");
+                case 1 -> out.append('*').append(word).append('*');
+                case 2 -> out.append('`').append(word).append('`');
+                case 3 -> out.append('[').append(word).append("](https://x.y)");
+                default -> out.append(word);
+            }
+            out.append(' ');
+        }
+        return out.toString();
+    }
+
+    private static String randomWord(Random random, int length) {
+        String letters = "abcdefghijklmnopqrstuvwxyzWil.t";
+        StringBuilder word = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            word.append(letters.charAt(random.nextInt(letters.length())));
+        }
+        return word.toString();
+    }
+
+    @Test
+    @DisplayName("the gallop lands on the old bisection's answer, over random paragraphs and widths")
+    void theGallopMatchesTheBisection() {
+        Random random = new Random(0x6A110FL);
+        for (int round = 0; round < 300; round++) {
+            // Narrow columns over short paragraphs, then columns of a line or two of prose, then columns wide
+            // enough that a line is several of the gallop's strides long, over paragraphs of thousands.
+            int length;
+            int width;
+            switch (round % 4) {
+                case 0 -> {
+                    length = random.nextInt(300);
+                    width = 1 + random.nextInt(60);
+                }
+                case 1 -> {
+                    length = random.nextInt(1200);
+                    width = 60 + random.nextInt(400);
+                }
+                case 2 -> {
+                    length = random.nextInt(3000);
+                    width = 400 + random.nextInt(3600);
+                }
+                default -> {
+                    length = random.nextInt(3000);
+                    width = 200 + random.nextInt(20000);
+                }
+            }
+            RichText.Paragraph paragraph = only(randomMarkdown(random, length));
+            for (RichText.StyledWidth measure : List.of(SIX, PROPORTIONAL)) {
+                assertEquals(bisectedWrap(paragraph, width, measure), RichText.wrap(paragraph, width, measure),
+                        () -> "width " + width + " of '" + paragraph.text() + "'");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a line measures its own neighbourhood, never the rest of the paragraph")
+    void aLineDoesNotMeasureTheRestOfTheParagraph() {
+        // The old search measured [from, end of paragraph) on every line, so a paragraph of a few thousand
+        // characters had its whole length measured for its first line, and nearly as much for each line
+        // after. Lines of about fifty characters now probe at most a stride past where they start.
+        RichText.Paragraph paragraph = only(randomMarkdown(new Random(3000), 4000));
+        assertTrue(paragraph.text().length() > 2000);
+        int[] longest = {0};
+        RichText.StyledWidth recording = (text, bold, italic) -> {
+            longest[0] = Math.max(longest[0], text.length());
+            return SIX.width(text, bold, italic);
+        };
+        assertEquals(bisectedWrap(paragraph, 300, SIX), RichText.wrap(paragraph, 300, recording));
+        assertTrue(longest[0] <= 2 * TextWrap.FIRST_STRIDE,
+                "the longest piece measured was " + longest[0] + " characters");
     }
 }

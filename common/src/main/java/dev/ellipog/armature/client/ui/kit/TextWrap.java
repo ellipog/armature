@@ -3,6 +3,8 @@ package dev.ellipog.armature.client.ui.kit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.ToIntFunction;
+import java.util.regex.Pattern;
 
 /**
  * Turns a paragraph into lines that fit a column.
@@ -49,6 +51,17 @@ public final class TextWrap {
 
     private TextWrap() {
     }
+
+    /**
+     * What a paragraph's words are split on: any run of whitespace.
+     *
+     * <p>Compiled once rather than per paragraph. {@code String.split} only skips the regex engine for a
+     * one-character pattern, so {@code split("\\s+")} compiled this pattern again on every call, for every
+     * paragraph of every re-wrap. {@code String.split(regex)} is specified as
+     * {@code Pattern.compile(regex).split(this, 0)}, which is what {@link Pattern#split(CharSequence)} is,
+     * so the words are the same ones.
+     */
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
     /**
      * Wraps {@code text} into lines no wider than {@code width}, except where a single glyph cannot
@@ -129,7 +142,7 @@ public final class TextWrap {
         // \\s+ rather than " ", so a tab or a double space is one break. A double space left in would
         // make the line wider than the sum of its words, which is the sort of pixel that turns into a
         // scrollbar that is one line short.
-        for (String word : paragraph.strip().split("\\s+")) {
+        for (String word : WHITESPACE.split(paragraph.strip())) {
             String remaining = word;
 
             while (measure.width(remaining) > width) {
@@ -195,10 +208,137 @@ public final class TextWrap {
      * no prefix at all, and treating zero as "none of it fits, give up" would loop forever.
      */
     private static int fittingPrefix(String text, int width, Measure measure) {
-        int fit = 0;
-        while (fit < text.length() && measure.width(text.substring(0, fit + 1)) <= width) {
-            fit++;
+        return fittingLength(text, width, measure::width);
+    }
+
+    // ------------------------------------------------------------------
+    // The fit search. Shared with Measure.truncate and TextArea's wrap.
+    // ------------------------------------------------------------------
+
+    /**
+     * How far the first probe of a fit search reaches: about a line of the card's prose.
+     *
+     * <p>A search for where a line ends starts here and doubles until it overshoots, then bisects what it
+     * bracketed. Sixty-four characters is a little more than a line of a description at the widths it is
+     * shown at, so a typical line costs one probe to bracket and six to bisect, and a short label's
+     * first probe is simply the whole label.
+     */
+    static final int FIRST_STRIDE = 64;
+
+    /**
+     * How many characters of {@code text} the character walk would keep: the prefixes measured in order,
+     * stopping at the first that does not fit. At least zero.
+     *
+     * <p>This is the answer {@link Measure#truncate} and the long-word split have always given: one walk
+     * asked about every prefix up to the cut, which for a long label is a substring and a memo probe per
+     * character. It is now found in logarithmic probes, with the same answer, by {@link #furthestFitting}
+     * and {@link #walkedFit}; their notes say what the answer rests on. Both callers go through here, so
+     * they agree by construction about what "fits" means.
+     */
+    static int fittingLength(String text, int width, ToIntFunction<String> widthOf) {
+        int furthest = furthestFitting(text, 0, text.length(), width, widthOf);
+        return walkedFit(text, 0, furthest, text.length(), width, widthOf);
+    }
+
+    /**
+     * The furthest end in {@code [from, to]} whose slice {@code [from, end)} fits, among the ends that do
+     * not fall inside a surrogate pair. {@code from} when none does.
+     *
+     * <h2>Why this can bisect, and why it skips the middle of a pair</h2>
+     *
+     * <p>A bisection is only the walk's answer if a longer prefix is never narrower than a shorter one. The
+     * game's font gives that for every prefix that ends between characters: advances are never negative,
+     * there is no kerning, and a formatting code styles only what comes after it (a trailing section sign
+     * is drawn as nothing, and so is the code it would have read). It does <b>not</b> give it for a prefix
+     * that ends between the two halves of a surrogate pair: half a pair is drawn as the replacement
+     * character, which can be wider than the whole glyph the pair makes. So the search only ever probes
+     * ends that are not inside a pair, where the order holds, and {@link #walkedFit} accounts for the
+     * halves.
+     *
+     * <p>The first probe is {@link #FIRST_STRIDE} characters out, then twice that, and so on, until one
+     * does not fit or the probe is {@code to}; the bracket is then bisected. A line costs a handful of
+     * probes no longer than about twice itself, rather than probes over the rest of the text. When the
+     * answer is {@code to}, the probe that said so was the whole slice, which is how a caller learns that
+     * the rest fits without measuring it separately. The empty slice is taken to fit without being
+     * measured, as the walk never measured it either.
+     */
+    static int furthestFitting(String text, int from, int to, int width, ToIntFunction<String> widthOf) {
+        if (to <= from) {
+            return from;
         }
-        return fit;
+        // `lo` fits (or is `from`, the empty prefix) and `hi`, once known, does not. Both are always ends
+        // outside a pair, so the order the bisection needs holds between them.
+        int lo = from;
+        int hi;
+        int stride = FIRST_STRIDE;
+        while (true) {
+            int probe = to - from <= stride ? to : from + stride;
+            if (insidePair(text, from, to, probe)) {
+                probe++;                         // the end after the pair, which is at most `to`
+            }
+            if (widthOf.applyAsInt(text.substring(from, probe)) <= width) {
+                if (probe == to) {
+                    return to;
+                }
+                lo = probe;
+                stride *= 2;
+            }
+            else {
+                hi = probe;
+                break;
+            }
+        }
+        while (hi - lo > 1) {
+            int mid = (lo + hi) >>> 1;
+            if (insidePair(text, from, to, mid)) {
+                // Either neighbour of the middle of a pair is outside one: the character before it is a high
+                // surrogate and the one after it a low surrogate, and neither can be the middle of another.
+                if (mid - 1 > lo) {
+                    mid--;
+                }
+                else if (mid + 1 < hi) {
+                    mid++;
+                }
+                else {
+                    break;                       // the only end left between them is inside the pair
+                }
+            }
+            if (widthOf.applyAsInt(text.substring(from, mid)) <= width) {
+                lo = mid;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        return lo;
+    }
+
+    /**
+     * Where the character walk over {@code [from, to)} stopped, given {@link #furthestFitting}'s answer.
+     *
+     * <p>Every prefix up to {@code furthest} that ends outside a pair fits, so the only ones that could have
+     * stopped the walk sooner are the half-pairs below it, and each is asked about in order. Past
+     * {@code furthest}, the next end outside a pair does not fit, so the walk took at most the half-pair in
+     * front of it, which it did when that half fits, and that is a line ending in half a character,
+     * exactly as the walk always ended one. A text without surrogate pairs asks nothing here.
+     */
+    static int walkedFit(String text, int from, int furthest, int to, int width,
+                         ToIntFunction<String> widthOf) {
+        for (int end = from + 1; end < furthest; end++) {
+            if (insidePair(text, from, to, end) && widthOf.applyAsInt(text.substring(from, end)) > width) {
+                return end - 1;
+            }
+        }
+        if (insidePair(text, from, to, furthest + 1)
+                && widthOf.applyAsInt(text.substring(from, furthest + 1)) <= width) {
+            return furthest + 1;
+        }
+        return furthest;
+    }
+
+    /** Whether an end inside {@code (from, to)} falls between the two halves of a surrogate pair. */
+    private static boolean insidePair(String text, int from, int to, int end) {
+        return end > from && end < to
+                && Character.isHighSurrogate(text.charAt(end - 1)) && Character.isLowSurrogate(text.charAt(end));
     }
 }
