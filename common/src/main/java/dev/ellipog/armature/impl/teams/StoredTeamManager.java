@@ -42,9 +42,10 @@ import java.util.UUID;
  * third mod is that progress-sharing was tangled into the code that owned the progress, and
  * untangling it afterwards is far more expensive than keeping it separate now.
  *
- * <p><b>It does not cache.</b> Every lookup goes to the store, which is a {@code LinkedHashMap}
- * lookup over a handful of teams. A cache means an invalidation bug, and there is nothing here
- * expensive enough to be worth one.
+ * <p><b>It does not cache.</b> Every lookup goes to the store. A cache means an invalidation bug,
+ * and the one derived answer worth keeping, which team a player is in, is kept by the store itself
+ * and marked stale by the store's own writes, the same reasoning as the dirty flag below, so this
+ * class has nothing to invalidate.
  *
  * <h2>Saving</h2>
  *
@@ -57,7 +58,9 @@ import java.util.UUID;
  * <p>The reads — {@code teamOf}, {@code realTeamOf}, {@code invitesFor}, {@code allTeams},
  * {@code teamCount} — are no longer written here. They are default methods on
  * {@code TeamManager}, which is the point of the split: a source that can only read gets the whole
- * read surface for nothing, and this class does not carry a second copy of it.
+ * read surface for nothing, and this class does not carry a second copy of it. The overrides below
+ * ({@code realTeamOf}, {@code teamIdOf}, {@code invitesFor}) give the same answers by a cheaper
+ * route, and nothing else.
  */
 public final class StoredTeamManager implements MutableTeamManager {
 
@@ -132,19 +135,23 @@ public final class StoredTeamManager implements MutableTeamManager {
     }
 
     /**
-     * A direct scan of the store rather than the default walk over a copy.
+     * One lookup in the store's member index rather than the default walk over a copy.
      *
-     * <p>The default would call {@link #teams()} — a full list copy per lookup — and a player who
-     * is in no team is the common case, so the copy most often finds nothing. Same answer, no copy.
+     * <p>The default would call {@link #teams()} (a full list copy per lookup), and even a walk
+     * without the copy costs more with every team ever formed, for a question asked per online player
+     * per tick. The index gives the walk's answer, down to which team wins when a damaged file lists
+     * a player twice: see {@code TeamStore.teamOfMember}.
      */
     @Override
     public Optional<Team> realTeamOf(UUID player) {
-        for (Team team : store.live()) {
-            if (team.isMember(player)) {
-                return Optional.of(team);
-            }
-        }
-        return Optional.empty();
+        return Optional.ofNullable(store.teamOfMember(player));
+    }
+
+    /** The same lookup, with no {@code Optional} and, for a solo player, no team built. */
+    @Override
+    public UUID teamIdOf(UUID player) {
+        Team team = store.teamOfMember(player);
+        return team == null ? player : team.id();
     }
 
     /**

@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,6 +53,14 @@ import java.util.UUID;
  * old id would inherit anything keyed by it — a fresh party starting with whatever a previous party
  * had already done. Ids are random UUIDs so a collision is essentially impossible, but the check
  * costs a few bytes.
+ *
+ * <h2>Which team a player is in</h2>
+ *
+ * <p>Asked far more than anything else here: a consumer keying progress by a team asks it per online
+ * player per tick, and per player on every progress push. A walk over the teams answers it at a cost
+ * that grows with every team ever formed, so the store keeps a member index beside the map, and the
+ * same argument as for {@code setDirty()} decides who maintains it: the store's own writes mark it
+ * stale, so no caller can forget to. See {@link #teamOfMember}.
  */
 public final class TeamStore extends SavedData {
 
@@ -80,6 +89,23 @@ public final class TeamStore extends SavedData {
 
     /** Teams that were disbanded, so an id is never reused with old progress attached. */
     private final Set<UUID> retired = new LinkedHashSet<>();
+
+    /**
+     * Each member's team, rebuilt from {@link #teams} rather than patched per write: see
+     * {@link #memberIndex()}. Holds the team itself rather than its id, so a lookup is one get, and
+     * the team it hands back is the very object in {@link #teams}, which is what a walk over them
+     * would have returned.
+     */
+    private final Map<UUID, Team> byMember = new HashMap<>();
+
+    /**
+     * Whether {@link #byMember} is behind {@link #teams}. Every write to {@link #teams} sets it.
+     *
+     * <p>True from construction, and that is what covers {@link #load}: it fills {@link #teams}
+     * directly rather than through {@link #put}, on a store nobody has read yet, so the first lookup
+     * indexes whatever the file held.
+     */
+    private boolean byMemberStale = true;
 
     /** The store for this server. On the overworld, so teams are global rather than per-dimension. */
     public static TeamStore of(MinecraftServer server) {
@@ -129,14 +155,58 @@ public final class TeamStore extends SavedData {
 
     public Team put(Team team) {
         teams.put(team.id(), team);
+        byMemberStale = true;
         setDirty();
         return team;
     }
 
     public void remove(UUID id) {
         teams.remove(id);
+        byMemberStale = true;
         retired.add(id);
         setDirty();
+    }
+
+    /**
+     * The stored team {@code player} is a member of, or null when they are in none.
+     *
+     * <p>Exactly the team a walk over {@link #live()} asking {@code isMember} would stop at, including
+     * in the one case where that takes care: a corrupt or hand-edited file that lists one player in
+     * two teams. The walk stops at the first in the map's iteration order, so the index is built in
+     * that same order, first team wins, which keeps the answer the walk gave without having to reason
+     * about where a replaced team sits in the map (a {@code LinkedHashMap} keeps its old place).
+     *
+     * <p>Package-private, like {@link #live()}: the manager's {@code realTeamOf} and
+     * {@code teamIdOf} are the readers, and a null rather than an {@code Optional} is what lets
+     * {@code teamIdOf} answer without allocating at all.
+     */
+    Team teamOfMember(UUID player) {
+        return memberIndex().get(player);
+    }
+
+    /**
+     * The member index, rebuilt first if a write has made it stale.
+     *
+     * <p>Rebuilt whole rather than patched per write, on purpose. A patch for {@link #put} has to know
+     * what the replaced team held, and which other team, if any, should inherit a duplicated member it
+     * dropped; a rebuild has none of that to get wrong, because it is the walk itself, run once. It
+     * costs one pass over every member, and only on the first lookup after a write; writes are player
+     * actions, and lookups are every tick.
+     *
+     * <p>A read that writes, so it leans on the same guarantee {@link #live()} does: every entry point
+     * runs on the server thread, so no two lookups rebuild at once.
+     */
+    private Map<UUID, Team> memberIndex() {
+        if (byMemberStale) {
+            byMember.clear();
+            for (Team team : teams.values()) {
+                for (UUID member : team.memberIds()) {
+                    byMember.putIfAbsent(member, team);
+                }
+            }
+            byMemberStale = false;
+        }
+        return byMember;
     }
 
     public boolean isRetired(UUID id) {
@@ -151,10 +221,10 @@ public final class TeamStore extends SavedData {
      * The teams as a live unmodifiable view, for the manager's own per-lookup scans.
      *
      * <p>Package-private: the copy in {@link #all()} stays the public answer, but the manager's
-     * {@code realTeamOf} and {@code invitesFor} walk this instead of copying the map on every
-     * call. Safe because every entry point runs on the server thread with no callbacks inside
-     * the scan — see {@code TeamManager}'s threading note — so the view cannot be mutated
-     * underneath its own walk.
+     * {@code invitesFor} walks this instead of copying the map on every call ({@code realTeamOf}
+     * used to as well, and now asks {@link #teamOfMember}). Safe because every entry point runs on
+     * the server thread with no callbacks inside the scan (see {@code TeamManager}'s threading
+     * note), so the view cannot be mutated underneath its own walk.
      */
     Collection<Team> live() {
         return Collections.unmodifiableCollection(teams.values());

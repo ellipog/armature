@@ -160,6 +160,29 @@ class PartyTeamAdapterTest {
     }
 
     @Test
+    @DisplayName("teamIdOf asks the source's index for the party's id, and falls back to the player's own")
+    void teamIdOfUsesTheIndexAndFallsBackToThePlayer() {
+        UUID member = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        UUID partyId = UUID.randomUUID();
+        FakeParties source = new FakeParties()
+                .with(party(partyId, "alpha", member))
+                .with(party(UUID.randomUUID(), "beta", UUID.randomUUID()));
+        PartyTeamAdapter adapter = new PartyTeamAdapter(MOD_ID, source, false);
+
+        assertEquals(partyId, adapter.teamIdOf(member), "a member is keyed by their party's id");
+        assertEquals(1, source.forMemberCalls, "found through the source's member lookup");
+        assertEquals(0, source.partiesCalls, "without listing every party to find it");
+
+        assertEquals(stranger, adapter.teamIdOf(stranger),
+                "a player in no party is keyed by their own uuid, which is what a solo team's id is");
+
+        assertEquals(adapter.teamOf(member).id(), adapter.teamIdOf(member),
+                "and both answers are the id of what teamOf gives");
+        assertEquals(adapter.teamOf(stranger).id(), adapter.teamIdOf(stranger));
+    }
+
+    @Test
     @DisplayName("an adapter over somebody else's parties is read-only, and refuses all six by name")
     void anAdapterIsReadOnly() {
         PartyTeamAdapter adapter = new PartyTeamAdapter(MOD_ID, new FakeParties(), true);

@@ -26,8 +26,15 @@ lets a manager be backed by a file, an event, or a test without any of them muta
 
 ## `TeamManager`
 
-The interface a caller holds: `teams()`, `byId(id)`, `teamOf(player)`, `realTeamOf(player)` (empty
-rather than a solo team when the player is in none), `invitesFor(player)`, `allTeams()`, `teamCount()`.
+The interface a caller holds: `teams()`, `byId(id)`, `teamOf(player)`, `teamIdOf(player)`,
+`realTeamOf(player)` (empty rather than a solo team when the player is in none), `invitesFor(player)`,
+`allTeams()`, `teamCount()`.
+
+`teamIdOf(player)` is `teamOf(player).id()` without building the team: the real team's id, or the
+player's own UUID when they are in none, which is what a solo team is keyed by. It is the call for
+anything keyed by a team and asked often, like progress resolved per player per tick. Every
+built-in source answers it from its member lookup alone: the stored teams from an index rather than
+a walk over every team, and a foreign source without mapping the party.
 
 The mutating calls (`create`, `invite(team, player)`, `acceptInvite(player)`, `leave`, `kick`,
 `disband`) are on the same interface, but a manager that cannot change anything throws from them

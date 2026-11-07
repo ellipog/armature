@@ -4,11 +4,19 @@ import dev.ellipog.armature.api.teams.Team;
 import dev.ellipog.armature.api.teams.TeamFeature;
 import dev.ellipog.armature.api.teams.TeamManager;
 import dev.ellipog.armature.api.teams.TeamPolicy;
+import dev.ellipog.armature.api.teams.TeamRole;
+
+import net.minecraft.server.MinecraftServer;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -192,6 +200,52 @@ class TeamManagerContractTest {
                 "equal names fall back to the id, which cannot change");
     }
 
+    @Test
+    @DisplayName("teamIdOf is teamOf(player).id(), for a member and a solo player, from every source")
+    void teamIdOfIsTheIdOfTeamOf() throws ReflectiveOperationException {
+        UUID solo = UUID.randomUUID();
+
+        // The interface's own default, over a source with no teams at all...
+        assertTeamIdOfAgrees(new ReadOnlyTeamManager(), List.of(solo));
+
+        // ...and over one with teams, still on the defaults: MapTeamManager overrides neither
+        // realTeamOf nor teamIdOf.
+        MapTeamManager map = new MapTeamManager();
+        UUID mapOwner = UUID.randomUUID();
+        UUID mapMember = UUID.randomUUID();
+        Team mapTeam = map.create("the crew", mapOwner);
+        map.invite(mapTeam.id(), mapMember);
+        map.acceptInvite(mapMember);
+        assertEquals(mapTeam.id(), map.teamIdOf(mapMember), "a member gets the team's id");
+        assertTeamIdOfAgrees(map, List.of(mapOwner, mapMember, solo));
+
+        // The stored manager overrides it with its member index. A player listed in two teams is
+        // in here too, because that is the case where "the same team" is a real question.
+        TeamStore store = new TeamStore();
+        UUID storedOwner = UUID.randomUUID();
+        UUID storedMember = UUID.randomUUID();
+        UUID listedTwice = UUID.randomUUID();
+        Team storedTeam = store.put(Team.created(UUID.randomUUID(), "stored", storedOwner, 0L)
+                .withMember(storedMember, TeamRole.MEMBER)
+                .withMember(listedTwice, TeamRole.MEMBER));
+        store.put(Team.created(UUID.randomUUID(), "other", UUID.randomUUID(), 0L)
+                .withMember(listedTwice, TeamRole.MEMBER));
+        TeamManager stored = storedOver(store);
+        assertEquals(storedTeam.id(), stored.teamIdOf(listedTwice), "the first team stored wins");
+        assertEquals(solo, stored.teamIdOf(solo), "and a solo player is keyed by their own id");
+        assertTeamIdOfAgrees(stored, List.of(storedOwner, storedMember, listedTwice, solo));
+
+        // A party adapter overrides it with the source's member lookup, mapping nothing.
+        UUID partyId = UUID.randomUUID();
+        UUID partyOwner = UUID.randomUUID();
+        UUID partyMember = UUID.randomUUID();
+        PartySource.Party party = new PartySource.Party(partyId, "party", partyOwner,
+                Map.of(partyOwner, TeamRole.OWNER, partyMember, TeamRole.MEMBER), Set.of());
+        TeamManager adapter = new PartyTeamAdapter("someteamsmod", partiesOf(List.of(party)), false);
+        assertEquals(partyId, adapter.teamIdOf(partyMember), "a party member gets the party's id");
+        assertTeamIdOfAgrees(adapter, List.of(partyOwner, partyMember, solo));
+    }
+
     /**
      * Asserts one refusal, and asserts what it says.
      *
@@ -213,5 +267,47 @@ class TeamManagerContractTest {
                 () -> "the refusal should name the operation '" + operation + "'. It said: " + message);
         assertTrue(message.contains("managesMembership"),
                 () -> "and it should point at the question a caller can ask first. It said: " + message);
+    }
+
+    /**
+     * Asserts that {@code teamIdOf} and {@code teamOf(player).id()} are one answer for each player,
+     * and that {@code realTeamOf} agrees about whether there is a real team behind it.
+     */
+    private static void assertTeamIdOfAgrees(TeamManager manager, List<UUID> players) {
+        for (UUID player : players) {
+            assertEquals(manager.teamOf(player).id(), manager.teamIdOf(player),
+                    () -> "the '" + manager.name() + "' manager's teamIdOf disagrees with teamOf for "
+                            + player);
+            assertEquals(manager.realTeamOf(player).map(Team::id).orElse(player), manager.teamIdOf(player),
+                    () -> "and with realTeamOf, for " + player);
+        }
+    }
+
+    /**
+     * The stored manager over a store built here.
+     *
+     * <p>By reflection, because its constructor is private and {@code of(server)} needs a world. The
+     * reads asserted on never touch the server, so null stands in for it.
+     */
+    private static StoredTeamManager storedOver(TeamStore store) throws ReflectiveOperationException {
+        Constructor<StoredTeamManager> constructor =
+                StoredTeamManager.class.getDeclaredConstructor(MinecraftServer.class, TeamStore.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(null, store);
+    }
+
+    /** A party source over a fixed list, with the member lookup a real one would have. */
+    private static PartySource partiesOf(List<PartySource.Party> parties) {
+        return new PartySource() {
+            @Override
+            public Collection<Party> parties() {
+                return List.copyOf(parties);
+            }
+
+            @Override
+            public Optional<Party> forMember(UUID player) {
+                return parties.stream().filter(party -> party.members().containsKey(player)).findFirst();
+            }
+        };
     }
 }

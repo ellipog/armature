@@ -99,6 +99,18 @@ public final class PartyTeamAdapter implements TeamManager {
     }
 
     /**
+     * The same index, read for the party's id alone.
+     *
+     * <p>{@link #toTeam} copies the party's members and invitations into a team, and a caller after
+     * only the id would build that and drop it. The id is the one field the mapping passes through
+     * untouched, so this is {@code teamOf(player).id()} without the build.
+     */
+    @Override
+    public UUID teamIdOf(UUID player) {
+        return source.forMember(player).map(PartySource.Party::id).orElse(player);
+    }
+
+    /**
      * The mapping, and the whole of it.
      *
      * <p>{@code persistent} is true and {@code createdAt} is zero because those are the two things a

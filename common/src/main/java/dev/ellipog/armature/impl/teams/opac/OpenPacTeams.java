@@ -232,6 +232,20 @@ public final class OpenPacTeams implements MutableTeamManager {
         return Optional.ofNullable(parties().getPartyByMember(player)).map(this::toTeam);
     }
 
+    /**
+     * The party's id straight off OPAC's member lookup, without mapping the party.
+     *
+     * <p>{@code toTeam} streams every member and invitation into a team, and a caller keying
+     * something by a team asks this per player per tick wanting only the id, which the mapping takes
+     * from {@code getId()} unchanged, so the answer is {@code teamOf(player).id()} without the walk.
+     */
+    @Override
+    public UUID teamIdOf(UUID player) {
+        onServerThread();
+        IServerPartyAPI party = parties().getPartyByMember(player);
+        return party == null ? player : party.getId();
+    }
+
     // ------------------------------------------------------------------
     // Writes
     // ------------------------------------------------------------------
