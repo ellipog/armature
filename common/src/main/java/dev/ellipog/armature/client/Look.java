@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * How this client's UI looks and moves: the main theme, and the player's own edits to it.
@@ -168,6 +169,38 @@ public final class Look {
     /** Where a saved theme is written. The caller's directory, never one this class picked. */
     private Path themesDirectory;
 
+    /**
+     * The last theme {@link #main} resolved, with everything it was resolved from.
+     *
+     * <h2>Why main() remembers</h2>
+     *
+     * <p>Because it is asked for dozens of times a frame (a screen reads the radius, the background and
+     * a handful of colours through it, each a call) and resolving it is a name lookup plus, for a player
+     * with edits, the whole patch again: every colour copied out, every edit's token looked up, a theme
+     * built and then rebuilt with the radius. Same answer every time until something it reads changes.
+     *
+     * <h2>What it reads, which is what the key is</h2>
+     *
+     * <ul>
+     *   <li><b>The settings</b>, by identity. The record is immutable and every mutator here replaces it,
+     *       so a changed setting is always a different object; an unchanged one rebuilt equal costs one
+     *       resolve and nothing else.</li>
+     *   <li><b>The pack's default</b>, by value.</li>
+     *   <li><b>The theme catalogue</b>, by {@link ThemeFiles#generation}, because a name can resolve
+     *       differently after a reload with nothing on this object having changed: a theme saved from the
+     *       editor, a file edited by hand, or a directory forgotten by a test. The built-ins are constants
+     *       and need no key.</li>
+     * </ul>
+     *
+     * <p>One immutable holder in one field, so a reader sees a key and the theme built from it together or
+     * not at all: this runs on the render thread, and that is the whole of the thread-safety it needs.
+     */
+    private record Resolved(Settings settings, String serverDefault, long catalogue, Theme theme) {
+    }
+
+    /** See {@link Resolved}. Null until the first ask. */
+    private Resolved resolved;
+
     // ------------------------------------------------------------------
     // Reading
     // ------------------------------------------------------------------
@@ -230,8 +263,29 @@ public final class Look {
      * <p>Finally the player's edits are applied over whichever base won. Note the order: the edits are
      * <b>last</b>, so they override the pack's theme as well as the built-in one. A player who has gone
      * to the trouble of editing a colour means it, and a pack that replaced the base must not undo it.
+     *
+     * <p>The answer is remembered until one of the things it reads changes; see {@link Resolved}. So asking
+     * twice with nothing changed in between is the same object, and asking after any change is a fresh
+     * resolve.
      */
     public Theme main() {
+        // The catalogue's number first, before anything is resolved from the catalogue: see
+        // ThemeFiles.generation for why that order can only cost a resolve, never serve a stale theme.
+        long catalogue = ThemeFiles.generation();
+        Settings current = settings;
+        String server = serverDefault;
+        Resolved held = resolved;
+        if (held != null && held.settings() == current && held.catalogue() == catalogue
+                && Objects.equals(held.serverDefault(), server)) {
+            return held.theme();
+        }
+        Theme theme = resolve(current, server);
+        resolved = new Resolved(current, server, catalogue, theme);
+        return theme;
+    }
+
+    /** The resolution {@link #main} describes, from exactly the two values it is keyed on. */
+    private static Theme resolve(Settings settings, String serverDefault) {
         Theme base = null;
 
         if (settings.chosen()) {
