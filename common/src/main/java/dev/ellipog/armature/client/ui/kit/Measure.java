@@ -145,17 +145,15 @@ public interface Measure {
     /**
      * The longest prefix of {@code text} that fits in {@code width}.
      *
-     * <p>Linear rather than binary search, and deliberately: a string here is a label or a
-     * single-purpose sentence, never a document, and the linear version cannot be off by one in the
-     * way that a hand-written binary search can. The same function {@link TextWrap} uses to fit a
-     * fragment of an over-long word, so the two agree by construction about what "fits" means.
+     * <p>This was a linear walk, chosen because a binary search can be off by one where a walk cannot. It
+     * is a search now because a label is truncated every frame and the walk paid a substring and a memo
+     * probe per character up to the cut, but the answer is still the walk's, to the character, and
+     * {@code FittingPrefixTest} holds it against a copy of the walk over random labels, surrogate pairs and
+     * formatting codes included. The function is {@link TextWrap}'s, the one it uses to fit a fragment of
+     * an over-long word, so the two agree by construction about what "fits" means.
      */
     private static String fittingPrefix(String text, int width, Measure measure) {
-        int fit = 0;
-        while (fit < text.length() && measure.width(text.substring(0, fit + 1)) <= width) {
-            fit++;
-        }
-        return text.substring(0, fit);
+        return text.substring(0, TextWrap.fittingLength(text, width, measure::width));
     }
 
     /**
@@ -245,13 +243,12 @@ public interface Measure {
      *
      * <h2>Why the memo belongs here rather than at a call site</h2>
      *
-     * <p>Because the expensive pattern is not one call, it is the one {@link #truncate} makes: it walks a
-     * string a character at a time asking how wide each prefix is, so measuring one label once is a
-     * handful of font lookups in the best case and a few dozen in the worst — and a label that is drawn
-     * every frame asks the same questions every frame, in the same order, for the same answers. Caching
-     * the <b>width</b> rather than a caller's truncated result is what makes that free without any
-     * caller knowing: the rules above stay the rules, every site that measures text pays less, and the
-     * same applies to {@code TextWrap}, which walks a paragraph the same way.
+     * <p>Because the expensive pattern is not one call, it is the one {@link #truncate} makes: it asks how
+     * wide several prefixes of a string are, so measuring one label once is a handful of font lookups,
+     * and a label that is drawn every frame asks the same questions every frame, in the same order, for
+     * the same answers. Caching the <b>width</b> rather than a caller's truncated result is what makes
+     * that free without any caller knowing: the rules above stay the rules, every site that measures text
+     * pays less, and the same applies to {@code TextWrap}, which walks a paragraph the same way.
      *
      * <h2>The epoch is the caller's, and it is not optional</h2>
      *

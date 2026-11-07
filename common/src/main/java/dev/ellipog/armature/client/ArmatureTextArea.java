@@ -35,7 +35,7 @@ import java.util.function.Consumer;
  *
  * <h2>The wrap is measured, then cached</h2>
  *
- * <p>Wrapping calls {@code textWidth} once per character, so it runs when the text or the width has
+ * <p>Wrapping measures its way down every line of the text, so it runs when the text or the width has
  * changed and not once per frame. The cache key is the pair, because a resize re-wraps and an edit
  * re-wraps, and neither alone does.
  *
@@ -271,11 +271,18 @@ public final class ArmatureTextArea extends AbstractWidget {
         try (GuiRenderer.Scoped clip = r.clip(getX() + 1, getY() + 1, getX() + getWidth() - 1,
                 getY() + getHeight() - 1)) {
             String whole = model.value();
+            // Every line's own top, from the one rule: a line drawn at the font's pitch inside a block laid
+            // out at someone else's is a line that moves when the field is clicked. The first drawn line's
+            // top is asked for once and each line after it adds its own advance -- the increments
+            // `lineTop` sums, so the same numbers -- where a `lineTop` per line summed from the block's
+            // first line every time, which is quadratic in a long block every frame.
+            int top = TextArea.lineTop(lines, firstVisibleLine, lineHeight, paragraphGap);
             for (int i = firstVisibleLine; i < Math.min(lines.size(), firstVisibleLine + visible); i++) {
                 TextArea.Span span = lines.get(i);
-                // Every line's own top, from the one rule: a line drawn at the font's pitch inside a
-                // block laid out at someone else's is a line that moves when the field is clicked.
-                int y = getY() + PAD + TextArea.lineTop(lines, i, lineHeight, paragraphGap);
+                if (i > firstVisibleLine) {
+                    top += TextArea.lineAdvance(lines, i, lineHeight, paragraphGap);
+                }
+                int y = getY() + PAD + top;
                 int x = getX() + PAD;
 
                 // The selection behind the text, the same rule the field uses: the text's own colour at

@@ -466,9 +466,28 @@ public final class TextArea {
         int clamped = Math.max(0, Math.min(index, lines.size() - 1));
         int top = 0;
         for (int i = 1; i <= clamped; i++) {
-            top += lineHeight + (startsParagraph(lines, i) ? paragraphGap : 0);
+            top += lineAdvance(lines, i, lineHeight, paragraphGap);
         }
         return top;
+    }
+
+    /**
+     * How far below the line before it a visual line starts: one line height, plus the paragraph gap when
+     * the line begins a hard line. Zero for the first line, which has nothing above it.
+     *
+     * <h2>Why a loop over lines asks this rather than {@link #lineTop}</h2>
+     *
+     * <p>Because {@code lineTop} sums from the first line every time it is asked, so a loop that asked it
+     * per line was quadratic in the block -- and the drawing asked it per drawn line, per frame. A loop
+     * over consecutive lines takes the first one's top once and adds this per line after it, which is the
+     * same increment {@code lineTop} adds, in the same order, so every top is the same number.
+     * {@code TextAreaTest} holds the running sum against {@code lineTop} at every index.
+     */
+    public static int lineAdvance(List<Span> lines, int index, int lineHeight, int paragraphGap) {
+        if (index <= 0) {
+            return 0;
+        }
+        return lineHeight + (startsParagraph(lines, index) ? paragraphGap : 0);
     }
 
     /** Whether a visual line begins a hard line -- a paragraph, rather than a wrap of the one above. */
@@ -482,10 +501,15 @@ public final class TextArea {
      *
      * <p>Past the block is its last line, and above it is the first: a click outside the text still has
      * to mean the nearest end of it rather than nothing.
+     *
+     * <p>The tops are a running sum ({@link #lineAdvance}) rather than a {@code lineTop} per line, which
+     * made a drag across a long block quadratic per mouse move.
      */
     public static int lineAt(List<Span> lines, int y, int lineHeight, int paragraphGap) {
+        int top = 0;
         for (int i = 0; i < lines.size(); i++) {
-            if (y < lineTop(lines, i, lineHeight, paragraphGap) + lineHeight) {
+            top += lineAdvance(lines, i, lineHeight, paragraphGap);
+            if (y < top + lineHeight) {
                 return i;
             }
         }
@@ -498,12 +522,21 @@ public final class TextArea {
      * <p>Zero is a real answer -- no room is no lines -- and deliberately not clamped to one here: a
      * caller that draws decides its own floor, because how many lines to draw when none fit is a
      * drawing decision and not this rule's.
+     *
+     * <p>Each line's distance below {@code from} is a running sum of {@link #lineAdvance}, which is what
+     * {@code lineTop(i) - lineTop(from)} adds up to: the same increments in the same order, so the same
+     * number even where the arithmetic wraps. It used to be exactly that difference, with a {@code lineTop}
+     * per candidate line -- quadratic in the block, every frame.
      */
     public static int linesThatFit(List<Span> lines, int from, int pixels, int lineHeight, int paragraphGap) {
-        int base = lineTop(lines, from, lineHeight, paragraphGap);
+        int start = Math.max(0, from);
+        int below = 0;
         int count = 0;
-        for (int i = Math.max(0, from); i < lines.size(); i++) {
-            if (lineTop(lines, i, lineHeight, paragraphGap) - base >= pixels) {
+        for (int i = start; i < lines.size(); i++) {
+            if (i > start) {
+                below += lineAdvance(lines, i, lineHeight, paragraphGap);
+            }
+            if (below >= pixels) {
                 break;
             }
             count++;
@@ -594,42 +627,55 @@ public final class TextArea {
         return List.copyOf(spans);
     }
 
-    /** Wraps one hard line -- between two newlines -- into spans, greedily at spaces. */
+    /**
+     * Wraps one hard line -- between two newlines -- into spans, greedily at spaces.
+     *
+     * <h2>Why the search is bracketed from the line's start</h2>
+     *
+     * <p>Each visual line used to measure the whole rest of the hard line, to see whether it fit, and then
+     * every prefix up to the break: quadratic in a long paragraph, and paid on every keystroke after an
+     * edit near the top, because every substring after the edit is new to the memo. The furthest fitting
+     * prefix is now found by {@link TextWrap#furthestFitting}, galloping out from {@code at} and bisecting
+     * what it brackets, and the rest of the hard line is known to fit when that gallop reaches {@code to}
+     * -- its last probe was the whole remainder, the question the old first measure asked. The answer is
+     * the old walk's, half-pairs included ({@link TextWrap#walkedFit}); the break rules below it are
+     * unchanged, and {@code TextAreaTest} holds the spans against a copy of the old method.
+     */
     private static void wrapHardLine(String text, int from, int to, int width,
                                      ToIntFunction<String> widthOf, List<Span> spans) {
         int at = from;
         while (true) {
-            String remaining = text.substring(at, to);
-            if (widthOf.applyAsInt(remaining) <= width) {
+            // An empty remainder ends the search at once and counts as fitting, which is what measuring
+            // it did: an empty string has no width, and the box is at least one pixel wide.
+            int furthest = TextWrap.furthestFitting(text, at, to, width, widthOf);
+            if (furthest == to) {
                 spans.add(new Span(at, to, true));
                 return;
             }
-            // The furthest prefix that fits, then back up to the last space in it so words survive.
-            int fits = 0;
-            for (int i = 1; i <= remaining.length(); i++) {
-                if (widthOf.applyAsInt(remaining.substring(0, i)) > width) {
-                    break;
-                }
-                fits = i;
-            }
+            // The furthest prefix that fits, then back up to the last space in it so words survive. Indices
+            // into `text` from here, where the old walk sliced off the remainder: `at + fits` is what was
+            // `fits` into it.
+            int fits = TextWrap.walkedFit(text, at, furthest, to, width, widthOf) - at;
             if (fits <= 0) {
                 fits = 1;   // a single character wider than the box still gets its own line
             }
-            if (fits < remaining.length() && Character.isHighSurrogate(remaining.charAt(fits - 1))
-                    && Character.isLowSurrogate(remaining.charAt(fits))) {
+            if (at + fits < to && Character.isHighSurrogate(text.charAt(at + fits - 1))
+                    && Character.isLowSurrogate(text.charAt(at + fits))) {
                 // The break fell inside one character: a character outside the basic plane is two chars
                 // and still one character, so the whole pair moves to the next line and this one ends
                 // before it -- unless the pair is what the line starts with, in which case it is taken
                 // whole and one column too wide, the same failure any single character too wide gets.
                 fits = fits > 1 ? fits - 1 : 2;
             }
-            int space = remaining.lastIndexOf(' ', fits - 1);
-            if (space > 0) {
+            // The last space at or before the break, and only one after the line's first character: a space
+            // found before `at` belongs to an earlier line, and one at `at` would be an empty break.
+            int space = text.lastIndexOf(' ', at + fits - 1);
+            if (space > at) {
                 // Break at the space and keep it as the span's last character: the spans have to
                 // tile the text, and a swallowed space would shift every index after it -- a click
                 // would land one character off for the rest of the block.
-                spans.add(new Span(at, at + space + 1, false));
-                at += space + 1;
+                spans.add(new Span(at, space + 1, false));
+                at = space + 1;
             }
             else {
                 spans.add(new Span(at, at + fits, false));
