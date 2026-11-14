@@ -277,7 +277,12 @@ public final class ArmatureTextArea extends AbstractWidget {
             // top is asked for once and each line after it adds its own advance -- the increments
             // `lineTop` sums, so the same numbers -- where a `lineTop` per line summed from the block's
             // first line every time, which is quadratic in a long block every frame.
-            int top = TextArea.lineTop(lines, firstVisibleLine, lineHeight, paragraphGap);
+            //
+            // Tops are measured from the first *visible* line, so it sits at PAD below the box's top --
+            // the same origin `caretTop` and `indexAt` use. It used to start at that line's top in the
+            // whole block, which once the box scrolled pushed every drawn line down by the scrolled
+            // height, past the clip and out of sight (ARM-19).
+            int top = 0;
             for (int i = firstVisibleLine; i < Math.min(lines.size(), firstVisibleLine + visible); i++) {
                 TextArea.Span span = lines.get(i);
                 if (i > firstVisibleLine) {
@@ -526,7 +531,10 @@ public final class ArmatureTextArea extends AbstractWidget {
      */
     private int indexAt(double mouseX, double mouseY) {
         List<TextArea.Span> lines = spans();
-        int line = TextArea.lineAt(lines, (int) (mouseY - getY() - PAD), lineHeight(), paragraphGap);
+        // Back into block coordinates: the drawing puts the first visible line at PAD, so a click is
+        // measured from there plus however far the box has scrolled.
+        int scrolled = TextArea.lineTop(lines, firstVisibleLine, lineHeight(), paragraphGap);
+        int line = TextArea.lineAt(lines, (int) (mouseY - getY() - PAD) + scrolled, lineHeight(), paragraphGap);
         return model.indexAt(line, mouseX - getX() - PAD, lines, ArmatureTextArea::textWidth);
     }
 
