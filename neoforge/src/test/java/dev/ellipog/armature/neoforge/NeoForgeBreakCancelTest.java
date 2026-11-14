@@ -3,6 +3,7 @@ package dev.ellipog.armature.neoforge;
 import dev.ellipog.armature.api.event.ArmatureEvents;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -11,34 +12,40 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A cancelled break is a protected block: nothing broke, so no BLOCK_BROKEN may fire.
  *
- * <p>Pinned without a world, and honest about what headless can and cannot hold. What this
- * holds: the entry point attaches without a world; a cancelled event short-circuits before
- * touching the event — level, state and player are all null here, so a guard that reads
- * anything before refusing throws instead of passing; and a late cancellation during the
- * post runs the whole priority path without leaking or crashing. What it cannot hold without
- * a real player object: the positive path (an uncancelled break by a person forwards) and
- * the priority half against a higher listener — those need a live server, see the testserver
- * combos, and the LOWEST + receiveCanceled=false pair in NeoForgeEvents stays review-covered.
+ * <h2>How this sees the forwarder's decision without a player</h2>
+ *
+ * <p>The forwarder refuses a cancelled break first and asks the event for its player only after, to
+ * check it is a {@code ServerPlayer}. A real {@code ServerPlayer} cannot be made headless (its attachment
+ * holder needs a running FML loader), so the event here is a subclass that notes when its player is asked
+ * for. Asked means the forwarder got past the cancel guard and would have forwarded for a real player;
+ * not asked means it refused, or never ran.
+ *
+ * <p>The control test is what makes the other two mean something. Before ARM-21 the bus was never started
+ * here, so a post called nobody and both cancel tests passed with the forwarder never running. Now the
+ * control fails if the forwarder does not run, and the cancel tests fail if it stops refusing cancelled
+ * breaks (both its {@code receiveCanceled=false} registration and its {@code isCanceled} check removed).
+ *
+ * <p>What it cannot hold: the priority half against a real protection mod at higher priority, which needs a
+ * live server. A canceller at LOW is covered here.
  */
 @DisplayName("cancelled breaks never forward")
 class NeoForgeBreakCancelTest {
 
-    private static final List<String> FORWARDED = new ArrayList<>();
     private static final AtomicBoolean ARMED = new AtomicBoolean(false);
 
     @BeforeAll
     static void attach() {
-        NeoForgeEvents.attach();
-        ArmatureEvents.BLOCK_BROKEN.register((player, state) -> FORWARDED.add("forward"));
+        TestBus.attachOnce();
+        // The forwarder returns at once while nothing listens, so something has to.
+        ArmatureEvents.BLOCK_BROKEN.register((who, state) -> { });
         // A protection mod cancelling late: LOW runs after everything but our listener, so a
         // forward past this point is a listener that does not listen last.
         NeoForge.EVENT_BUS.addListener(EventPriority.LOW, true, (BlockEvent.BreakEvent event) -> {
@@ -49,29 +56,52 @@ class NeoForgeBreakCancelTest {
     }
 
     @Test
-    @DisplayName("a break cancelled before the post short-circuits before touching it")
-    void cancelledBeforePostNeverForwards() {
-        FORWARDED.clear();
-        BlockEvent.BreakEvent event =
-                new BlockEvent.BreakEvent(null, BlockPos.ZERO, null, null);
-        event.setCanceled(true);
+    @DisplayName("an uncancelled break gets past the guard, so the tests below are about a listener that runs")
+    void anUncancelledBreakIsForwarded() {
+        Watched event = new Watched();
         NeoForge.EVENT_BUS.post(event);
-        assertTrue(FORWARDED.isEmpty(),
-                "a cancelled break forwarded: the listener takes cancelled events or skips its guard");
+        assertTrue(event.playerAsked,
+                "the forwarder never looked at the player: the bus is not started, or it is not attached");
     }
 
     @Test
-    @DisplayName("a break cancelled late runs the priority path without leaking")
+    @DisplayName("a break cancelled before the post is refused")
+    void cancelledBeforePostNeverForwards() {
+        Watched event = new Watched();
+        event.setCanceled(true);
+        NeoForge.EVENT_BUS.post(event);
+        assertFalse(event.playerAsked,
+                "a cancelled break got past the guard: the listener takes cancelled events or skips its check");
+    }
+
+    @Test
+    @DisplayName("a break cancelled late is refused")
     void cancelledLateNeverForwards() {
-        FORWARDED.clear();
+        Watched event = new Watched();
         ARMED.set(true);
         try {
-            NeoForge.EVENT_BUS.post(new BlockEvent.BreakEvent(null, BlockPos.ZERO, null, null));
+            NeoForge.EVENT_BUS.post(event);
         }
         finally {
             ARMED.set(false);
         }
-        assertTrue(FORWARDED.isEmpty(),
-                "a late cancellation leaked a BLOCK_BROKEN: the listener does not listen last");
+        assertFalse(event.playerAsked,
+                "a late cancellation got past the guard: the listener does not listen last");
+    }
+
+    /** A break with no level, state or player, that notes whether its player was asked for. */
+    private static final class Watched extends BlockEvent.BreakEvent {
+
+        private boolean playerAsked;
+
+        Watched() {
+            super(null, BlockPos.ZERO, null, null);
+        }
+
+        @Override
+        public Player getPlayer() {
+            playerAsked = true;
+            return super.getPlayer();
+        }
     }
 }
