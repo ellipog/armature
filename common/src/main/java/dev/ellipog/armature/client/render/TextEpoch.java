@@ -4,6 +4,11 @@ import dev.ellipog.armature.client.TextScale;
 
 import net.minecraft.client.Minecraft;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
+
 /**
  * When a measured width may have changed — one number, to be compared and never interpreted.
  *
@@ -23,7 +28,9 @@ import net.minecraft.client.Minecraft;
  * <h2>What is in it, and what is deliberately not</h2>
  *
  * <p>The font is identified rather than compared, because a reload <b>replaces</b> the object: two different
- * objects are two different faces, and the widths measured against the old one are no longer answers. The
+ * objects are two different faces, and the widths measured against the old one are no longer answers. On
+ * 26.3 a reload does not replace it (the font is final and refilled in place), so the reload itself is in
+ * the epoch too; see {@link ReloadTracker}. The
  * scale is taken at full precision rather than rounded, so a slider dragged to 1.01 is a different epoch from
  * 1.0 — a layout measured at one and drawn at the other is text that no longer fits its column.
  *
@@ -114,11 +121,134 @@ public final class TextEpoch {
         Minecraft minecraft = Minecraft.getInstance();
         Object font = minecraft == null ? null : minecraft.font;
         long face = font == null ? 0L : serialOf(font);
-        // Mixed rather than added, so two readings that differ in either part differ in the whole. The
+        long reload = minecraft == null ? 0L : ReloadTracker.serial(minecraft);
+        // Mixed rather than added, so two readings that differ in any part differ in the whole. The
         // scale is taken at full precision rather than rounded: a slider dragged to 1.01 is a different
         // epoch from 1.0, because a layout measured at one and drawn at the other is text that no longer
         // fits its column.
-        return face * 1_000_003L + Double.doubleToLongBits(TextScale.get());
+        return (face * 1_000_003L + reload) * 1_000_003L + Double.doubleToLongBits(TextScale.get());
+    }
+
+    /**
+     * Which resource reload the font's glyphs come from, as a serial.
+     *
+     * <h2>Why the font's identity is not enough</h2>
+     *
+     * <p>On 26.3 {@code Minecraft.font} is final and made once: a reload refills its {@code FontSet}s in
+     * place rather than replacing the object, so the font's serial never moves, and a pack that changes
+     * glyph widths left stale widths in every memo until the text scale changed (ARM-20).
+     *
+     * <h2>Why the reload tracker, and not the pack stack</h2>
+     *
+     * <p>{@code ReloadableResourceManager.resources} (what {@code GuiGraphicsRenderer.textureStamp} reads)
+     * is replaced when a reload <i>starts</i>, but the font's glyphs change when {@code FontManager} applies,
+     * near its end. Screens keep drawing in between, so widths measured against the old glyphs would be
+     * kept under the new stack's serial. The client's {@code ResourceLoadStateTracker} gives both ends: a
+     * new {@code ReloadState} per reload, and its {@code finished} flag set once every listener has applied.
+     * While a reload is unfinished every reading is new, so nothing measured then is remembered: slow for
+     * the length of a loading screen, and never stale.
+     */
+    static final class ReloadTracker {
+
+        private static final MethodHandle TRACKER;
+        private static final MethodHandle STATE;
+        private static final MethodHandle FINISHED;
+
+        static {
+            MethodHandle tracker = null;
+            MethodHandle state = null;
+            MethodHandle finished = null;
+            try {
+                MethodHandles.Lookup lookup = MethodHandles.lookup();
+                Field trackerField = Minecraft.class.getDeclaredField("reloadStateTracker");
+                trackerField.setAccessible(true);
+                Field stateField = trackerField.getType().getDeclaredField("reloadState");
+                stateField.setAccessible(true);
+                Field finishedField = stateField.getType().getDeclaredField("finished");
+                finishedField.setAccessible(true);
+                tracker = lookup.unreflectGetter(trackerField)
+                        .asType(MethodType.methodType(Object.class, Object.class));
+                state = lookup.unreflectGetter(stateField)
+                        .asType(MethodType.methodType(Object.class, Object.class));
+                finished = lookup.unreflectGetter(finishedField)
+                        .asType(MethodType.methodType(boolean.class, Object.class));
+            }
+            catch (ReflectiveOperationException | RuntimeException ignored) {
+                // Left null: the epoch then follows the font and the scale alone, as it did before.
+            }
+            TRACKER = tracker;
+            STATE = state;
+            FINISHED = finished;
+        }
+
+        private static final Serials SERIALS = new Serials();
+
+        private ReloadTracker() {
+        }
+
+        static long serial(Minecraft minecraft) {
+            if (TRACKER == null) {
+                return 0L;
+            }
+            Object state;
+            try {
+                Object tracker = (Object) TRACKER.invokeExact((Object) minecraft);
+                state = tracker == null ? null : (Object) STATE.invokeExact(tracker);
+            }
+            catch (Throwable unexpected) {
+                return 0L;
+            }
+            return SERIALS.of(state, s -> {
+                try {
+                    return (boolean) FINISHED.invokeExact(s);
+                }
+                catch (Throwable unexpected) {
+                    return true;
+                }
+            });
+        }
+    }
+
+    /**
+     * The serial for a reload, game-free so a test can hold it: the same for one finished reload however
+     * often it is asked, a new one for each later reload, and a new one on every reading while a reload is
+     * still running.
+     */
+    static final class Serials {
+
+        /** The last finished reload seen and its serial. Immutable, so a reader sees both or neither. */
+        private record Seen(java.lang.ref.WeakReference<Object> state, long serial) {
+        }
+
+        private volatile Seen seen = new Seen(new java.lang.ref.WeakReference<>(null), 0L);
+        private final java.util.concurrent.atomic.AtomicLong next = new java.util.concurrent.atomic.AtomicLong();
+        private final java.util.concurrent.atomic.AtomicLong unfinished = new java.util.concurrent.atomic.AtomicLong();
+
+        long of(Object state, java.util.function.Predicate<Object> isFinished) {
+            if (state == null) {
+                // No reload has started yet. The first one is still to come, and it will be a new serial.
+                return 0L;
+            }
+            Seen last = seen;
+            if (last.state.get() == state) {
+                // A reload's state is only ever finished once and never unfinished again, so a remembered
+                // one is still finished.
+                return last.serial;
+            }
+            if (!isFinished.test(state)) {
+                // Below zero, where finished serials never go, and never the same twice.
+                return -unfinished.incrementAndGet();
+            }
+            synchronized (this) {
+                last = seen;
+                if (last.state.get() == state) {
+                    return last.serial;
+                }
+                long serial = next.incrementAndGet();
+                seen = new Seen(new java.lang.ref.WeakReference<>(state), serial);
+                return serial;
+            }
+        }
     }
 
     /**

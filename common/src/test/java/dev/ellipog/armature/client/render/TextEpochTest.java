@@ -177,4 +177,60 @@ class TextEpochTest {
         inForce[0] = RecordingRenderer.withCharWidth(5);
         assertEquals(10, measure.width("ab"));
     }
+
+    // ------------------------------------------------------------------
+    // The reload (ARM-20)
+    // ------------------------------------------------------------------
+
+    /** A stand-in for {@code ResourceLoadStateTracker.ReloadState}: a fresh object per reload, finished once. */
+    private static final class State {
+        boolean finished;
+    }
+
+    @Test
+    @DisplayName("a finished reload reads one serial, and the next reload a new one")
+    void aReloadMovesTheSerial() {
+        TextEpoch.Serials serials = new TextEpoch.Serials();
+        assertEquals(0L, serials.of(null, s -> true), "before any reload there is nothing to name");
+
+        State first = new State();
+        first.finished = true;
+        long one = serials.of(first, s -> ((State) s).finished);
+        assertEquals(one, serials.of(first, s -> ((State) s).finished));
+
+        State second = new State();
+        second.finished = true;
+        long two = serials.of(second, s -> ((State) s).finished);
+        assertNotEquals(one, two, "a reload that may have changed the glyphs kept the old epoch");
+        assertEquals(two, serials.of(second, s -> ((State) s).finished));
+    }
+
+    @Test
+    @DisplayName("while a reload runs every reading is new, so nothing measured then is kept")
+    void anUnfinishedReloadIsNeverTheSame() {
+        // Between the pack stack being swapped and the font applying, the glyphs are the old ones. A width
+        // measured in that window must not survive into the finished reload's epoch.
+        TextEpoch.Serials serials = new TextEpoch.Serials();
+        State running = new State();
+        long a = serials.of(running, s -> ((State) s).finished);
+        long b = serials.of(running, s -> ((State) s).finished);
+        assertNotEquals(a, b);
+        assertTrue(a < 0 && b < 0, "an unfinished reading is never a finished serial");
+
+        running.finished = true;
+        long done = serials.of(running, s -> ((State) s).finished);
+        assertTrue(done > 0);
+        assertEquals(done, serials.of(running, s -> ((State) s).finished));
+    }
+
+    @Test
+    @DisplayName("the fields the reload serial reads exist in this version of the game")
+    void theTrackerFieldsExist() throws ReflectiveOperationException {
+        // Read by reflection at runtime, so a rename in a game update would quietly drop the reload from the
+        // epoch. This fails instead.
+        Class<?> minecraft = Class.forName("net.minecraft.client.Minecraft", false, getClass().getClassLoader());
+        Class<?> tracker = minecraft.getDeclaredField("reloadStateTracker").getType();
+        Class<?> state = tracker.getDeclaredField("reloadState").getType();
+        assertEquals(boolean.class, state.getDeclaredField("finished").getType());
+    }
 }
