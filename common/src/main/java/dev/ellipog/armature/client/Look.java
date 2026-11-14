@@ -605,7 +605,8 @@ public final class Look {
      * file you still have to restart to see.
      *
      * @param name the theme's name, sanitised to something that is a filename and a lookup key. Null or
-     *     blank gives a name derived from the theme being edited, so a save never has to be refused
+     *     blank gives a name derived from the theme being edited, so a save never has to be refused. A
+     *     built-in's name gets {@code _edited} added, since a file cannot take a built-in's place
      * @return the name it was saved under, or null when there was nowhere to write or the written file did
      *     not load
      */
@@ -620,6 +621,16 @@ public final class Look {
         String clean = sanitise(name);
         if (clean.isEmpty()) {
             clean = Themes.derivedName(settings.theme(), "edited");
+        }
+        else if (Themes.byName(clean) != null) {
+            // A built-in's name. `Themes.any` asks the built-ins first, so a file called "modern" could never
+            // be chosen: the switch below would land on the built-in and the player's colours would vanish
+            // from the screen while sitting in a file nothing can pick. The file takes a name of its own
+            // instead, and the same one every time, so saving "modern" again overwrites the first save just
+            // as saving any other name over itself does. The caller is told through the returned name.
+            String wanted = clean;
+            clean = clean + "_edited";
+            Constants.LOG.info("'{}' is a built-in theme, so the edits were saved as '{}'", wanted, clean);
         }
 
         // Written as a patch over the theme it was edited from, with every colour stated. Stating all of

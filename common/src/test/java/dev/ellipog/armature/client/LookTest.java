@@ -568,6 +568,32 @@ class LookTest {
     }
 
     @Test
+    @DisplayName("saving under a built-in's name saves under a name of its own")
+    void savingUnderABuiltInsNameRenames(@TempDir Path dir) throws Exception {
+        // A file called "modern" would be hidden by the built-in, and the switch after saving would land on
+        // the built-in with the player's edits gone from the screen.
+        ThemeFiles.reload(dir);
+        look.load(dir.resolve("appearance.json"), dir);
+        look.setTheme("modern");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF444444);
+
+        String saved = look.saveAsTheme("Modern");
+
+        assertEquals("modern_edited", saved);
+        assertFalse(Files.exists(dir.resolve("modern.json")), "a file the built-in hides was written");
+        assertEquals("modern_edited", look.main().name());
+        assertEquals(0xFF444444, look.main().panel(), "the saved colours are not what is on screen");
+
+        // And saving "modern" again overwrites that file rather than making another.
+        look.beginEditing();
+        look.setCustom("panel", 0xFF555555);
+        assertEquals("modern_edited", look.saveAsTheme("modern"));
+        assertEquals(0xFF555555, look.main().panel());
+        assertEquals(1, ThemeFiles.all().size());
+    }
+
+    @Test
     @DisplayName("saving with no name at all derives one rather than refusing")
     void savingWithoutANameDerivesOne(@TempDir Path dir) throws Exception {
         ThemeFiles.reload(dir);
