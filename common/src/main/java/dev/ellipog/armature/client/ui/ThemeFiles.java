@@ -102,6 +102,12 @@ public final class ThemeFiles {
     /** Every theme loaded from a file, in file-name order. */
     private static Map<String, Theme> loaded = Map.of();
 
+    /**
+     * What each loaded file theme named as its {@code basedOn}, by lowercased name, with null for a file
+     * that named none -- an empty string, not null, because {@code Map.copyOf} refuses nulls. Kept so {@link #baseFor} can follow a theme down to the built-in under it.
+     */
+    private static Map<String, String> bases = Map.of();
+
     /** Every problem from the last read, for a message. Empty is the normal case. */
     private static List<String> problems = List.of();
 
@@ -140,6 +146,7 @@ public final class ThemeFiles {
         directory = path;
         List<String> found = new ArrayList<>();
         Map<String, Theme> themes = new LinkedHashMap<>();
+        Map<String, String> basedOn = new LinkedHashMap<>();
 
         List<Pending> pending = new ArrayList<>();
         if (Files.isDirectory(path)) {
@@ -187,6 +194,7 @@ public final class ThemeFiles {
                 }
                 Theme theme = candidate.patch.applyTo(base).withName(name);
                 themes.put(name.toLowerCase(Locale.ROOT), theme);
+                basedOn.put(name.toLowerCase(Locale.ROOT), candidate.basedOn == null ? "" : candidate.basedOn);
                 found.addAll(unrecognised(candidate));
                 pending.remove(i);
                 progress = true;
@@ -204,6 +212,7 @@ public final class ThemeFiles {
         }
 
         loaded = Map.copyOf(themes);
+        bases = Map.copyOf(basedOn);
         problems = List.copyOf(found);
         // After the catalogue, never before: see GENERATION.
         GENERATION.incrementAndGet();
@@ -330,7 +339,36 @@ public final class ThemeFiles {
         return name != null && loaded.containsKey(name.trim().toLowerCase(Locale.ROOT));
     }
 
-    /** The directory being read, or null. The editor shows it, since a saved theme's home matters. */
+    /**
+     * What a file called {@code writing} may name as its {@code basedOn} when it was edited from
+     * {@code from}: {@code from} itself, unless that would make the file depend on itself.
+     *
+     * <p>It would when {@code from} is {@code writing} (saving a file theme under its own name), or when
+     * {@code from} is a file theme whose own bases lead back to {@code writing}. Either way the reader
+     * cannot resolve the file and the theme vanishes, so the answer is then the built-in at the bottom of
+     * {@code from}'s chain, or the default when the chain names none or is already broken.
+     */
+    public static String baseFor(String from, String writing) {
+        String target = writing == null ? "" : writing.trim().toLowerCase(Locale.ROOT);
+        String step = from == null ? "" : from.trim().toLowerCase(Locale.ROOT);
+        boolean loops = false;
+        // Bounded by the number of file themes, so a cycle on disk cannot hang the editor.
+        for (int hops = 0; hops <= bases.size() && bases.containsKey(step); hops++) {
+            if (step.equals(target)) {
+                loops = true;
+            }
+            step = bases.get(step).trim().toLowerCase(Locale.ROOT);
+        }
+        if (step.equals(target)) {
+            loops = true;
+        }
+        if (!loops) {
+            return from;
+        }
+        Theme builtIn = Themes.byName(step);
+        return builtIn != null ? builtIn.name() : Themes.DEFAULT.name();
+    }
+
     /** Everything wrong with the last read, in the order it was found. Empty is the normal case. */
     public static List<String> problems() {
         return problems;
@@ -367,6 +405,7 @@ public final class ThemeFiles {
      */
     public static void reset() {
         loaded = Map.of();
+        bases = Map.of();
         problems = List.of();
         directory = null;
         GENERATION.incrementAndGet();

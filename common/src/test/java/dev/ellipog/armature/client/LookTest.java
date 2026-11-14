@@ -533,6 +533,41 @@ class LookTest {
     }
 
     @Test
+    @DisplayName("saving a file theme under its own name keeps it loadable (ARM-18)")
+    void savingAThemeOverItselfKeepsItLoadable(@TempDir Path dir) throws Exception {
+        ThemeFiles.reload(dir);
+        look.load(dir.resolve("appearance.json"), dir);
+        look.setTheme("tome");
+        look.beginEditing();
+        look.setCustom("panel", 0xFF111111);
+        assertEquals("saved", look.saveAsTheme("saved"));
+        long tomeMotion = look.main().motion();
+
+        // Now edit "saved" itself and save it as "saved". This used to write `"basedOn": "saved"`, which
+        // the reader cannot resolve, so the theme vanished and the player fell back to something else.
+        look.beginEditing();
+        look.setCustom("panel", 0xFF222222);
+        assertEquals("saved", look.saveAsTheme("saved"));
+
+        assertEquals("saved", look.main().name());
+        assertEquals(0xFF222222, look.main().panel());
+        assertEquals(tomeMotion, look.main().motion(), "the motion it inherited should survive the rebase");
+        JsonObject written = JsonParser.parseString(
+                Files.readString(dir.resolve("saved.json"), StandardCharsets.UTF_8)).getAsJsonObject();
+        assertEquals("tome", written.get("basedOn").getAsString());
+
+        // And a file based on "saved" saved back as "saved" would make the two name each other.
+        look.beginEditing();
+        assertEquals("child", look.saveAsTheme("child"));
+        look.beginEditing();
+        look.setCustom("panel", 0xFF333333);
+        assertEquals("saved", look.saveAsTheme("saved"));
+        assertEquals(0xFF333333, look.main().panel());
+        assertNotNull(ThemeFiles.byName("child"), "the theme based on it should still load");
+        assertTrue(ThemeFiles.problems().isEmpty(), ThemeFiles.problems().toString());
+    }
+
+    @Test
     @DisplayName("saving with no name at all derives one rather than refusing")
     void savingWithoutANameDerivesOne(@TempDir Path dir) throws Exception {
         ThemeFiles.reload(dir);

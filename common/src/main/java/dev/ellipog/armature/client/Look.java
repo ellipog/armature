@@ -606,7 +606,8 @@ public final class Look {
      *
      * @param name the theme's name, sanitised to something that is a filename and a lookup key. Null or
      *     blank gives a name derived from the theme being edited, so a save never has to be refused
-     * @return the name it was saved under, or null when there was nowhere to write
+     * @return the name it was saved under, or null when there was nowhere to write or the written file did
+     *     not load
      */
     public String saveAsTheme(String name) {
         Path directory = themesDirectory;
@@ -628,10 +629,20 @@ public final class Look {
         // radius, motion and easing still come from somewhere, and so the file says what it started as.
         // The chrome travels with it for the same reason the colours do: edits saved from vanilla must
         // still draw sprites when the file is chosen, not the flat fills of the base it names.
-        ThemePatch patch = new ThemePatch(clean, settings.custom(), settings.radius(), null, null,
-                settings.background(), main().chrome());
+        //
+        // The base is the theme being edited unless that would make the file its own base: saving a file
+        // theme under its own name, or under the name of a file its base descends from. The reader cannot
+        // resolve such a file, so the theme vanished on the reload below. Then the file is based on the
+        // built-in at the bottom of the chain instead, and states the motion and easing it would otherwise
+        // have inherited from the files in between, so it still looks and moves as it did.
+        String base = ThemeFiles.baseFor(settings.theme(), clean);
+        boolean rebased = !base.equals(settings.theme());
+        Theme shown = main();
+        ThemePatch patch = new ThemePatch(clean, settings.custom(), settings.radius(),
+                rebased ? Long.valueOf(shown.motion()) : null, rebased ? shown.easing() : null,
+                settings.background(), shown.chrome());
         JsonObject root = patch.toJson();
-        root.addProperty("basedOn", settings.theme());
+        root.addProperty("basedOn", base);
 
         try {
             // JsonWrite creates the directory as well as writing by rename, so the explicit
@@ -658,7 +669,13 @@ public final class Look {
         // The edits go with the switch, which is where they belong now: they were just written *into*
         // the file, so `setTheme`'s clearing leaves the player looking at exactly what they saved
         // rather than at the same colours applied twice.
-        setTheme(clean);
+        if (!setTheme(clean)) {
+            // The file is on disk but did not load, so the player would be left on the old theme with
+            // nothing saying why. ThemeFiles has already logged the reason; this says it was the save.
+            Constants.LOG.warn("the theme '{}' was written to {} but did not load: {}", clean, directory,
+                    ThemeFiles.problems());
+            return null;
+        }
         return clean;
     }
 
