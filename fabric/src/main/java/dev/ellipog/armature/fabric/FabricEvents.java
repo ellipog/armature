@@ -10,6 +10,8 @@ import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.List;
+
 /**
  * The only place Fabric's event API is named. Each hook is forwarded straight to the
  * matching {@link ArmatureEvents} event, with no logic in between, so that Armature's
@@ -39,11 +41,20 @@ public final class FabricEvents {
         // tick is cheap and is the honest way to offer the same event as NeoForge, where it
         // is a real hook. The hasListeners check means a server where nothing listens
         // pays nothing at all for it.
+        //
+        // Over a copy, because `getPlayers` is PlayerList's own live list and a listener can change it
+        // mid-walk: `PlayerList.respawn` removes the old player and adds the new one, and `remove` drops
+        // one outright, either of which threw ConcurrentModificationException out of the server tick
+        // (ARM-22). A player removed or disconnected by an earlier listener this tick is skipped, as
+        // NeoForge would not tick it either; one added mid-walk is ticked from the next tick on.
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (!ArmatureEvents.PLAYER_TICK.hasListeners()) {
                 return;
             }
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
+                if (player.isRemoved() || player.hasDisconnected()) {
+                    continue;
+                }
                 ArmatureEvents.PLAYER_TICK.invoker().onPlayerTick(player);
             }
         });
