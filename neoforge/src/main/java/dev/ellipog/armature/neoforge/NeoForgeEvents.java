@@ -80,8 +80,13 @@ public final class NeoForgeEvents {
         // processed, while it can still be cancelled; Fabric reports it after. The event
         // carries what was killed and by what, which is all a progression engine needs, but
         // anything that has to see the world in one particular state cannot rely on it.
-        bus.addListener((LivingDeathEvent event) -> {
-            if (!ArmatureEvents.ENTITY_DEATH.hasListeners()) {
+        //
+        // Because it can still be cancelled, it is heard last and only uncancelled, the same pair as the
+        // break below. At NORMAL priority a listener at LOW or LOWEST that cancelled the death (a totem-like
+        // mod, a revive) ran after this one, so Armature had already reported a death that never happened
+        // and Fabric, which reports after, never would (ARM-22).
+        bus.addListener(EventPriority.LOWEST, false, (LivingDeathEvent event) -> {
+            if (!ArmatureEvents.ENTITY_DEATH.hasListeners() || event.isCanceled()) {
                 return;
             }
             ArmatureEvents.ENTITY_DEATH.invoker().onEntityDeath(event.getEntity(), event.getSource());
