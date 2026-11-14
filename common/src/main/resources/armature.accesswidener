@@ -17,3 +17,11 @@ accessible field net/minecraft/client/Minecraft itemColors Lnet/minecraft/client
 # replaces this field, so its identity says when a cached texture size may be stale. Widened rather than read
 # by reflection, because Fabric runs intermediary names and a field named in a string is not remapped.
 accessible field net/minecraft/server/packs/resources/ReloadableResourceManager resources Lnet/minecraft/server/packs/resources/CloseableResourceManager;
+
+# The client's reload tracker, for TextEpoch's reload serial: a new ReloadState per resource reload, finished once
+# every listener (the font's included) has applied. Minecraft.font is final and refilled in place, so its identity
+# alone never says the glyphs changed.
+accessible field net/minecraft/client/Minecraft reloadStateTracker Lnet/minecraft/client/ResourceLoadStateTracker;
+accessible field net/minecraft/client/ResourceLoadStateTracker reloadState Lnet/minecraft/client/ResourceLoadStateTracker$ReloadState;
+accessible class net/minecraft/client/ResourceLoadStateTracker$ReloadState
+accessible field net/minecraft/client/ResourceLoadStateTracker$ReloadState finished Z

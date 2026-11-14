@@ -3,11 +3,7 @@ package dev.ellipog.armature.client.render;
 import dev.ellipog.armature.client.TextScale;
 
 import net.minecraft.client.Minecraft;
-
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.reflect.Field;
+import net.minecraft.client.ResourceLoadStateTracker;
 
 /**
  * When a measured width may have changed — one number, to be compared and never interpreted.
@@ -29,7 +25,7 @@ import java.lang.reflect.Field;
  *
  * <p>The font is identified rather than compared, because a reload <b>replaces</b> the object: two different
  * objects are two different faces, and the widths measured against the old one are no longer answers. On
- * 26.3 a reload does not replace it (the font is final and refilled in place), so the reload itself is in
+ * 1.21.1 a reload does not replace it (the font is final and refilled in place), so the reload itself is in
  * the epoch too; see {@link ReloadTracker}. The
  * scale is taken at full precision rather than rounded, so a slider dragged to 1.01 is a different epoch from
  * 1.0 — a layout measured at one and drawn at the other is text that no longer fits its column.
@@ -134,9 +130,9 @@ public final class TextEpoch {
      *
      * <h2>Why the font's identity is not enough</h2>
      *
-     * <p>On 26.3 {@code Minecraft.font} is final and made once: a reload refills its {@code FontSet}s in
-     * place rather than replacing the object, so the font's serial never moves, and a pack that changes
-     * glyph widths left stale widths in every memo until the text scale changed (ARM-20).
+     * <p>{@code Minecraft.font} is final and made once: a reload refills its {@code FontSet}s in place rather
+     * than replacing the object, so the font's serial never moves, and a pack that changes glyph widths left
+     * stale widths in every memo until the text scale changed (ARM-20).
      *
      * <h2>Why the reload tracker, and not the pack stack</h2>
      *
@@ -147,39 +143,12 @@ public final class TextEpoch {
      * new {@code ReloadState} per reload, and its {@code finished} flag set once every listener has applied.
      * While a reload is unfinished every reading is new, so nothing measured then is remembered: slow for
      * the length of a loading screen, and never stale.
+     *
+     * <p>The three fields are widened (armature.accesswidener, META-INF/accesstransformer.cfg) rather than
+     * read by reflection, because Fabric runs intermediary names on 1.21.1 and a field named in a string is
+     * not remapped.
      */
     static final class ReloadTracker {
-
-        private static final MethodHandle TRACKER;
-        private static final MethodHandle STATE;
-        private static final MethodHandle FINISHED;
-
-        static {
-            MethodHandle tracker = null;
-            MethodHandle state = null;
-            MethodHandle finished = null;
-            try {
-                MethodHandles.Lookup lookup = MethodHandles.lookup();
-                Field trackerField = Minecraft.class.getDeclaredField("reloadStateTracker");
-                trackerField.setAccessible(true);
-                Field stateField = trackerField.getType().getDeclaredField("reloadState");
-                stateField.setAccessible(true);
-                Field finishedField = stateField.getType().getDeclaredField("finished");
-                finishedField.setAccessible(true);
-                tracker = lookup.unreflectGetter(trackerField)
-                        .asType(MethodType.methodType(Object.class, Object.class));
-                state = lookup.unreflectGetter(stateField)
-                        .asType(MethodType.methodType(Object.class, Object.class));
-                finished = lookup.unreflectGetter(finishedField)
-                        .asType(MethodType.methodType(boolean.class, Object.class));
-            }
-            catch (ReflectiveOperationException | RuntimeException ignored) {
-                // Left null: the epoch then follows the font and the scale alone, as it did before.
-            }
-            TRACKER = tracker;
-            STATE = state;
-            FINISHED = finished;
-        }
 
         private static final Serials SERIALS = new Serials();
 
@@ -187,25 +156,9 @@ public final class TextEpoch {
         }
 
         static long serial(Minecraft minecraft) {
-            if (TRACKER == null) {
-                return 0L;
-            }
-            Object state;
-            try {
-                Object tracker = (Object) TRACKER.invokeExact((Object) minecraft);
-                state = tracker == null ? null : (Object) STATE.invokeExact(tracker);
-            }
-            catch (Throwable unexpected) {
-                return 0L;
-            }
-            return SERIALS.of(state, s -> {
-                try {
-                    return (boolean) FINISHED.invokeExact(s);
-                }
-                catch (Throwable unexpected) {
-                    return true;
-                }
-            });
+            ResourceLoadStateTracker tracker = minecraft.reloadStateTracker;
+            Object state = tracker == null ? null : tracker.reloadState;
+            return SERIALS.of(state, s -> ((ResourceLoadStateTracker.ReloadState) s).finished);
         }
     }
 
